@@ -8,6 +8,7 @@ from Camera import CameraHardwareSource
 from Camera import CameraControlPanel
 from Camera.test import CameraControl_test
 from SimulatorMicroscope import CameraDevice
+from SimulatorMicroscope import InstrumentDevice
 
 
 class TestCamera(CameraControl_test.TestCameraControlClass):
@@ -21,7 +22,9 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
         # initial settings.
         self.exposure = 0.04
 
-        camera_adapter = CameraHardwareSource.CameraAdapter("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", CameraDevice.Camera(self.source_image))
+        instrument = InstrumentDevice.Instrument()
+
+        camera_adapter = CameraHardwareSource.CameraAdapter("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", CameraDevice.Camera(instrument, self.source_image))
         camera_hardware_source = CameraHardwareSource.CameraHardwareSource(camera_adapter)
 
         if is_eels:
