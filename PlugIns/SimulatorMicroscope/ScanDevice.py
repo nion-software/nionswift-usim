@@ -35,6 +35,7 @@ class Frame:
         self.complete = False
         self.bad = False
         self.data_count = 0
+        self.start_time = time.time()
 
 
 class Device:
@@ -42,31 +43,29 @@ class Device:
     def __init__(self, instrument: InstrumentDevice.Instrument):
         self.__instrument = instrument
         self.__blanker_enabled = False
-        self.__channels = [Channel(0, "HAADF", True), Channel(1, "MAADF", False)]
-        self.__frame_number = None
-        self.__frames = list()
-        self.__frames_lock = threading.RLock()
-        self.__cancel = False
-        self.__thread = threading.Thread(target=self.__acquisition_thread)
-        self.__thread_event = threading.Event()
-        self.__thread_pending_frame_parameters = None
-        self.__thread_frame_number = 1
-        self.__thread_has_data_event = threading.Event()
+        self.__channels = self.__get_channels()
+        self.__frame = None
+        self.__frame_number = 0
         self.__is_scanning = False
-        self.__is_stopping = False
         self.on_device_state_changed = None
-        self.__profiles = list()
-        self.__profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 0.2}))
-        self.__profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 0.2}))
-        self.__profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (2048, 2048), "pixel_time_us": 2.5}))
+        self.__profiles = self.__get_initial_profiles()
         self.__frame_parameters = copy.deepcopy(self.__profiles[0])
-        self.__thread.start()
 
     def close(self):
-        self.__cancel = True
-        self.__thread_event.set()
-        self.__thread.join()
-        self.__thread = None
+        pass
+
+    def __get_channels(self) -> typing.List[Channel]:
+        return [Channel(0, "HAADF", True), Channel(1, "MAADF", False), Channel(2, "X1", False), Channel(3, "X2", False)]
+
+    def __get_initial_profiles(self) -> typing.List[ScanHardwareSource.ScanFrameParameters]:
+        profiles = list()
+        # profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 0.2}))
+        # profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 0.2}))
+        # profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (2048, 2048), "pixel_time_us": 2.5}))
+        profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}))
+        profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 1, "fov_nm": 40}))
+        profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 1, "fov_nm": 100}))
+        return profiles
 
     @property
     def blanker_enabled(self) -> bool:
@@ -97,70 +96,12 @@ class Device:
     def set_channel_enabled(self, channel_index: int, enabled: bool) -> bool:
         assert 0 <= channel_index < self.channel_count
         self.__channels[channel_index].enabled = enabled
+        if not any(channel.enabled for channel in self.__channels):
+            self.cancel()
         return True
 
     def get_channel_name(self, channel_index: int) -> str:
         return self.__channels[channel_index].name
-
-    def __acquisition_thread(self):
-        while True:
-            if self.__cancel:  # case where cancel occurred in bottom part of this function
-                break
-            self.__is_stopping = False
-            self.__is_scanning = False
-            self.__thread_event.wait()
-            self.__thread_event.clear()
-            if self.__cancel:
-                break
-            while self.__is_scanning and not self.__cancel and not self.__is_stopping:
-                frame_parameters = copy.deepcopy(self.__thread_pending_frame_parameters)
-                channels = [copy.deepcopy(channel) for channel in self.__channels if channel.enabled]
-                for channel in channels:
-                    channel.data = numpy.zeros(frame_parameters.size, numpy.float32)
-                frame = Frame(self.__thread_frame_number, channels, frame_parameters)
-                self.__thread_frame_number += 1
-                with self.__frames_lock:
-                    self.__frames.append(frame)
-                height = frame_parameters.size[0]
-                width = frame_parameters.size[1]
-                total_pixels = height * width
-                start_time = time.time()
-                time_slice = 0.005  # 5ms
-                while self.__is_scanning and not self.__cancel and not frame.complete:
-                    pixels_remaining = total_pixels - frame.data_count
-                    pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)
-                    self.__thread_event.wait(pixel_wait)
-                    self.__thread_event.clear()
-                    if self.__cancel:
-                        break
-                    if frame_parameters.external_clock_mode != 0:
-                        if frame.data_count % width == 0:
-                            # throw away two flyback images
-                            if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
-                                frame.bad = True
-                                frame.complete = True
-                                break
-                            if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
-                                frame.bad = True
-                                frame.complete = True
-                                break
-                        if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
-                            frame.bad = True
-                            frame.complete = True
-                            break
-                        target_count = frame.data_count + 1
-                    else:
-                        target_count = min(int((time.time() - start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
-                    if target_count > frame.data_count:
-                        for channel in channels:
-                            channel_data_flat = channel.data.reshape((total_pixels,))
-                            channel_data_flat[frame.data_count:target_count] = numpy.random.randn(target_count - frame.data_count)
-                        frame.data_count = target_count
-                        frame.complete = frame.data_count == total_pixels
-                        self.__thread_has_data_event.set()
-                frame.data_count = total_pixels
-                frame.complete = True
-                # print(f"complete {time.time()} # {frame.frame_number} {frame_parameters.pixel_time_us / 1E6 * total_pixels}")
 
     def read_partial(self, frame_number, pixels_to_skip) -> (typing.Sequence[dict], bool, bool, tuple, int, int):
         """Read or continue reading a frame.
@@ -181,21 +122,49 @@ class Device:
         a 'channel_id' indicating the index of the channel (may be an int or float).
         """
 
-        # wait up to 50ms for a frame to end
-        self.__thread_has_data_event.wait(0.05)
-        self.__thread_has_data_event.clear()
-
-        current_frame = None
-        with self.__frames_lock:
-            if frame_number is None:
-                current_frame = self.__frames[-1]
-                frame_number = current_frame.frame_number
-            else:
-                for frame in self.__frames:
-                    if frame.frame_number == frame_number:
-                        current_frame = frame
-                        break
+        if self.__frame is None:
+            self.__start_next_frame()
+        current_frame = self.__frame
         assert current_frame is not None
+        frame_number = current_frame.frame_number
+
+        frame_parameters = current_frame.frame_parameters
+        height = frame_parameters.size[0]
+        width = frame_parameters.size[1]
+        total_pixels = height * width
+        time_slice = 0.005  # 5ms
+
+        target_count = 0
+        while self.__is_scanning and target_count <= current_frame.data_count:
+            if frame_parameters.external_clock_mode != 0:
+                if current_frame.data_count % width == 0:
+                    # throw away two flyback images
+                    if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
+                        current_frame.bad = True
+                        current_frame.complete = True
+                    if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
+                        current_frame.bad = True
+                        current_frame.complete = True
+                if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
+                    current_frame.bad = True
+                    current_frame.complete = True
+                target_count = current_frame.data_count + 1
+            else:
+                pixels_remaining = total_pixels - current_frame.data_count
+                pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)
+                time.sleep(pixel_wait)
+                target_count = min(int((time.time() - current_frame.start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
+
+        if self.__is_scanning and target_count > current_frame.data_count:
+            for channel in current_frame.channels:
+                channel_data_flat = channel.data.reshape((total_pixels,))
+                channel_data_flat[current_frame.data_count:target_count] = numpy.random.randn(target_count - current_frame.data_count)
+            current_frame.data_count = target_count
+            current_frame.complete = current_frame.data_count == total_pixels
+        else:
+            assert not self.__is_scanning
+            current_frame.data_count = total_pixels
+            current_frame.complete = True
 
         data_elements = list()
 
@@ -218,10 +187,7 @@ class Device:
         if current_frame.complete:
             sub_area = ((0, 0), current_frame.frame_parameters.size)
             pixels_to_skip = 0
-            with self.__frames_lock:
-                for frame in self.__frames:
-                    if frame.frame_number <= frame_number:
-                        self.__frames.remove(frame)
+            self.__frame = None
         else:
             sub_area = ((pixels_to_skip // width, 0), (current_rows_read - pixels_to_skip // width, width))
             pixels_to_skip = width * current_rows_read
@@ -260,22 +226,26 @@ class Device:
 
     def start_frame(self, is_continuous: bool) -> int:
         """Start acquiring. Return the frame number."""
-        thread_frame_number = self.__thread_frame_number
         if not self.__is_scanning:
-            self.__thread_pending_frame_parameters = copy.deepcopy(self.__frame_parameters)
-            self.__is_stopping = False
+            self.__start_next_frame()
             self.__is_scanning = True
-            self.__thread_event.set()
-        return thread_frame_number
+        return self.__frame_number
+
+    def __start_next_frame(self):
+        frame_parameters = copy.deepcopy(self.__frame_parameters)
+        channels = [copy.deepcopy(channel) for channel in self.__channels if channel.enabled]
+        for channel in channels:
+            channel.data = numpy.zeros(frame_parameters.size, numpy.float32)
+        self.__frame_number += 1
+        self.__frame = Frame(self.__frame_number, channels, frame_parameters)
 
     def cancel(self) -> None:
         """Cancel acquisition (immediate)."""
         self.__is_scanning = False
-        self.__thread_event.set()
 
     def stop(self) -> None:
         """Stop acquiring."""
-        self.__is_stopping = True
+        pass
 
     @property
     def is_scanning(self) -> bool:
