@@ -7,8 +7,9 @@ import time
 import typing
 
 # local libraries
-from nion.swift.model import HardwareSource
+from . import InstrumentDevice
 
+# other plug-ins
 from Camera import CameraHardwareSource
 
 _ = gettext.gettext
@@ -16,7 +17,8 @@ _ = gettext.gettext
 
 class Camera(CameraHardwareSource.Camera):
 
-    def __init__(self, image: numpy.ndarray):
+    def __init__(self, instrument: InstrumentDevice.Instrument, image: numpy.ndarray):
+        self.__instrument = instrument
         self.__sensor_dimensions = image.shape
         self.__readout_area = 0, 0, *image.shape  # TLBR
         self.__exposure_s = 0.1  # 100ms
@@ -145,11 +147,11 @@ class Camera(CameraHardwareSource.Camera):
     def get_expected_dimensions(self, binning: int) -> (int, int):
         return self.__sensor_dimensions
 
-    def acquire_sequence_prepare(self) -> None:
-        pass
+    # def acquire_sequence_prepare(self) -> None:
+    #     pass
 
-    def acquire_sequence(self, n: int) -> dict:
-        pass
+    # def acquire_sequence(self, n: int) -> dict:
+    #     pass
 
     def show_config_window(self) -> None:
         pass
@@ -171,6 +173,7 @@ class Camera(CameraHardwareSource.Camera):
                 elapsed = time.time() - start
                 if not self.__thread_event.wait(max(self.__exposure_s - elapsed, 0)):
                     self.__has_data_event.set()
+                    self.__instrument.trigger_camera_frame()
                 else:
                     self.__thread_event.clear()
 
@@ -180,7 +183,7 @@ def _relativeFile(filename):
     return os.path.join(dir, filename)
 
 
-def run():
+def run(instrument: InstrumentDevice.Instrument) -> None:
 
     from nion.data import Image
     from nion.swift import Application
@@ -188,6 +191,6 @@ def run():
 
     image = Image.read_grayscale_image_from_file(Application.app.ui, _relativeFile(os.path.join("resources", "GoldBalls.png")), dtype=numpy.float)
 
-    camera_adapter = CameraHardwareSource.CameraAdapter("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), Camera(image))
+    camera_adapter = CameraHardwareSource.CameraAdapter("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), Camera(instrument, image))
     camera_hardware_source = CameraHardwareSource.CameraHardwareSource(camera_adapter)
     HardwareSource.HardwareSourceManager().register_hardware_source(camera_hardware_source)

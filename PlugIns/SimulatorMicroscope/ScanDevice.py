@@ -8,11 +8,10 @@ import threading
 import time
 import typing
 
-# third party libraries
-
 # local libraries
-from nion.swift.model import HardwareSource
+from . import InstrumentDevice
 
+# other plug-ins
 from Scan import ScanHardwareSource
 
 _ = gettext.gettext
@@ -34,12 +33,14 @@ class Frame:
         self.channels = channels
         self.frame_parameters = frame_parameters
         self.complete = False
+        self.bad = False
         self.data_count = 0
 
 
 class Device:
 
-    def __init__(self):
+    def __init__(self, instrument: InstrumentDevice.Instrument):
+        self.__instrument = instrument
         self.__blanker_enabled = False
         self.__channels = [Channel(0, "HAADF", True), Channel(1, "MAADF", False)]
         self.__frame_number = None
@@ -113,14 +114,16 @@ class Device:
                 break
             while self.__is_scanning and not self.__cancel and not self.__is_stopping:
                 frame_parameters = copy.deepcopy(self.__thread_pending_frame_parameters)
-                channels = copy.deepcopy(self.__channels)
+                channels = [copy.deepcopy(channel) for channel in self.__channels if channel.enabled]
                 for channel in channels:
                     channel.data = numpy.zeros(frame_parameters.size, numpy.float32)
                 frame = Frame(self.__thread_frame_number, channels, frame_parameters)
                 self.__thread_frame_number += 1
                 with self.__frames_lock:
                     self.__frames.append(frame)
-                total_pixels = frame_parameters.size[0] * frame_parameters.size[1]
+                height = frame_parameters.size[0]
+                width = frame_parameters.size[1]
+                total_pixels = height * width
                 start_time = time.time()
                 time_slice = 0.005  # 5ms
                 while self.__is_scanning and not self.__cancel and not frame.complete:
@@ -130,7 +133,24 @@ class Device:
                     self.__thread_event.clear()
                     if self.__cancel:
                         break
-                    target_count = min(int((time.time() - start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
+                    if frame_parameters.external_clock_mode != 0:
+                        if frame.data_count % width == 0:
+                            # throw away two flyback images
+                            if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
+                                frame.bad = True
+                                frame.complete = True
+                                break
+                            if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
+                                frame.bad = True
+                                frame.complete = True
+                                break
+                        if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms):
+                            frame.bad = True
+                            frame.complete = True
+                            break
+                        target_count = frame.data_count + 1
+                    else:
+                        target_count = min(int((time.time() - start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
                     if target_count > frame.data_count:
                         for channel in channels:
                             channel_data_flat = channel.data.reshape((total_pixels,))
@@ -262,7 +282,10 @@ class Device:
         return self.__is_scanning
 
 
-def run():
-    scan_adapter = ScanHardwareSource.ScanAdapter(Device(), "usim_scan_device", _("uSim Scan"))
+def run(instrument: InstrumentDevice.Instrument) -> None:
+
+    from nion.swift.model import HardwareSource
+
+    scan_adapter = ScanHardwareSource.ScanAdapter(Device(instrument), "usim_scan_device", _("uSim Scan"))
     scan_hardware_source = ScanHardwareSource.ScanHardwareSource(scan_adapter)
     HardwareSource.HardwareSourceManager().register_hardware_source(scan_hardware_source)
