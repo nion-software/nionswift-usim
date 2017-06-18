@@ -2,5 +2,5 @@
     "name": "Simulator Microscope",
     "identifier": "nion.simulator_microscope",
     "version": "0.1.0",
-    "requires": ["nion.camera ~= 0.1"]
+    "requires": ["nion.camera ~= 0.1", "nion.scan ~= 0.1"]
 }

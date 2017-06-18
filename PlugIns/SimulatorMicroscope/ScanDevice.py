@@ -1,10 +1,8 @@
 # standard libraries
 import copy
-import ctypes
 import gettext
 import math
 import numpy
-import threading
 import time
 import typing
 
@@ -158,7 +156,8 @@ class Device:
         if self.__is_scanning and target_count > current_frame.data_count:
             for channel in current_frame.channels:
                 channel_data_flat = channel.data.reshape((total_pixels,))
-                channel_data_flat[current_frame.data_count:target_count] = numpy.random.randn(target_count - current_frame.data_count)
+                scan_data_flat = self.__instrument.get_scan_data(frame_parameters).reshape((total_pixels,))
+                channel_data_flat[current_frame.data_count:target_count] = scan_data_flat[current_frame.data_count:target_count]
             current_frame.data_count = target_count
             current_frame.complete = current_frame.data_count == total_pixels
         else:
