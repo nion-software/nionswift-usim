@@ -3,6 +3,7 @@ import numpy
 import random
 import threading
 
+from nion.utils import Event
 from nion.utils import Geometry
 
 
@@ -13,13 +14,14 @@ class Feature:
         self.size_m = size_m
         self.angle_rad = angle_rad
 
-    def plot(self, data: numpy.ndarray, frame_parameters):
+    def plot(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, frame_parameters):
         # TODO: how does center_nm interact with stage position?
         # TODO: take into account feature angle
         # TODO: take into account frame parameters angle
         # TODO: expand features to other shapes than rectangle
         scan_size_m = Geometry.FloatSize(height=frame_parameters.fov_nm, width=frame_parameters.fov_nm) / 1E9
         scan_rect_m = Geometry.FloatRect.from_center_and_size(Geometry.FloatPoint.make(frame_parameters.center_nm) / 1E9, scan_size_m)
+        scan_rect_m -= offset_m
         feature_rect_m = Geometry.FloatRect.from_center_and_size(self.position_m, self.size_m)
         if scan_rect_m.intersects_rect(feature_rect_m):
             feature_rect_top_px = int(frame_parameters.size[0] * (feature_rect_m.top - scan_rect_m.top) / scan_rect_m.height)
@@ -53,6 +55,9 @@ class Instrument:
             position_m = Geometry.FloatPoint(y=(2 * random.random() - 1.0) * sample_size_m.height, x=(2 * random.random() - 1.0) * sample_size_m.width)
             size_m = feature_percentage * Geometry.FloatSize(height=random.random() * sample_size_m.height, width=random.random() * sample_size_m.width)
             self.__features.append(Feature(position_m, size_m, 0.0))
+        self.__stage_position_m = Geometry.FloatPoint()
+        self.__beam_shift_m = Geometry.FloatPoint()
+        self.property_changed_event = Event.Event()
 
     def trigger_camera_frame(self) -> None:
         self.__camera_frame_event.set()
@@ -67,7 +72,25 @@ class Instrument:
         width = frame_parameters.size[1]
         data = numpy.zeros((height, width), numpy.float32)
         for feature in self.__features:
-            feature.plot(data, frame_parameters)
+            feature.plot(data, self.stage_position_m - self.beam_shift_m, frame_parameters)
         noise_factor = 0.3
         data = (data + numpy.random.randn(height, width) * noise_factor) * frame_parameters.pixel_time_us
         return data
+
+    @property
+    def stage_position_m(self) -> Geometry.FloatPoint:
+        return self.__stage_position_m
+
+    @stage_position_m.setter
+    def stage_position_m(self, value: Geometry.FloatPoint) -> None:
+        self.__stage_position_m = value
+        self.property_changed_event.fire("stage_position_m")
+
+    @property
+    def beam_shift_m(self) -> Geometry.FloatPoint:
+        return self.__beam_shift_m
+
+    @beam_shift_m.setter
+    def beam_shift_m(self, value: Geometry.FloatPoint) -> None:
+        self.__beam_shift_m = value
+        self.property_changed_event.fire("beam_shift_m")
