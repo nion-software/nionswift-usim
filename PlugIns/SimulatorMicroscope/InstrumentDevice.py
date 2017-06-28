@@ -51,10 +51,13 @@ class Instrument:
         self.__features = list()
         sample_size_m = Geometry.FloatSize(height=20, width=20) / 1E9
         feature_percentage = 0.3
+        random_state = random.getstate()
+        random.seed(1)
         for i in range(100):
             position_m = Geometry.FloatPoint(y=(2 * random.random() - 1.0) * sample_size_m.height, x=(2 * random.random() - 1.0) * sample_size_m.width)
             size_m = feature_percentage * Geometry.FloatSize(height=random.random() * sample_size_m.height, width=random.random() * sample_size_m.width)
             self.__features.append(Feature(position_m, size_m, 0.0))
+        random.setstate(random_state)
         self.__stage_position_m = Geometry.FloatPoint()
         self.__beam_shift_m = Geometry.FloatPoint()
         self.property_changed_event = Event.Event()
