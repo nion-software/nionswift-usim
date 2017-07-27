@@ -5,8 +5,10 @@ import os
 import threading
 import time
 import typing
+import uuid
 
 # local libraries
+from nion.utils import Registry
 from . import InstrumentDevice
 
 # other plug-ins
@@ -17,6 +19,10 @@ _ = gettext.gettext
 
 class Camera(CameraHardwareSource.Camera):
     """Implement a camera device."""
+
+    camera_id = "usim_ronchigram_camera"
+    camera_type = "ronchigram"
+    camera_name = _("uSim Ronchigram Camera")
 
     def __init__(self, instrument: InstrumentDevice.Instrument, image: numpy.ndarray):
         self.__instrument = instrument
@@ -284,10 +290,8 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
 
     from nion.data import Image
     from nion.swift import Application
-    from nion.swift.model import HardwareSource
 
     image = Image.read_grayscale_image_from_file(Application.app.ui, _relativeFile(os.path.join("resources", "GoldBalls.png")), dtype=numpy.float)
 
-    camera_adapter = CameraHardwareSource.CameraAdapter("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), Camera(instrument, image))
-    camera_hardware_source = CameraHardwareSource.CameraHardwareSource(camera_adapter)
-    HardwareSource.HardwareSourceManager().register_hardware_source(camera_hardware_source)
+    camera_device = Camera(instrument, image)
+    Registry.register_component(camera_device, {"camera_device"})
