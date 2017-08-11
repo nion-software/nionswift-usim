@@ -1,11 +1,9 @@
 # standard libraries
 import gettext
 import numpy
-import os
 import threading
 import time
 import typing
-import uuid
 
 # local libraries
 from nion.utils import Registry
@@ -20,17 +18,15 @@ _ = gettext.gettext
 class Camera(CameraHardwareSource.Camera):
     """Implement a camera device."""
 
-    camera_id = "usim_ronchigram_camera"
-    camera_type = "ronchigram"
-    camera_name = _("uSim Ronchigram Camera")
-
-    def __init__(self, instrument: InstrumentDevice.Instrument, image: numpy.ndarray):
+    def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
+        self.camera_id = camera_id
+        self.camera_type = camera_type
+        self.camera_name = camera_name
         self.__instrument = instrument
-        self.__sensor_dimensions = image.shape
-        self.__readout_area = 0, 0, *image.shape  # TLBR
+        self.__sensor_dimensions = instrument.camera_sensor_dimensions(camera_type)
+        self.__readout_area = instrument.camera_readout_area(camera_type)
         self.__symmetric_binning = True
         self.__integration_count = 1
-        self.__data = image
         self.__data_buffer = None
         self.__frame_number = 0
         self.__thread = threading.Thread(target=self.__acquisition_thread)
@@ -217,7 +213,7 @@ class Camera(CameraHardwareSource.Camera):
         self.__thread_event.set()
 
     def acquire_image(self) -> dict:
-        """Acquire the most recent image."""
+        """Acquire the most recent data."""
         data_buffer = None
         properties = dict()
         integration_count = self.__integration_count or 1
@@ -261,7 +257,7 @@ class Camera(CameraHardwareSource.Camera):
             while self.__is_playing and not self.__cancel:
                 start = time.time()
                 readout_area = self.readout_area
-                data = self.__data[readout_area[0]:readout_area[2], readout_area[1]:readout_area[3]]
+                data = self.__instrument.get_camera_data(readout_area)
                 binning = self.binning
                 if binning > 1:
                     # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
@@ -281,17 +277,11 @@ class Camera(CameraHardwareSource.Camera):
                     self.__thread_event.clear()
 
 
-def _relativeFile(filename):
-    dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
-    return os.path.join(dir, filename)
-
-
 def run(instrument: InstrumentDevice.Instrument) -> None:
+    camera_id = "usim_ronchigram_camera"
+    camera_type = "ronchigram"
+    camera_name = _("uSim Ronchigram Camera")
+    camera_device = Camera(camera_id, camera_type, camera_name, instrument)
 
-    from nion.data import Image
-    from nion.swift import Application
-
-    image = Image.read_grayscale_image_from_file(Application.app.ui, _relativeFile(os.path.join("resources", "GoldBalls.png")), dtype=numpy.float)
-
-    camera_device = Camera(instrument, image)
-    Registry.register_component(camera_device, {"camera_device"})
+    component_types = {"camera_device"}  # the set of component types that this component represents
+    Registry.register_component(camera_device, component_types)

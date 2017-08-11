@@ -1,8 +1,12 @@
 # standard libraries
 import numpy
+import os
 import random
 import threading
+import typing
 
+from nion.data import Image
+from nion.swift import Application
 from nion.utils import Event
 from nion.utils import Geometry
 
@@ -44,6 +48,11 @@ class Feature:
             data[feature_rect_px.top:feature_rect_px.bottom, feature_rect_px.left:feature_rect_px.right] += 1.0
 
 
+def _relativeFile(filename):
+    dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
+    return os.path.join(dir, filename)
+
+
 class Instrument:
 
     def __init__(self):
@@ -61,6 +70,7 @@ class Instrument:
         self.__stage_position_m = Geometry.FloatPoint()
         self.__beam_shift_m = Geometry.FloatPoint()
         self.property_changed_event = Event.Event()
+        self.__ronchigram_image = Image.read_grayscale_image_from_file(Application.app.ui, _relativeFile(os.path.join("resources", "GoldBalls.png")), dtype=numpy.float)
 
     def trigger_camera_frame(self) -> None:
         self.__camera_frame_event.set()
@@ -79,6 +89,16 @@ class Instrument:
         noise_factor = 0.3
         data = (data + numpy.random.randn(height, width) * noise_factor) * frame_parameters.pixel_time_us
         return data
+
+    def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
+        return self.__ronchigram_image.shape
+
+    def camera_readout_area(self, camera_type: str) -> typing.Tuple[int, int, int, int]:
+        # returns readout area TLBR
+        return 0, 0, self.__ronchigram_image.shape[0], self.__ronchigram_image.shape[1]
+
+    def get_camera_data(self, readout_area):
+        return self.__ronchigram_image[readout_area[0]:readout_area[2], readout_area[1]:readout_area[3]]
 
     @property
     def stage_position_m(self) -> Geometry.FloatPoint:
