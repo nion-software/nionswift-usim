@@ -6,6 +6,7 @@ import time
 import typing
 
 # local libraries
+from nion.utils import Geometry
 from nion.utils import Registry
 from . import InstrumentDevice
 
@@ -257,7 +258,7 @@ class Camera(CameraHardwareSource.Camera):
             while self.__is_playing and not self.__cancel:
                 start = time.time()
                 readout_area = self.readout_area
-                data = self.__instrument.get_camera_data(readout_area)
+                data = self.__instrument.get_camera_data(Geometry.IntRect.from_tlbr(*readout_area))
                 binning = self.binning
                 if binning > 1:
                     # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
