@@ -10,7 +10,7 @@ import typing
 from . import InstrumentDevice
 
 # other plug-ins
-from Scan import ScanHardwareSource
+from nion.instrumentation import scan_base
 
 _ = gettext.gettext
 
@@ -26,7 +26,7 @@ class Channel:
 
 class Frame:
 
-    def __init__(self, frame_number: int, channels: typing.List[Channel], frame_parameters: ScanHardwareSource.ScanFrameParameters):
+    def __init__(self, frame_number: int, channels: typing.List[Channel], frame_parameters: scan_base.ScanFrameParameters):
         self.frame_number = frame_number
         self.channels = channels
         self.frame_parameters = frame_parameters
@@ -55,14 +55,14 @@ class Device:
     def __get_channels(self) -> typing.List[Channel]:
         return [Channel(0, "HAADF", True), Channel(1, "MAADF", False), Channel(2, "X1", False), Channel(3, "X2", False)]
 
-    def __get_initial_profiles(self) -> typing.List[ScanHardwareSource.ScanFrameParameters]:
+    def __get_initial_profiles(self) -> typing.List[scan_base.ScanFrameParameters]:
         profiles = list()
-        # profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 0.2}))
-        # profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 0.2}))
-        # profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (2048, 2048), "pixel_time_us": 2.5}))
-        profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}))
-        profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 1, "fov_nm": 40}))
-        profiles.append(ScanHardwareSource.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 1, "fov_nm": 100}))
+        # profiles.append(scan_base.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 0.2}))
+        # profiles.append(scan_base.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 0.2}))
+        # profiles.append(scan_base.ScanFrameParameters({"size": (2048, 2048), "pixel_time_us": 2.5}))
+        profiles.append(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}))
+        profiles.append(scan_base.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 1, "fov_nm": 40}))
+        profiles.append(scan_base.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 1, "fov_nm": 100}))
         return profiles
 
     @property
@@ -80,7 +80,7 @@ class Device:
         pass
 
     @property
-    def current_frame_parameters(self) -> ScanHardwareSource.ScanFrameParameters:
+    def current_frame_parameters(self) -> scan_base.ScanFrameParameters:
         return self.__frame_parameters
 
     @property
@@ -196,7 +196,7 @@ class Device:
 
         return data_elements, complete, bad_frame, sub_area, frame_number, pixels_to_skip
 
-    def get_profile_frame_parameters(self, profile_index: int) -> ScanHardwareSource.ScanFrameParameters:
+    def get_profile_frame_parameters(self, profile_index: int) -> scan_base.ScanFrameParameters:
         return copy.deepcopy(self.__profiles[profile_index])
 
     def open_configuration_interface(self) -> None:
@@ -207,7 +207,7 @@ class Device:
         """Called when shutting down. Save frame parameters to persistent storage."""
         pass
 
-    def set_frame_parameters(self, frame_parameters: ScanHardwareSource.ScanFrameParameters) -> None:
+    def set_frame_parameters(self, frame_parameters: scan_base.ScanFrameParameters) -> None:
         """Called just before and during acquisition.
 
         Device should use these parameters for new acquisition; and update to these parameters during acquisition.
@@ -215,7 +215,7 @@ class Device:
         self.__thread_pending_frame_parameters = copy.deepcopy(frame_parameters)
         self.__frame_parameters = copy.deepcopy(frame_parameters)
 
-    def set_profile_frame_parameters(self, profile_index: int, frame_parameters: ScanHardwareSource.ScanFrameParameters) -> None:
+    def set_profile_frame_parameters(self, profile_index: int, frame_parameters: scan_base.ScanFrameParameters) -> None:
         """Set the acquisition parameters for the give profile_index (0, 1, 2)."""
         self.__profiles[profile_index] = copy.deepcopy(frame_parameters)
 
@@ -255,6 +255,6 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
 
     from nion.swift.model import HardwareSource
 
-    scan_adapter = ScanHardwareSource.ScanAdapter(Device(instrument), "usim_scan_device", _("uSim Scan"))
-    scan_hardware_source = ScanHardwareSource.ScanHardwareSource(scan_adapter, "usim_stem_controller")
+    scan_adapter = scan_base.ScanAdapter(Device(instrument), "usim_scan_device", _("uSim Scan"))
+    scan_hardware_source = scan_base.ScanHardwareSource(scan_adapter, "usim_stem_controller")
     HardwareSource.HardwareSourceManager().register_hardware_source(scan_hardware_source)

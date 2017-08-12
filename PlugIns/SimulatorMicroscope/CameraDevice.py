@@ -11,12 +11,12 @@ from nion.utils import Registry
 from . import InstrumentDevice
 
 # other plug-ins
-from Camera import CameraHardwareSource
+from nion.instrumentation import camera_base
 
 _ = gettext.gettext
 
 
-class Camera(CameraHardwareSource.Camera):
+class Camera(camera_base.Camera):
     """Implement a camera device."""
 
     def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):

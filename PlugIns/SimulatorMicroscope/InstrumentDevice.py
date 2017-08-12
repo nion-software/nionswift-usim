@@ -9,7 +9,7 @@ import typing
 from nion.utils import Event
 from nion.utils import Geometry
 
-from nion.instrumentation import STEMController
+from nion.instrumentation import stem_controller
 
 
 class Feature:
@@ -54,7 +54,7 @@ def _relativeFile(filename):
     return os.path.join(dir, filename)
 
 
-class Instrument(STEMController.STEMController):
+class Instrument(stem_controller.STEMController):
 
     def __init__(self):
         super().__init__()

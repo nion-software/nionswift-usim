@@ -4,9 +4,9 @@ import unittest
 from nion.swift.model import DocumentModel
 from nion.swift.model import HardwareSource
 from nion.swift import DocumentController
-from Camera import CameraHardwareSource
-from Camera import CameraControlPanel
-from Camera.test import CameraControl_test
+from nion.instrumentation import camera_base
+from nion.instrumentation.test import CameraControl_test
+from nionswift_plugin.nion_instrumentation_ui import CameraControlPanel
 from SimulatorMicroscope import CameraDevice
 from SimulatorMicroscope import InstrumentDevice
 
@@ -24,15 +24,15 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
 
         instrument = InstrumentDevice.Instrument()
 
-        camera_adapter = CameraHardwareSource.CameraAdapter("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", CameraDevice.Camera("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", instrument))
-        camera_hardware_source = CameraHardwareSource.CameraHardwareSource(camera_adapter)
+        camera_adapter = camera_base.CameraAdapter("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", CameraDevice.Camera("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", instrument))
+        camera_hardware_source = camera_base.CameraHardwareSource(camera_adapter)
 
         if is_eels:
             camera_hardware_source.features["is_eels_camera"] = True
             camera_hardware_source.add_channel_processor(0, HardwareSource.SumProcessor(((0.25, 0.0), (0.5, 1.0))))
-        camera_hardware_source.set_frame_parameters(0, CameraHardwareSource.CameraFrameParameters({"exposure_ms": self.exposure * 1000, "binning": 2}))
-        camera_hardware_source.set_frame_parameters(1, CameraHardwareSource.CameraFrameParameters({"exposure_ms": self.exposure * 1000, "binning": 2}))
-        camera_hardware_source.set_frame_parameters(2, CameraHardwareSource.CameraFrameParameters({"exposure_ms": self.exposure * 1000 * 2, "binning": 1}))
+        camera_hardware_source.set_frame_parameters(0, camera_base.CameraFrameParameters({"exposure_ms": self.exposure * 1000, "binning": 2}))
+        camera_hardware_source.set_frame_parameters(1, camera_base.CameraFrameParameters({"exposure_ms": self.exposure * 1000, "binning": 2}))
+        camera_hardware_source.set_frame_parameters(2, camera_base.CameraFrameParameters({"exposure_ms": self.exposure * 1000 * 2, "binning": 1}))
         camera_hardware_source.set_selected_profile_index(0)
 
         HardwareSource.HardwareSourceManager().register_hardware_source(camera_hardware_source)
