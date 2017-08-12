@@ -9,6 +9,8 @@ import typing
 from nion.utils import Event
 from nion.utils import Geometry
 
+from nion.instrumentation import STEMController
+
 
 class Feature:
 
@@ -52,9 +54,10 @@ def _relativeFile(filename):
     return os.path.join(dir, filename)
 
 
-class Instrument:
+class Instrument(STEMController.STEMController):
 
     def __init__(self):
+        super().__init__()
         self.__camera_frame_event = threading.Event()
         self.__features = list()
         sample_size_m = Geometry.FloatSize(height=20, width=20) / 1E9

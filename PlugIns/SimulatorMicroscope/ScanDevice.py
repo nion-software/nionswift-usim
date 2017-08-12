@@ -256,5 +256,5 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
     from nion.swift.model import HardwareSource
 
     scan_adapter = ScanHardwareSource.ScanAdapter(Device(instrument), "usim_scan_device", _("uSim Scan"))
-    scan_hardware_source = ScanHardwareSource.ScanHardwareSource(scan_adapter)
+    scan_hardware_source = ScanHardwareSource.ScanHardwareSource(scan_adapter, "usim_stem_controller")
     HardwareSource.HardwareSourceManager().register_hardware_source(scan_hardware_source)

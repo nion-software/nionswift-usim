@@ -15,8 +15,9 @@ class TestSimulatorScan(ScanControl_test.TestScanControlClass):
     def _setup_hardware_source(self) -> HardwareSource.HardwareSource:
 
         instrument = InstrumentDevice.Instrument()
+        HardwareSource.HardwareSourceManager().register_instrument("usim_stem_controller", instrument)
         scan_adapter = ScanHardwareSource.ScanAdapter(ScanDevice.Device(instrument), "usim_scan_device", "uSim Scan")
-        scan_hardware_source = ScanHardwareSource.ScanHardwareSource(scan_adapter)
+        scan_hardware_source = ScanHardwareSource.ScanHardwareSource(scan_adapter, "usim_stem_controller")
         return scan_hardware_source
 
 
