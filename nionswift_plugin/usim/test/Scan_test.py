@@ -2,8 +2,8 @@ import unittest
 from nion.swift.model import HardwareSource
 from nion.instrumentation import scan_base
 from nion.instrumentation.test import ScanControl_test
-from SimulatorMicroscope import InstrumentDevice
-from SimulatorMicroscope import ScanDevice
+from nionswift_plugin.usim import InstrumentDevice
+from nionswift_plugin.usim import ScanDevice
 
 
 class TestSimulatorScan(ScanControl_test.TestScanControlClass):

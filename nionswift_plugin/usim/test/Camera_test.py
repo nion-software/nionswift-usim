@@ -7,8 +7,8 @@ from nion.swift import DocumentController
 from nion.instrumentation import camera_base
 from nion.instrumentation.test import CameraControl_test
 from nionswift_plugin.nion_instrumentation_ui import CameraControlPanel
-from SimulatorMicroscope import CameraDevice
-from SimulatorMicroscope import InstrumentDevice
+from nionswift_plugin.usim import CameraDevice
+from nionswift_plugin.usim import InstrumentDevice
 
 
 class TestCamera(CameraControl_test.TestCameraControlClass):
