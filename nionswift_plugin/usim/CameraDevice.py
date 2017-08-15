@@ -206,12 +206,14 @@ class Camera(camera_base.Camera):
         """Start live acquisition. Required before using acquire_image."""
         if not self.__is_playing:
             self.__is_playing = True
+            self.__has_data_event.clear()  # ensure any has_data_event is new data
             self.__thread_event.set()
 
     def stop_live(self) -> None:
         """Stop live acquisition."""
         self.__is_playing = False
         self.__thread_event.set()
+        # has_data_event is cleared in the acquisition loop after stopping
 
     def acquire_image(self) -> dict:
         """Acquire the most recent data."""
@@ -272,9 +274,12 @@ class Camera(camera_base.Camera):
                 mode_index = self.__modes.index(self.__mode)
                 exposure_s = self.__exposures_s[mode_index]
                 if not self.__thread_event.wait(max(exposure_s - elapsed, 0)):
+                    # thread event was not triggered during wait; signal that we have data
                     self.__has_data_event.set()
                     self.__instrument.trigger_camera_frame()
                 else:
+                    # thread event was triggered during wait; continue loop
+                    self.__has_data_event.clear()
                     self.__thread_event.clear()
 
 
