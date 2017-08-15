@@ -1,6 +1,6 @@
 # standard libraries
+import copy
 import gettext
-import numpy
 import threading
 import time
 import typing
@@ -8,6 +8,8 @@ import typing
 # local libraries
 from nion.utils import Geometry
 from nion.utils import Registry
+from nion.swift.model import ImportExportManager
+
 from . import InstrumentDevice
 
 # other plug-ins
@@ -28,7 +30,7 @@ class Camera(camera_base.Camera):
         self.__readout_area = instrument.camera_readout_area(camera_type)
         self.__symmetric_binning = True
         self.__integration_count = 1
-        self.__data_buffer = None
+        self.__xdata_buffer = None
         self.__frame_number = 0
         self.__thread = threading.Thread(target=self.__acquisition_thread)
         self.__thread_event = threading.Event()
@@ -200,7 +202,10 @@ class Camera(camera_base.Camera):
     @property
     def calibration(self) -> typing.List[dict]:
         """Return list of calibrations, one for each dimension."""
-        return [{}, {}]
+        readout_area = self.readout_area
+        binning_shape = Geometry.IntSize(self.binning, self.binning if self.__symmetric_binning else 1)
+        dimensional_calibrations = self.__instrument.get_camera_dimensional_calibrations(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape)
+        return [dimensional_calibration.rpc_dict for dimensional_calibration in dimensional_calibrations]
 
     def start_live(self) -> None:
         """Start live acquisition. Required before using acquire_image."""
@@ -217,8 +222,7 @@ class Camera(camera_base.Camera):
 
     def acquire_image(self) -> dict:
         """Acquire the most recent data."""
-        data_buffer = None
-        properties = dict()
+        xdata_buffer = None
         integration_count = self.__integration_count or 1
         mode_index = self.__modes.index(self.__mode)
         exposure_s = self.__exposures_s[mode_index]
@@ -226,14 +230,19 @@ class Camera(camera_base.Camera):
             if not self.__has_data_event.wait(exposure_s * 20):
                 raise Exception("No simulator thread.")
             self.__has_data_event.clear()
-            if data_buffer is None:
-                data_buffer = numpy.copy(self.__data_buffer)
+            if xdata_buffer is None:
+                xdata_buffer = copy.deepcopy(self.__xdata_buffer)
             else:
-                data_buffer += self.__data_buffer
+                xdata_buffer += self.__xdata_buffer
         self.__frame_number += 1
-        properties["frame_number"] = self.__frame_number
-        properties["integration_count"] = integration_count
-        return {"data": data_buffer, "properties": properties}
+        metadata = xdata_buffer.metadata
+        metadata.setdefault("hardware_source", dict())
+        metadata["hardware_source"]["frame_number"] = self.__frame_number
+        metadata["hardware_source"]["integration_count"] = integration_count
+        xdata_buffer._set_metadata(metadata)
+        # note: the data element will include spatial calibrations; but the camera adapter won't use them
+        # right now (future fix); it uses a call to 'calibrations' instead.
+        return ImportExportManager.create_data_element_from_extended_data(xdata_buffer)
 
     # def acquire_sequence_prepare(self) -> None:
     #     pass
@@ -260,16 +269,9 @@ class Camera(camera_base.Camera):
             while self.__is_playing and not self.__cancel:
                 start = time.time()
                 readout_area = self.readout_area
-                data = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area))
-                binning = self.binning
-                if binning > 1:
-                    # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
-                    data_T = data.T
-                    data = data_T[:(data_T.shape[-1] // binning) * binning].reshape(data_T.shape[0], -1, binning).sum(axis=-1).T
-                    if self.__symmetric_binning:
-                        data = data[:(data.shape[-1] // binning) * binning].reshape(data.shape[0], -1, binning).sum(axis=-1)
-                data += numpy.random.randn(*data.shape)
-                self.__data_buffer = data
+                binning_shape = Geometry.IntSize(self.binning, self.binning if self.__symmetric_binning else 1)
+                xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.exposure_ms / 1000)
+                self.__xdata_buffer = xdata
                 elapsed = time.time() - start
                 mode_index = self.__modes.index(self.__mode)
                 exposure_s = self.__exposures_s[mode_index]

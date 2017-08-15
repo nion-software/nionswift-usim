@@ -58,10 +58,19 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
 
+        slit_in_checkbox = ui.create_check_box_widget(_("Slit In"))
+        slit_in_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_slit_in"))
+
+        eels_row = ui.create_row_widget()
+        eels_row.add_spacing(8)
+        eels_row.add(slit_in_checkbox)
+        eels_row.add_stretch()
+
         column = self.content_widget
 
         column.add(stage_position_widget)
         column.add(beam_shift_widget)
+        column.add(eels_row)
         column.add_stretch()
 
 

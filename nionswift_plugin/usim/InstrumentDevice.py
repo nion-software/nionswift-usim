@@ -3,8 +3,12 @@ import math
 import numpy
 import os
 import random
+import scipy.stats
 import threading
 import typing
+
+from nion.data import Calibration
+from nion.data import DataAndMetadata
 
 from nion.utils import Event
 from nion.utils import Geometry
@@ -86,6 +90,7 @@ class Instrument(stem_controller.STEMController):
         self.__beam_shift_m = Geometry.FloatPoint()
         self.__convergence_angle_rad = 30 / 1000
         self.__defocus_m = 500 / 1E9
+        self.__slit_in = False
         self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(1024, 1024)
         self.__eels_shape = Geometry.IntSize(256, 1024)
@@ -128,7 +133,23 @@ class Instrument(stem_controller.STEMController):
         else:
             return 0, 0, self.__eels_shape[0], self.__eels_shape[1]
 
-    def get_camera_data(self, camera_type: str, readout_area: Geometry.IntRect):
+    def __get_binned_data(self, data: numpy.ndarray, binning_shape: Geometry.IntSize) -> numpy.ndarray:
+        if binning_shape.height > 1:
+            # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
+            data_T = data.T
+            data = data_T[:(data_T.shape[-1] // binning_shape.height) * binning_shape.height].reshape(data_T.shape[0], -1, binning_shape.height).sum(axis=-1).T
+            if binning_shape.width > 1:
+                data = data[:(data.shape[-1] // binning_shape.width) * binning_shape.width].reshape(data.shape[0], -1, binning_shape.width).sum(axis=-1)
+        return data
+
+    def get_electrons_per_pixel(self, pixel_count: int, exposure_s: float) -> float:
+        beam_current_pa = 40
+        e_per_pa = 6.2E18 / 1E12
+        beam_e = beam_current_pa * e_per_pa
+        e_per_pixel_per_second = beam_e / pixel_count
+        return e_per_pixel_per_second * exposure_s
+
+    def get_camera_data(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float) -> DataAndMetadata.DataAndMetadata:
         if camera_type == "ronchigram":
             height = readout_area.height
             width = readout_area.width
@@ -140,12 +161,27 @@ class Instrument(stem_controller.STEMController):
             data = numpy.zeros((height, width), numpy.float32)
             for feature in self.__features:
                 feature.plot(data, offset_m, fov_nm, center_nm, size)
-            # print(f"R {offset_m} {fov_nm} {center_nm} {size}")
-            return data
+            data = self.__get_binned_data(data, binning_shape)
+            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0]
+            data = data * e_per_pixel + numpy.random.poisson(e_per_pixel, size=data.shape).astype(numpy.float) - e_per_pixel
+            intensity_calibration = Calibration.Calibration(units="e")
+            dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
+            return DataAndMetadata.new_data_and_metadata(data, intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
         else:
-            data = numpy.random.poisson(size=tuple(self.__eels_shape)).astype(numpy.float)
+            data = numpy.zeros(tuple(self.__eels_shape), numpy.float)
             probe_position = self.probe_position
+            slit_attenutation = 100 if self.__slit_in else 1
+            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0] / slit_attenutation
+            intensity_calibration = Calibration.Calibration(units="e")
+            dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
             if self.probe_state == "parked" and probe_position is not None:
+                width = data.shape[1]
+                zlp_half_width_eV = 6 / 10 / slit_attenutation  # 12meV = 6meV x 2
+                zlp_half_width = zlp_half_width_eV / dimensional_calibrations[1].scale  # scale is eV/pixel
+                half_width_eV = dimensional_calibrations[1].scale * width // 2
+                zlp_offset = (2 * -dimensional_calibrations[1].offset) / dimensional_calibrations[1].scale / width
+                zlp_offset -= 2 * half_width_eV / dimensional_calibrations[1].scale / width
+                data[:, ...] += scipy.stats.exponnorm(2, loc=-zlp_half_width/width + zlp_offset, scale=zlp_half_width/width).pdf(numpy.linspace(-1, 1, width))
                 size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
                 feature_count = len(self.__features)
@@ -154,7 +190,28 @@ class Instrument(stem_controller.STEMController):
                     if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
                         line_pos = int(((feature_count - 1) - (index + 1)) * self.__eels_shape.width / (feature_count + 2))
                         data[:, line_pos - line_width//2:line_pos - line_width//2 + line_width] += index
-            return data
+            data = self.__get_binned_data(data, binning_shape)
+            data = data * e_per_pixel + numpy.random.poisson(e_per_pixel, size=data.shape).astype(numpy.float) - e_per_pixel
+            return DataAndMetadata.new_data_and_metadata(data, intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
+
+    def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
+        if camera_type == "ronchigram":
+            height = readout_area.height
+            width = readout_area.width
+            full_fov_nm = abs(self.__defocus_m) * math.sin(self.__convergence_angle_rad) * 1E9
+            fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
+            dimensional_calibrations = [
+                Calibration.Calibration(scale=binning_shape[0]*fov_nm[0]/readout_area.size[0], units="nm"),
+                Calibration.Calibration(scale=binning_shape[1]*fov_nm[1]/readout_area.size[1], units="nm")
+            ]
+            return dimensional_calibrations
+        if camera_type == "eels":
+            dimensional_calibrations = [
+                Calibration.Calibration(),
+                Calibration.Calibration(offset=-2, scale=10/readout_area.size[1], units="eV")
+            ]
+            return dimensional_calibrations
+        return [{}, {}]
 
     @property
     def stage_position_m(self) -> Geometry.FloatPoint:
@@ -173,3 +230,12 @@ class Instrument(stem_controller.STEMController):
     def beam_shift_m(self, value: Geometry.FloatPoint) -> None:
         self.__beam_shift_m = value
         self.property_changed_event.fire("beam_shift_m")
+
+    @property
+    def is_slit_in(self) -> bool:
+        return self.__slit_in
+
+    @is_slit_in.setter
+    def is_slit_in(self, value: bool) -> None:
+        self.__slit_in = value
+        self.property_changed_event.fire("is_slit_in")
