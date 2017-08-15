@@ -260,7 +260,7 @@ class Camera(camera_base.Camera):
             while self.__is_playing and not self.__cancel:
                 start = time.time()
                 readout_area = self.readout_area
-                data = self.__instrument.get_camera_data(Geometry.IntRect.from_tlbr(*readout_area))
+                data = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area))
                 binning = self.binning
                 if binning > 1:
                     # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
@@ -290,4 +290,11 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
     camera_device = Camera(camera_id, camera_type, camera_name, instrument)
 
     component_types = {"camera_device"}  # the set of component types that this component represents
+    Registry.register_component(camera_device, component_types)
+
+    camera_id = "usim_eels_camera"
+    camera_type = "eels"
+    camera_name = _("uSim EELS Camera")
+    camera_device = Camera(camera_id, camera_type, camera_name, instrument)
+
     Registry.register_component(camera_device, component_types)

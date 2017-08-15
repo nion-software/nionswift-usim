@@ -19,15 +19,28 @@ class Feature:
         self.size_m = size_m
         self.angle_rad = angle_rad
 
+    def get_scan_rect_m(self, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint) -> Geometry.FloatRect:
+        scan_size_m = Geometry.FloatSize(height=fov_nm.height, width=fov_nm.width) / 1E9
+        scan_rect_m = Geometry.FloatRect.from_center_and_size(Geometry.FloatPoint.make(center_nm) / 1E9, scan_size_m)
+        scan_rect_m -= offset_m
+        return scan_rect_m
+
+    def get_feature_rect_m(self) -> Geometry.FloatRect:
+        return Geometry.FloatRect.from_center_and_size(self.position_m, self.size_m)
+
+    def intersects(self, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, probe_position: Geometry.FloatPoint) -> bool:
+        scan_rect_m = self.get_scan_rect_m(offset_m, fov_nm, center_nm)
+        feature_rect_m = self.get_feature_rect_m()
+        probe_position_m = Geometry.FloatPoint(y=probe_position.y * scan_rect_m.height + scan_rect_m.top, x=probe_position.x * scan_rect_m.width + scan_rect_m.left)
+        return scan_rect_m.intersects_rect(feature_rect_m) and feature_rect_m.contains_point(probe_position_m)
+
     def plot(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize):
         # TODO: how does center_nm interact with stage position?
         # TODO: take into account feature angle
         # TODO: take into account frame parameters angle
         # TODO: expand features to other shapes than rectangle
-        scan_size_m = Geometry.FloatSize(height=fov_nm.height, width=fov_nm.width) / 1E9
-        scan_rect_m = Geometry.FloatRect.from_center_and_size(Geometry.FloatPoint.make(center_nm) / 1E9, scan_size_m)
-        scan_rect_m -= offset_m
-        feature_rect_m = Geometry.FloatRect.from_center_and_size(self.position_m, self.size_m)
+        scan_rect_m = self.get_scan_rect_m(offset_m, fov_nm, center_nm)
+        feature_rect_m = self.get_feature_rect_m()
         if scan_rect_m.intersects_rect(feature_rect_m):
             feature_rect_top_px = int(shape[0] * (feature_rect_m.top - scan_rect_m.top) / scan_rect_m.height)
             feature_rect_left_px = int(shape[1] * (feature_rect_m.left - scan_rect_m.left) / scan_rect_m.width)
@@ -75,6 +88,8 @@ class Instrument(stem_controller.STEMController):
         self.__defocus_m = 500 / 1E9
         self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(1024, 1024)
+        self.__eels_shape = Geometry.IntSize(256, 1024)
+        self.__last_scan_params = None
 
     def trigger_camera_frame(self) -> None:
         self.__camera_frame_event.set()
@@ -97,28 +112,49 @@ class Instrument(stem_controller.STEMController):
         # print(f"S {offset_m} {fov_nm} {center_nm} {size}")
         noise_factor = 0.3
         data = (data + numpy.random.randn(height, width) * noise_factor) * frame_parameters.pixel_time_us
+        self.__last_scan_params = size, fov_nm, center_nm
         return data
 
     def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
-        return self.__ronchigram_shape[0], self.__ronchigram_shape[1]
+        if camera_type == "ronchigram":
+            return self.__ronchigram_shape[0], self.__ronchigram_shape[1]
+        else:
+            return self.__eels_shape[0], self.__eels_shape[1]
 
     def camera_readout_area(self, camera_type: str) -> typing.Tuple[int, int, int, int]:
         # returns readout area TLBR
-        return 0, 0, self.__ronchigram_shape[0], self.__ronchigram_shape[1]
+        if camera_type == "ronchigram":
+            return 0, 0, self.__ronchigram_shape[0], self.__ronchigram_shape[1]
+        else:
+            return 0, 0, self.__eels_shape[0], self.__eels_shape[1]
 
-    def get_camera_data(self, readout_area: Geometry.IntRect):
-        height = readout_area.height
-        width = readout_area.width
-        offset_m = self.stage_position_m - self.beam_shift_m
-        full_fov_nm = abs(self.__defocus_m) * math.sin(self.__convergence_angle_rad) * 1E9
-        fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
-        center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self.__ronchigram_shape.height- 0.5), full_fov_nm * (readout_area.center.x / self.__ronchigram_shape.width - 0.5))
-        size = Geometry.IntSize(height, width)
-        data = numpy.zeros((height, width), numpy.float32)
-        for feature in self.__features:
-            feature.plot(data, offset_m, fov_nm, center_nm, size)
-        # print(f"R {offset_m} {fov_nm} {center_nm} {size}")
-        return data
+    def get_camera_data(self, camera_type: str, readout_area: Geometry.IntRect):
+        if camera_type == "ronchigram":
+            height = readout_area.height
+            width = readout_area.width
+            offset_m = self.stage_position_m - self.beam_shift_m
+            full_fov_nm = abs(self.__defocus_m) * math.sin(self.__convergence_angle_rad) * 1E9
+            fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
+            center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self.__ronchigram_shape.height- 0.5), full_fov_nm * (readout_area.center.x / self.__ronchigram_shape.width - 0.5))
+            size = Geometry.IntSize(height, width)
+            data = numpy.zeros((height, width), numpy.float32)
+            for feature in self.__features:
+                feature.plot(data, offset_m, fov_nm, center_nm, size)
+            # print(f"R {offset_m} {fov_nm} {center_nm} {size}")
+            return data
+        else:
+            data = numpy.random.poisson(size=tuple(self.__eels_shape)).astype(numpy.float)
+            probe_position = self.probe_position
+            if self.probe_state == "parked" and probe_position is not None:
+                size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
+                offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
+                feature_count = len(self.__features)
+                line_width = int(self.__eels_shape.width / (feature_count + 2))
+                for index, feature in enumerate(self.__features):
+                    if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
+                        line_pos = int(((feature_count - 1) - (index + 1)) * self.__eels_shape.width / (feature_count + 2))
+                        data[:, line_pos - line_width//2:line_pos - line_width//2 + line_width] += index
+            return data
 
     @property
     def stage_position_m(self) -> Geometry.FloatPoint:
