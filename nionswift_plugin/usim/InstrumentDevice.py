@@ -16,12 +16,42 @@ from nion.utils import Geometry
 from nion.instrumentation import stem_controller
 
 
+def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
+    # calculate the range
+    # 1 represents 0eV, 0 represents 4000eV
+    # TODO: sub-pixel accuracy
+    data_range = [0, data.shape[0]]
+    energy_range_eV = [energy_calibration.convert_to_calibrated_value(data_range[0]), energy_calibration.convert_to_calibrated_value(data_range[1])]
+    if energy_range_eV[0] < 4000 and energy_range_eV[1] > 0:
+        energy_range_eV[0] = max(0, energy_range_eV[0])
+        energy_range_eV[1] = min(4000, energy_range_eV[1])
+        data_range[0] = int(energy_calibration.convert_from_calibrated_value(energy_range_eV[0]))
+        data_range[1] = int(energy_calibration.convert_from_calibrated_value(energy_range_eV[1]))
+        if energy_range_eV[1] > 4000:
+            energy_range_eV[1] = 4000
+        assert 0 <= energy_range_eV[0] <= energy_range_eV[1] <= 4000
+        assert 0 <= data_range[0] <= data_range[1] <= data.shape[0]
+        range = 1 - energy_range_eV[0] / 4000, 1 - energy_range_eV[1] / 4000
+        if energy_range_eV[1] - energy_range_eV[0] > 0 and data_range[1] - data_range[0] > 0:
+            data[data_range[0]:data_range[1]] += multiplier * scipy.stats.powerlaw(4, loc=0, scale=1).pdf(numpy.linspace(range[0], range[1], data_range[1] - data_range[0])) / 4
+
+
+def plot_zlp(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, slit_attentuation: float) -> None:
+    width = data.shape[0]
+    zlp_half_width_eV = 6 / 10 / slit_attentuation  # 12meV = 6meV x 2
+    zlp_half_width = zlp_half_width_eV / energy_calibration.scale  # scale is eV/pixel
+    half_width_eV = energy_calibration.scale * width // 2
+    zlp_offset = (2 * -energy_calibration.offset) / energy_calibration.scale / width
+    zlp_offset -= 2 * half_width_eV / energy_calibration.scale / width
+    data += multiplier * scipy.stats.exponnorm(2, loc=-zlp_half_width/width + zlp_offset, scale=zlp_half_width/width).pdf(numpy.linspace(-1, 1, width))
+
+
 class Feature:
 
-    def __init__(self, position_m, size_m, angle_rad):
+    def __init__(self, position_m, size_m, edge_k_eV):
         self.position_m = position_m
         self.size_m = size_m
-        self.angle_rad = angle_rad
+        self.edge_k_eV = edge_k_eV
 
     def get_scan_rect_m(self, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint) -> Geometry.FloatRect:
         scan_size_m = Geometry.FloatSize(height=fov_nm.height, width=fov_nm.width) / 1E9
@@ -38,7 +68,7 @@ class Feature:
         probe_position_m = Geometry.FloatPoint(y=probe_position.y * scan_rect_m.height + scan_rect_m.top, x=probe_position.x * scan_rect_m.width + scan_rect_m.left)
         return scan_rect_m.intersects_rect(feature_rect_m) and feature_rect_m.contains_point(probe_position_m)
 
-    def plot(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize):
+    def plot(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> None:
         # TODO: how does center_nm interact with stage position?
         # TODO: take into account feature angle
         # TODO: take into account frame parameters angle
@@ -65,6 +95,11 @@ class Feature:
             feature_rect_px = Geometry.IntRect(feature_rect_origin_px, feature_rect_size_px)
             data[feature_rect_px.top:feature_rect_px.bottom, feature_rect_px.left:feature_rect_px.right] += 1.0
 
+    def plot_spectrum(self, data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
+        plot_powerlaw(data, multiplier, energy_calibration)
+        offset_energy_calibration = Calibration.Calibration(offset=energy_calibration.offset - self.edge_k_eV, scale=energy_calibration.scale, units=energy_calibration.units)
+        plot_powerlaw(data, multiplier * 0.1, offset_energy_calibration)
+
 
 def _relativeFile(filename):
     dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
@@ -81,10 +116,11 @@ class Instrument(stem_controller.STEMController):
         feature_percentage = 0.3
         random_state = random.getstate()
         random.seed(1)
+        energies = [855, 1217, 1839]
         for i in range(100):
             position_m = Geometry.FloatPoint(y=(2 * random.random() - 1.0) * sample_size_m.height, x=(2 * random.random() - 1.0) * sample_size_m.width)
             size_m = feature_percentage * Geometry.FloatSize(height=random.random() * sample_size_m.height, width=random.random() * sample_size_m.width)
-            self.__features.append(Feature(position_m, size_m, 0.0))
+            self.__features.append(Feature(position_m, size_m, energies[i%len(energies)]))
         random.setstate(random_state)
         self.__stage_position_m = Geometry.FloatPoint()
         self.__beam_shift_m = Geometry.FloatPoint()
@@ -175,21 +211,16 @@ class Instrument(stem_controller.STEMController):
             intensity_calibration = Calibration.Calibration(units="e")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
             if self.probe_state == "parked" and probe_position is not None:
-                width = data.shape[1]
-                zlp_half_width_eV = 6 / 10 / slit_attenutation  # 12meV = 6meV x 2
-                zlp_half_width = zlp_half_width_eV / dimensional_calibrations[1].scale  # scale is eV/pixel
-                half_width_eV = dimensional_calibrations[1].scale * width // 2
-                zlp_offset = (2 * -dimensional_calibrations[1].offset) / dimensional_calibrations[1].scale / width
-                zlp_offset -= 2 * half_width_eV / dimensional_calibrations[1].scale / width
-                data[:, ...] += scipy.stats.exponnorm(2, loc=-zlp_half_width/width + zlp_offset, scale=zlp_half_width/width).pdf(numpy.linspace(-1, 1, width))
+                spectrum = numpy.zeros((data.shape[1], ), numpy.float)
+                plot_zlp(spectrum, e_per_pixel, dimensional_calibrations[1], slit_attenutation)
                 size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
                 feature_count = len(self.__features)
                 line_width = int(self.__eels_shape.width / (feature_count + 2))
                 for index, feature in enumerate(self.__features):
                     if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
-                        line_pos = int(((feature_count - 1) - (index + 1)) * self.__eels_shape.width / (feature_count + 2))
-                        data[:, line_pos - line_width//2:line_pos - line_width//2 + line_width] += index
+                        feature.plot_spectrum(spectrum, e_per_pixel / 10, dimensional_calibrations[1])
+                data[:, ...] = spectrum
             data = self.__get_binned_data(data, binning_shape)
             data = data * e_per_pixel + numpy.random.poisson(e_per_pixel, size=data.shape).astype(numpy.float) - e_per_pixel
             return DataAndMetadata.new_data_and_metadata(data, intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
@@ -208,7 +239,7 @@ class Instrument(stem_controller.STEMController):
         if camera_type == "eels":
             dimensional_calibrations = [
                 Calibration.Calibration(),
-                Calibration.Calibration(offset=-2, scale=10/readout_area.size[1], units="eV")
+                Calibration.Calibration(offset=-200, scale=3000/readout_area.size[1], units="eV")
             ]
             return dimensional_calibrations
         return [{}, {}]
