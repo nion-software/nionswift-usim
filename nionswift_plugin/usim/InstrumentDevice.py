@@ -16,42 +16,36 @@ from nion.utils import Geometry
 from nion.instrumentation import stem_controller
 
 
-def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
+def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, offset_eV: float, onset_eV: float) -> None:
     # calculate the range
     # 1 represents 0eV, 0 represents 4000eV
     # TODO: sub-pixel accuracy
     data_range = [0, data.shape[0]]
     energy_range_eV = [energy_calibration.convert_to_calibrated_value(data_range[0]), energy_calibration.convert_to_calibrated_value(data_range[1])]
-    if energy_range_eV[0] < 4000 and energy_range_eV[1] > 0:
-        energy_range_eV[0] = max(0, energy_range_eV[0])
-        energy_range_eV[1] = min(4000, energy_range_eV[1])
-        data_range[0] = int(energy_calibration.convert_from_calibrated_value(energy_range_eV[0]))
-        data_range[1] = int(energy_calibration.convert_from_calibrated_value(energy_range_eV[1]))
-        if energy_range_eV[1] > 4000:
-            energy_range_eV[1] = 4000
-        assert 0 <= energy_range_eV[0] <= energy_range_eV[1] <= 4000
-        assert 0 <= data_range[0] <= data_range[1] <= data.shape[0]
-        range = 1 - energy_range_eV[0] / 4000, 1 - energy_range_eV[1] / 4000
-        if energy_range_eV[1] - energy_range_eV[0] > 0 and data_range[1] - data_range[0] > 0:
-            data[data_range[0]:data_range[1]] += multiplier * scipy.stats.powerlaw(4, loc=0, scale=1).pdf(numpy.linspace(range[0], range[1], data_range[1] - data_range[0])) / 4
+    envelope = scipy.stats.norm(loc=offset_eV, scale=onset_eV).cdf(numpy.linspace(energy_range_eV[0], energy_range_eV[1], data.shape[0]))
+    powerlaw = scipy.stats.powerlaw(4, loc=0, scale=4000)
+    if energy_range_eV[1] - offset_eV > 0:
+        data += envelope * multiplier * powerlaw.pdf(numpy.linspace(energy_range_eV[1], energy_range_eV[0], data_range[1])) / powerlaw.pdf(energy_range_eV[1] - offset_eV)
 
 
-def plot_zlp(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, slit_attentuation: float) -> None:
-    width = data.shape[0]
-    zlp_half_width_eV = 6 / 10 / slit_attentuation  # 12meV = 6meV x 2
-    zlp_half_width = zlp_half_width_eV / energy_calibration.scale  # scale is eV/pixel
-    half_width_eV = energy_calibration.scale * width // 2
-    zlp_offset = (2 * -energy_calibration.offset) / energy_calibration.scale / width
-    zlp_offset -= 2 * half_width_eV / energy_calibration.scale / width
-    data += multiplier * scipy.stats.exponnorm(2, loc=-zlp_half_width/width + zlp_offset, scale=zlp_half_width/width).pdf(numpy.linspace(-1, 1, width))
+def plot_norm(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, energy_eV: float, energy_width_eV: float) -> None:
+    # calculate the range
+    # 1 represents 0eV, 0 represents 4000eV
+    # TODO: sub-pixel accuracy
+    data_range = [0, data.shape[0]]
+    energy_range_eV = [energy_calibration.convert_to_calibrated_value(data_range[0]), energy_calibration.convert_to_calibrated_value(data_range[1])]
+    norm = scipy.stats.norm(loc=energy_eV, scale=energy_width_eV)
+    data += multiplier * norm.pdf(numpy.linspace(energy_range_eV[0], energy_range_eV[1], data_range[1])) / norm.pdf(energy_eV)
 
 
 class Feature:
 
-    def __init__(self, position_m, size_m, edge_k_eV):
+    def __init__(self, position_m, size_m, edges, plasmon_eV, plurality):
         self.position_m = position_m
         self.size_m = size_m
-        self.edge_k_eV = edge_k_eV
+        self.edges = edges
+        self.plasmon_eV = plasmon_eV
+        self.plurality = plurality
 
     def get_scan_rect_m(self, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint) -> Geometry.FloatRect:
         scan_size_m = Geometry.FloatSize(height=fov_nm.height, width=fov_nm.width) / 1E9
@@ -96,9 +90,11 @@ class Feature:
             data[feature_rect_px.top:feature_rect_px.bottom, feature_rect_px.left:feature_rect_px.right] += 1.0
 
     def plot_spectrum(self, data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
-        plot_powerlaw(data, multiplier, energy_calibration)
-        offset_energy_calibration = Calibration.Calibration(offset=energy_calibration.offset - self.edge_k_eV, scale=energy_calibration.scale, units=energy_calibration.units)
-        plot_powerlaw(data, multiplier * 0.1, offset_energy_calibration)
+        for edge_eV, onset_eV in self.edges:
+            strength = multiplier * 0.1
+            plot_powerlaw(data, strength, energy_calibration, edge_eV, onset_eV)
+        for n in range(1, self.plurality + 1):
+            plot_norm(data, multiplier / math.factorial(n), energy_calibration, self.plasmon_eV * n, math.sqrt(self.plasmon_eV))
 
 
 def _relativeFile(filename):
@@ -116,17 +112,20 @@ class Instrument(stem_controller.STEMController):
         feature_percentage = 0.3
         random_state = random.getstate()
         random.seed(1)
-        energies = [855, 1217, 1839]
+        energies = [[(68, 30), (855, 50), (872, 50)], [(29, 15), (1217, 50), (1248, 50)], [(1839, 5), (99, 50)]]  # Ni, Ge, Si
+        plasmons = [20, 16.2, 16.8]
         for i in range(100):
             position_m = Geometry.FloatPoint(y=(2 * random.random() - 1.0) * sample_size_m.height, x=(2 * random.random() - 1.0) * sample_size_m.width)
             size_m = feature_percentage * Geometry.FloatSize(height=random.random() * sample_size_m.height, width=random.random() * sample_size_m.width)
-            self.__features.append(Feature(position_m, size_m, energies[i%len(energies)]))
+            self.__features.append(Feature(position_m, size_m, energies[i%len(energies)], plasmons[i%len(energies)], 4))
         random.setstate(random_state)
         self.__stage_position_m = Geometry.FloatPoint()
         self.__beam_shift_m = Geometry.FloatPoint()
         self.__convergence_angle_rad = 30 / 1000
         self.__defocus_m = 500 / 1E9
         self.__slit_in = False
+        self.__energy_offset_eV = 200
+        self.__energy_per_channel_eV = 2
         self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(1024, 1024)
         self.__eels_shape = Geometry.IntSize(256, 1024)
@@ -150,7 +149,6 @@ class Instrument(stem_controller.STEMController):
         data = numpy.zeros((height, width), numpy.float32)
         for feature in self.__features:
             feature.plot(data, offset_m, fov_nm, center_nm, size)
-        # print(f"S {offset_m} {fov_nm} {center_nm} {size}")
         noise_factor = 0.3
         data = (data + numpy.random.randn(height, width) * noise_factor) * frame_parameters.pixel_time_us
         self.__last_scan_params = size, fov_nm, center_nm
@@ -206,17 +204,15 @@ class Instrument(stem_controller.STEMController):
         else:
             data = numpy.zeros(tuple(self.__eels_shape), numpy.float)
             probe_position = self.probe_position
-            slit_attenutation = 100 if self.__slit_in else 1
-            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0] / slit_attenutation
+            slit_attenuation = 10 if self.__slit_in else 1
+            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0] / slit_attenuation
             intensity_calibration = Calibration.Calibration(units="e")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
             if self.probe_state == "parked" and probe_position is not None:
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
-                plot_zlp(spectrum, e_per_pixel, dimensional_calibrations[1], slit_attenutation)
+                plot_norm(spectrum, e_per_pixel, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
                 size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
-                feature_count = len(self.__features)
-                line_width = int(self.__eels_shape.width / (feature_count + 2))
                 for index, feature in enumerate(self.__features):
                     if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
                         feature.plot_spectrum(spectrum, e_per_pixel / 10, dimensional_calibrations[1])
@@ -239,7 +235,7 @@ class Instrument(stem_controller.STEMController):
         if camera_type == "eels":
             dimensional_calibrations = [
                 Calibration.Calibration(),
-                Calibration.Calibration(offset=-200, scale=3000/readout_area.size[1], units="eV")
+                Calibration.Calibration(offset=-self.__energy_offset_eV, scale=self.__energy_per_channel_eV, units="eV")
             ]
             return dimensional_calibrations
         return [{}, {}]
@@ -270,3 +266,21 @@ class Instrument(stem_controller.STEMController):
     def is_slit_in(self, value: bool) -> None:
         self.__slit_in = value
         self.property_changed_event.fire("is_slit_in")
+
+    @property
+    def energy_offset_eV(self) -> float:
+        return self.__energy_offset_eV
+
+    @energy_offset_eV.setter
+    def energy_offset_eV(self, value: float) -> None:
+        self.__energy_offset_eV = value
+        self.property_changed_event.fire("energy_offset_eV")
+
+    @property
+    def energy_per_channel_eV(self) -> float:
+        return self.__energy_per_channel_eV
+
+    @energy_per_channel_eV.setter
+    def energy_per_channel_eV(self, value: float) -> None:
+        self.__energy_per_channel_eV = value
+        self.property_changed_event.fire("energy_per_channel_eV")

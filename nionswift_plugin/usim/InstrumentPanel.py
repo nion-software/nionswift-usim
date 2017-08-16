@@ -61,9 +61,23 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         slit_in_checkbox = ui.create_check_box_widget(_("Slit In"))
         slit_in_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_slit_in"))
 
+        energy_offset_field = ui.create_line_edit_widget()
+        energy_offset_field.bind_text(Binding.PropertyBinding(instrument, "energy_offset_eV", converter=Converter.FloatToStringConverter()))
+
+        energy_dispersion_field = ui.create_line_edit_widget()
+        energy_dispersion_field.bind_text(Binding.PropertyBinding(instrument, "energy_per_channel_eV", converter=Converter.FloatToStringConverter()))
+
         eels_row = ui.create_row_widget()
         eels_row.add_spacing(8)
         eels_row.add(slit_in_checkbox)
+        eels_row.add_spacing(8)
+        eels_row.add(ui.create_label_widget("+eV"))
+        eels_row.add_spacing(4)
+        eels_row.add(energy_offset_field)
+        eels_row.add_spacing(8)
+        eels_row.add(ui.create_label_widget("eV/ch"))
+        eels_row.add_spacing(4)
+        eels_row.add(energy_dispersion_field)
         eels_row.add_stretch()
 
         column = self.content_widget
