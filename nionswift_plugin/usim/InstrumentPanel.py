@@ -58,6 +58,9 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
 
+        blanked_checkbox = ui.create_check_box_widget(_("Beam Blanked"))
+        blanked_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_blanked"))
+
         slit_in_checkbox = ui.create_check_box_widget(_("Slit In"))
         slit_in_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_slit_in"))
 
@@ -66,6 +69,11 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         energy_dispersion_field = ui.create_line_edit_widget()
         energy_dispersion_field.bind_text(Binding.PropertyBinding(instrument, "energy_per_channel_eV", converter=Converter.FloatToStringConverter()))
+
+        beam_row = ui.create_row_widget()
+        beam_row.add_spacing(8)
+        beam_row.add(blanked_checkbox)
+        beam_row.add_stretch()
 
         eels_row = ui.create_row_widget()
         eels_row.add_spacing(8)
@@ -84,6 +92,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         column.add(stage_position_widget)
         column.add(beam_shift_widget)
+        column.add(beam_row)
         column.add(eels_row)
         column.add_stretch()
 

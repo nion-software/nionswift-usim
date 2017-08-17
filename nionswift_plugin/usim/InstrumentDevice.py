@@ -124,8 +124,9 @@ class Instrument(stem_controller.STEMController):
         self.__convergence_angle_rad = 30 / 1000
         self.__defocus_m = 500 / 1E9
         self.__slit_in = False
-        self.__energy_offset_eV = 200
-        self.__energy_per_channel_eV = 2
+        self.__energy_offset_eV = 20
+        self.__energy_per_channel_eV = 0.5
+        self.__blanked = False
         self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(1024, 1024)
         self.__eels_shape = Geometry.IntSize(256, 1024)
@@ -208,7 +209,7 @@ class Instrument(stem_controller.STEMController):
             e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0] / slit_attenuation
             intensity_calibration = Calibration.Calibration(units="e")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
-            if self.probe_state == "parked" and probe_position is not None:
+            if self.probe_state == "parked" and probe_position is not None and not self.__blanked:
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
                 plot_norm(spectrum, e_per_pixel, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
                 size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
@@ -217,8 +218,11 @@ class Instrument(stem_controller.STEMController):
                     if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
                         feature.plot_spectrum(spectrum, e_per_pixel / 10, dimensional_calibrations[1])
                 data[:, ...] = spectrum
+            else:
+                e_per_pixel = 0
             data = self.__get_binned_data(data, binning_shape)
-            data = data * e_per_pixel + numpy.random.poisson(e_per_pixel, size=data.shape).astype(numpy.float) - e_per_pixel
+            poisson_level = e_per_pixel + 5  # camera noise
+            data = data * e_per_pixel + (numpy.random.poisson(poisson_level, size=data.shape).astype(numpy.float) - poisson_level)
             return DataAndMetadata.new_data_and_metadata(data, intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
 
     def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
@@ -259,6 +263,15 @@ class Instrument(stem_controller.STEMController):
         self.property_changed_event.fire("beam_shift_m")
 
     @property
+    def is_blanked(self) -> bool:
+        return self.__blanked
+
+    @is_blanked.setter
+    def is_blanked(self, value: bool) -> None:
+        self.__blanked = value
+        self.property_changed_event.fire("is_blanked")
+
+    @property
     def is_slit_in(self) -> bool:
         return self.__slit_in
 
@@ -284,3 +297,36 @@ class Instrument(stem_controller.STEMController):
     def energy_per_channel_eV(self, value: float) -> None:
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
+
+    def TryGetVal(self, s: str) -> (bool, float):
+        if s == "EELS_MagneticShift_Offset":
+            return True, self.energy_offset_eV
+        elif s == "C_Blanked":
+            return True, 1.0 if self.is_blanked else 0.0
+        print(f"GetVal {s}")
+        return False, None
+
+    def GetVal(self, s: str, default_value: float=None) -> float:
+        good, d = self.TryGetVal(s)
+        if not good:
+            if default_value is None:
+                raise Exception("No element named '{}' exists! Cannot get value.".format(s))
+            else:
+                return default_value
+        return d
+
+    def SetVal(self, s: str, val: float) -> bool:
+        if s == "EELS_MagneticShift_Offset":
+            self.energy_offset_eV = val
+            return True
+        elif s == "C_Blank":
+            self.is_blanked = val != 0.0
+            return True
+        print(f"SetVal {s}")
+        return False
+
+    def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
+        return self.SetVal(s, val)
+
+    def SetValAndConfirm(self, s: str, val: float, tolfactor: float, timeout_ms: int) -> bool:
+        return self.SetVal(s, val)
