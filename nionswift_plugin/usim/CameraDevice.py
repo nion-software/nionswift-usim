@@ -1,5 +1,6 @@
 # standard libraries
 import copy
+import datetime
 import gettext
 import threading
 import time
@@ -271,12 +272,13 @@ class Camera(camera_base.Camera):
                 readout_area = self.readout_area
                 binning_shape = Geometry.IntSize(self.binning, self.binning if self.__symmetric_binning else 1)
                 xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.exposure_ms / 1000)
-                self.__xdata_buffer = xdata
                 elapsed = time.time() - start
                 mode_index = self.__modes.index(self.__mode)
                 exposure_s = self.__exposures_s[mode_index]
                 if not self.__thread_event.wait(max(exposure_s - elapsed, 0)):
                     # thread event was not triggered during wait; signal that we have data
+                    xdata._set_timestamp(datetime.datetime.utcnow())
+                    self.__xdata_buffer = xdata
                     self.__has_data_event.set()
                     self.__instrument.trigger_camera_frame()
                 else:
