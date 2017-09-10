@@ -128,7 +128,7 @@ class Instrument(stem_controller.STEMController):
         self.__energy_per_channel_eV = 0.5
         self.__blanked = False
         self.property_changed_event = Event.Event()
-        self.__ronchigram_shape = Geometry.IntSize(1024, 1024)
+        self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
         self.__eels_shape = Geometry.IntSize(256, 1024)
         self.__last_scan_params = None
 
@@ -231,9 +231,13 @@ class Instrument(stem_controller.STEMController):
             width = readout_area.width
             full_fov_nm = abs(self.__defocus_m) * math.sin(self.__convergence_angle_rad) * 1E9
             fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
+            scale_y = binning_shape[0] * fov_nm[0] / readout_area.size[0]
+            scale_x = binning_shape[1] * fov_nm[1] / readout_area.size[1]
+            offset_y = -scale_y * readout_area.size[0] * 0.5
+            offset_x = -scale_x * readout_area.size[1] * 0.5
             dimensional_calibrations = [
-                Calibration.Calibration(scale=binning_shape[0]*fov_nm[0]/readout_area.size[0], units="nm"),
-                Calibration.Calibration(scale=binning_shape[1]*fov_nm[1]/readout_area.size[1], units="nm")
+                Calibration.Calibration(offset=offset_y, scale=scale_y, units="nm"),
+                Calibration.Calibration(offset=offset_x, scale=scale_x, units="nm")
             ]
             return dimensional_calibrations
         if camera_type == "eels":
