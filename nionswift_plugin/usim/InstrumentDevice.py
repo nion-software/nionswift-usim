@@ -198,10 +198,11 @@ class Instrument(stem_controller.STEMController):
                 feature.plot(data, offset_m, fov_nm, center_nm, size)
             data = self.__get_binned_data(data, binning_shape)
             e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0]
-            data = data * e_per_pixel + numpy.random.poisson(e_per_pixel, size=data.shape).astype(numpy.float) - e_per_pixel
+            rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
+            data = data * e_per_pixel + rs.poisson(e_per_pixel, size=data.shape) - e_per_pixel
             intensity_calibration = Calibration.Calibration(units="e")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
-            return DataAndMetadata.new_data_and_metadata(data, intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
+            return DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
         else:
             data = numpy.zeros(tuple(self.__eels_shape), numpy.float)
             probe_position = self.probe_position
@@ -222,8 +223,9 @@ class Instrument(stem_controller.STEMController):
                 e_per_pixel = 0
             data = self.__get_binned_data(data, binning_shape)
             poisson_level = e_per_pixel + 5  # camera noise
-            data = data * e_per_pixel + (numpy.random.poisson(poisson_level, size=data.shape).astype(numpy.float) - poisson_level)
-            return DataAndMetadata.new_data_and_metadata(data, intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
+            rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
+            data = data * e_per_pixel + (rs.poisson(poisson_level, size=data.shape) - poisson_level)
+            return DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
 
     def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
         if camera_type == "ronchigram":
