@@ -269,6 +269,15 @@ class Instrument(stem_controller.STEMController):
         self.property_changed_event.fire("beam_shift_m")
 
     @property
+    def defocus_m(self) -> float:
+        return self.__defocus_m
+
+    @defocus_m.setter
+    def defocus_m(self, value: float) -> None:
+        self.__defocus_m = value
+        self.property_changed_event.fire("defocus_m")
+
+    @property
     def is_blanked(self) -> bool:
         return self.__blanked
 
