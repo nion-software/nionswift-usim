@@ -313,6 +313,8 @@ class Instrument(stem_controller.STEMController):
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
 
+    # these are required functions to implement the standard stem controller interface.
+
     def TryGetVal(self, s: str) -> (bool, float):
         if s == "EELS_MagneticShift_Offset":
             return True, self.energy_offset_eV
@@ -344,4 +346,10 @@ class Instrument(stem_controller.STEMController):
         return self.SetVal(s, val)
 
     def SetValAndConfirm(self, s: str, val: float, tolfactor: float, timeout_ms: int) -> bool:
+        return self.SetVal(s, val)
+
+    def SetValDelta(self, s: str, delta: float) -> bool:
+        return self.SetVal(s, self.GetVal(s) + delta)
+
+    def InformControl(self, s: str, val: float) -> bool:
         return self.SetVal(s, val)
