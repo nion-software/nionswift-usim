@@ -11,6 +11,7 @@ from . import InstrumentDevice
 
 # other plug-ins
 from nion.instrumentation import scan_base
+from nion.utils import Registry
 
 _ = gettext.gettext
 
@@ -37,6 +38,10 @@ class Frame:
 
 
 class Device:
+
+    scan_device_id = "usim_scan_device"
+    scan_device_name = _("uSim Scan")
+    stem_controller_id = "usim_stem_controller"
 
     def __init__(self, instrument: InstrumentDevice.Instrument):
         self.__instrument = instrument
@@ -252,9 +257,6 @@ class Device:
 
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
-
-    from nion.swift.model import HardwareSource
-
-    scan_adapter = scan_base.ScanAdapter(Device(instrument), "usim_scan_device", _("uSim Scan"))
-    scan_hardware_source = scan_base.ScanHardwareSource(scan_adapter, "usim_stem_controller")
-    HardwareSource.HardwareSourceManager().register_hardware_source(scan_hardware_source)
+    scan_device = Device(instrument)
+    component_types = {"scan_device"}  # the set of component types that this component represents
+    Registry.register_component(scan_device, component_types)

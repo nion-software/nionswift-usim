@@ -243,6 +243,7 @@ class Camera(camera_base.Camera):
         xdata_buffer._set_metadata(metadata)
         # note: the data element will include spatial calibrations; but the camera adapter won't use them
         # right now (future fix); it uses a call to 'calibrations' instead.
+        # whatever is in "hardware_source" will go into "properties" of data element
         return ImportExportManager.create_data_element_from_extended_data(xdata_buffer)
 
     # def acquire_sequence_prepare(self) -> None:
