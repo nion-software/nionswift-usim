@@ -22,10 +22,8 @@ _ = gettext.gettext
 class Camera(camera_base.Camera):
     """Implement a camera device."""
 
-    def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
-        self.camera_id = camera_id
+    def __init__(self, camera_type: str, instrument: InstrumentDevice.Instrument):
         self.camera_type = camera_type
-        self.camera_name = camera_name
         self.__instrument = instrument
         self.__sensor_dimensions = instrument.camera_sensor_dimensions(camera_type)
         self.__readout_area = instrument.camera_readout_area(camera_type)
@@ -41,6 +39,7 @@ class Camera(camera_base.Camera):
         self.__modes = ("run", "tune", "snap")
         self.__exposures_s = [0.1, 0.2, 0.5]
         self.__binnings = [2, 2, 1]
+        self.__processing = None
         self.__mode = self.__modes[0]
         self.on_low_level_parameter_changed = None
         self.__thread.start()
@@ -193,12 +192,12 @@ class Camera(camera_base.Camera):
     @property
     def processing(self) -> typing.Optional[str]:
         """Return processing actions for the current mode."""
-        return None
+        return self.__processing
 
     @processing.setter
     def processing(self, value: str) -> None:
         """Set processing actions for the current mode."""
-        pass
+        self.__processing = value
 
     @property
     def calibration(self) -> typing.List[dict]:
@@ -276,7 +275,8 @@ class Camera(camera_base.Camera):
                 elapsed = time.time() - start
                 mode_index = self.__modes.index(self.__mode)
                 exposure_s = self.__exposures_s[mode_index]
-                if not self.__thread_event.wait(max(exposure_s - elapsed, 0)):
+                wait_s = max(exposure_s - elapsed, 0)
+                if not self.__thread_event.wait(wait_s):
                     # thread event was not triggered during wait; signal that we have data
                     xdata._set_timestamp(datetime.datetime.utcnow())
                     self.__xdata_buffer = xdata
@@ -289,17 +289,18 @@ class Camera(camera_base.Camera):
 
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
-    camera_id = "usim_ronchigram_camera"
-    camera_type = "ronchigram"
-    camera_name = _("uSim Ronchigram Camera")
-    camera_device = Camera(camera_id, camera_type, camera_name, instrument)
-
     component_types = {"camera_device"}  # the set of component types that this component represents
+
+    camera_device = Camera("ronchigram", instrument)
+    camera_device.camera_id = "usim_ronchigram_camera"
+    camera_device.camera_name = _("uSim Ronchigram Camera")
+    camera_device.camera_panel_type = "ronchigram"
+
     Registry.register_component(camera_device, component_types)
 
-    camera_id = "usim_eels_camera"
-    camera_type = "eels"
-    camera_name = _("uSim EELS Camera")
-    camera_device = Camera(camera_id, camera_type, camera_name, instrument)
+    camera_device = Camera("eels", instrument)
+    camera_device.camera_id = "usim_eels_camera"
+    camera_device.camera_name = _("uSim EELS Camera")
+    camera_device.camera_panel_type = "eels"
 
     Registry.register_component(camera_device, component_types)

@@ -131,6 +131,7 @@ class Instrument(stem_controller.STEMController):
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
         self.__eels_shape = Geometry.IntSize(256, 1024)
         self.__last_scan_params = None
+        self.live_probe_position = None
 
     def trigger_camera_frame(self) -> None:
         self.__camera_frame_event.set()
@@ -140,7 +141,7 @@ class Instrument(stem_controller.STEMController):
         self.__camera_frame_event.clear()
         return result
 
-    def get_scan_data(self, frame_parameters) -> numpy.ndarray:
+    def get_scan_data(self, frame_parameters, channel) -> numpy.ndarray:
         height = frame_parameters.size[0]
         width = frame_parameters.size[1]
         offset_m = self.stage_position_m - self.beam_shift_m
@@ -205,12 +206,18 @@ class Instrument(stem_controller.STEMController):
             return DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
         else:
             data = numpy.zeros(tuple(self.__eels_shape), numpy.float)
-            probe_position = self.probe_position
             slit_attenuation = 10 if self.__slit_in else 1
             e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0] / slit_attenuation
             intensity_calibration = Calibration.Calibration(units="e")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
-            if self.probe_state == "parked" and probe_position is not None and not self.__blanked:
+            probe_position = self.probe_position
+            if self.__blanked:
+                probe_position = None
+            elif self.probe_state == "parked":
+                pass
+            elif self.probe_state == "scanning":
+                probe_position = self.live_probe_position
+            if probe_position is not None:
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
                 plot_norm(spectrum, e_per_pixel, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
                 size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
@@ -320,7 +327,6 @@ class Instrument(stem_controller.STEMController):
             return True, self.energy_offset_eV
         elif s == "C_Blanked":
             return True, 1.0 if self.is_blanked else 0.0
-        print(f"GetVal {s}")
         return False, None
 
     def GetVal(self, s: str, default_value: float=None) -> float:
@@ -339,7 +345,6 @@ class Instrument(stem_controller.STEMController):
         elif s == "C_Blank":
             self.is_blanked = val != 0.0
             return True
-        print(f"SetVal {s}")
         return False
 
     def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:

@@ -24,7 +24,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
 
         instrument = InstrumentDevice.Instrument()
 
-        camera_adapter = camera_base.CameraAdapter("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", CameraDevice.Camera("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", instrument))
+        camera_adapter = camera_base.CameraAdapter("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", CameraDevice.Camera("ronchigram", instrument))
         camera_hardware_source = camera_base.CameraHardwareSource(camera_adapter)
 
         if is_eels:
