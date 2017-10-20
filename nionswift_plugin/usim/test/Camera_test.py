@@ -24,9 +24,11 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
 
         instrument = InstrumentDevice.Instrument()
 
-        camera_adapter = camera_base.CameraAdapter("usim_ronchigram_camera", "ronchigram", "uSim Ronchigram Camera", CameraDevice.Camera("ronchigram", instrument))
+        camera_id = "usim_ronchigram_camera" if not is_eels else "usim_eels_camera"
+        camera_type = "ronchigram" if not is_eels else "eels"
+        camera_name = "uSim Camera"
+        camera_adapter = camera_base.CameraAdapter(camera_id, camera_type, camera_name, CameraDevice.Camera(camera_type, instrument))
         camera_hardware_source = camera_base.CameraHardwareSource(camera_adapter)
-
         if is_eels:
             camera_hardware_source.features["is_eels_camera"] = True
             camera_hardware_source.add_channel_processor(0, HardwareSource.SumProcessor(((0.25, 0.0), (0.5, 1.0))))
@@ -57,6 +59,17 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                 self.assertEqual(frame1_integration_count, 4)
             finally:
                 hardware_source.abort_playing(sync_timeout=3.0)
+
+    def test_camera_eels_works_when_it_produces_1d_data(self):
+        document_controller, document_model, hardware_source, state_controller = self._setup_hardware_source(is_eels=True)
+        with contextlib.closing(document_controller), contextlib.closing(state_controller):
+            frame_parameters = hardware_source.get_frame_parameters(0)
+            frame_parameters.binning = 256  # binning to 1d
+            hardware_source.set_current_frame_parameters(frame_parameters)
+            # two acquisitions will force the data item to be re-used, which triggered an error once
+            self._acquire_one(document_controller, hardware_source)
+            self._acquire_one(document_controller, hardware_source)
+            self.assertEqual(len(document_model.data_items[0].xdata.data_shape), 1)
 
 
 if __name__ == '__main__':

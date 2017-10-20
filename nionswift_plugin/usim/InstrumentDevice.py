@@ -173,7 +173,7 @@ class Instrument(stem_controller.STEMController):
         if binning_shape.height > 1:
             # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
             data_T = data.T
-            data = data_T[:(data_T.shape[-1] // binning_shape.height) * binning_shape.height].reshape(data_T.shape[0], -1, binning_shape.height).sum(axis=-1).T
+            data = data_T[:(data_T.shape[0] // binning_shape.height) * binning_shape.height].reshape(data_T.shape[0], -1, binning_shape.height).sum(axis=-1).T
             if binning_shape.width > 1:
                 data = data[:(data.shape[-1] // binning_shape.width) * binning_shape.width].reshape(data.shape[0], -1, binning_shape.width).sum(axis=-1)
         return data

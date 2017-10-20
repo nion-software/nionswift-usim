@@ -2,6 +2,7 @@
 import copy
 import datetime
 import gettext
+import numpy
 import threading
 import time
 import typing
@@ -243,7 +244,17 @@ class Camera(camera_base.Camera):
         # note: the data element will include spatial calibrations; but the camera adapter won't use them
         # right now (future fix); it uses a call to 'calibrations' instead.
         # whatever is in "hardware_source" will go into "properties" of data element
-        return ImportExportManager.create_data_element_from_extended_data(xdata_buffer)
+        data_element = ImportExportManager.create_data_element_from_extended_data(xdata_buffer)
+        data = data_element["data"]
+        if data.shape[0] == 2:
+            data_element["collection_dimension_count"] = 1
+            data_element["datum_dimension_count"] = 1
+        elif data.shape[0] == 1:
+            data_element["data"] = numpy.squeeze(data)
+            data_element["collection_dimension_count"] = 0
+            data_element["datum_dimension_count"] = 1
+            data_element["spatial_calibrations"] = data_element["spatial_calibrations"][1:]
+        return data_element
 
     # def acquire_sequence_prepare(self) -> None:
     #     pass
