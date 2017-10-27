@@ -198,7 +198,7 @@ class Instrument(stem_controller.STEMController):
             for feature in self.__features:
                 feature.plot(data, offset_m, fov_nm, center_nm, size)
             data = self.__get_binned_data(data, binning_shape)
-            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0]
+            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s)
             rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
             data = data * e_per_pixel + rs.poisson(e_per_pixel, size=data.shape) - e_per_pixel
             intensity_calibration = Calibration.Calibration(units="e")
