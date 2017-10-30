@@ -69,6 +69,7 @@ class Feature:
         # TODO: expand features to other shapes than rectangle
         scan_rect_m = self.get_scan_rect_m(offset_m, fov_nm, center_nm)
         feature_rect_m = self.get_feature_rect_m()
+        sum = 0
         if scan_rect_m.intersects_rect(feature_rect_m):
             feature_rect_top_px = int(shape[0] * (feature_rect_m.top - scan_rect_m.top) / scan_rect_m.height)
             feature_rect_left_px = int(shape[1] * (feature_rect_m.left - scan_rect_m.left) / scan_rect_m.width)
@@ -88,6 +89,8 @@ class Feature:
             feature_rect_size_px = Geometry.IntSize(height=feature_rect_height_px, width=feature_rect_width_px)
             feature_rect_px = Geometry.IntRect(feature_rect_origin_px, feature_rect_size_px)
             data[feature_rect_px.top:feature_rect_px.bottom, feature_rect_px.left:feature_rect_px.right] += 1.0
+            sum += (feature_rect_px.bottom - feature_rect_px.top) * (feature_rect_px.right - feature_rect_px.left)
+        return sum
 
     def plot_spectrum(self, data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
         for edge_eV, onset_eV in self.edges:
@@ -178,12 +181,21 @@ class Instrument(stem_controller.STEMController):
                 data = data[:(data.shape[-1] // binning_shape.width) * binning_shape.width].reshape(data.shape[0], -1, binning_shape.width).sum(axis=-1)
         return data
 
+    @property
+    def counts_per_electron(self):
+        return 40
+
     def get_electrons_per_pixel(self, pixel_count: int, exposure_s: float) -> float:
-        beam_current_pa = 40
-        e_per_pa = 6.2E18 / 1E12
+        beam_current_pa = 200
+        e_per_pa = 6.242E18 / 1E12
         beam_e = beam_current_pa * e_per_pa
         e_per_pixel_per_second = beam_e / pixel_count
         return e_per_pixel_per_second * exposure_s
+
+    def get_total_counts(self, exposure_s: float) -> float:
+        beam_current_pa = 200
+        e_per_pa = 6.242E18 / 1E12
+        return beam_current_pa * e_per_pa * exposure_s * self.counts_per_electron
 
     def get_camera_data(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float) -> DataAndMetadata.DataAndMetadata:
         if camera_type == "ronchigram":
@@ -195,20 +207,24 @@ class Instrument(stem_controller.STEMController):
             center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self.__ronchigram_shape.height- 0.5), full_fov_nm * (readout_area.center.x / self.__ronchigram_shape.width - 0.5))
             size = Geometry.IntSize(height, width)
             data = numpy.zeros((height, width), numpy.float32)
+            feature_pixel_count = 0
             for feature in self.__features:
-                feature.plot(data, offset_m, fov_nm, center_nm, size)
+                feature_pixel_count += feature.plot(data, offset_m, fov_nm, center_nm, size)
+            # features will be positive values; thickness can be simulated by subtracting the features from the
+            # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
+            thickness_param = 100
+            data = thickness_param - data
             data = self.__get_binned_data(data, binning_shape)
-            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s)
+            data_scale = self.get_total_counts(exposure_s) / (data.shape[0] * data.shape[1] * thickness_param)
             rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
-            data = data * e_per_pixel + rs.poisson(e_per_pixel, size=data.shape) - e_per_pixel
-            intensity_calibration = Calibration.Calibration(units="e")
+            data = data * data_scale + rs.poisson(data_scale, size=data.shape) - data_scale
+            intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
             return DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
         else:
             data = numpy.zeros(tuple(self.__eels_shape), numpy.float)
             slit_attenuation = 10 if self.__slit_in else 1
-            e_per_pixel = self.get_electrons_per_pixel(data.shape[0] * data.shape[1], exposure_s) * binning_shape[1] * binning_shape[0] / slit_attenuation
-            intensity_calibration = Calibration.Calibration(units="e")
+            intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
             probe_position = self.probe_position
             if self.__blanked:
@@ -219,19 +235,21 @@ class Instrument(stem_controller.STEMController):
                 probe_position = self.live_probe_position
             if probe_position is not None:
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
-                plot_norm(spectrum, e_per_pixel, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
+                plot_norm(spectrum, 1.0, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
                 size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
                 for index, feature in enumerate(self.__features):
                     if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
-                        feature.plot_spectrum(spectrum, e_per_pixel / 10, dimensional_calibrations[1])
+                        feature.plot_spectrum(spectrum, 1.0 / 10, dimensional_calibrations[1])
+                feature_pixel_count = numpy.sum(spectrum)
                 data[:, ...] = spectrum
             else:
-                e_per_pixel = 0
+                feature_pixel_count = 0
             data = self.__get_binned_data(data, binning_shape)
-            poisson_level = e_per_pixel + 5  # camera noise
+            data_scale = self.get_total_counts(exposure_s) / feature_pixel_count / slit_attenuation / self.__eels_shape[0]
+            poisson_level = data_scale + 5  # camera noise
             rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
-            data = data * e_per_pixel + (rs.poisson(poisson_level, size=data.shape) - poisson_level)
+            data = data * data_scale + (rs.poisson(poisson_level, size=data.shape) - poisson_level)
             return DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
 
     def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):

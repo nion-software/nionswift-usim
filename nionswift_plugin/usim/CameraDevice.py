@@ -240,11 +240,14 @@ class Camera(camera_base.Camera):
         metadata.setdefault("hardware_source", dict())
         metadata["hardware_source"]["frame_number"] = self.__frame_number
         metadata["hardware_source"]["integration_count"] = integration_count
+        metadata["hardware_source"]["counts_per_electron"] = self.__instrument.counts_per_electron
         xdata_buffer._set_metadata(metadata)
         # note: the data element will include spatial calibrations; but the camera adapter won't use them
         # right now (future fix); it uses a call to 'calibrations' instead.
         # whatever is in "hardware_source" will go into "properties" of data element
         data_element = ImportExportManager.create_data_element_from_extended_data(xdata_buffer)
+        data_element["intensity_calibration"]["scale"] = xdata_buffer.intensity_calibration.scale
+        data_element["intensity_calibration"]["units"] = xdata_buffer.intensity_calibration.units
         data = data_element["data"]
         if data.shape[0] == 2:
             data_element["collection_dimension_count"] = 1
