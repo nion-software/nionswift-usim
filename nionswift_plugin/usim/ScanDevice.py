@@ -56,6 +56,7 @@ class Device:
         self.on_device_state_changed = None
         self.__profiles = self.__get_initial_profiles()
         self.__frame_parameters = copy.deepcopy(self.__profiles[0])
+        self.flyback_pixels = 2
 
     def close(self):
         pass
