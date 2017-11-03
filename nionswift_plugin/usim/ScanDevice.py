@@ -249,7 +249,7 @@ class Device:
         if not self.__is_scanning:
             self.__start_next_frame()
             self.__is_scanning = True
-            self.__instrument.live_probe_position = None
+            self.__instrument.live_probe_position = Geometry.FloatPoint() if self.__frame_parameters.external_clock_mode != 0 else None
         return self.__frame_number
 
     def __start_next_frame(self):
