@@ -48,7 +48,6 @@ class Device:
 
     def __init__(self, instrument: InstrumentDevice.Instrument):
         self.__instrument = instrument
-        self.__blanker_enabled = False
         self.__channels = self.__get_channels()
         self.__frame = None
         self.__frame_number = 0
@@ -73,16 +72,6 @@ class Device:
         profiles.append(scan_base.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 1, "fov_nm": 40}))
         profiles.append(scan_base.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 1, "fov_nm": 100}))
         return profiles
-
-    @property
-    def blanker_enabled(self) -> bool:
-        """Return whether blanker is enabled."""
-        return self.__blanker_enabled
-
-    @blanker_enabled.setter
-    def blanker_enabled(self, blanker_on: bool) -> None:
-        """Set whether blanker is enabled."""
-        self.__blanker_enabled = blanker_on
 
     def change_pmt(self, channel_index: int, increase: bool) -> None:
         """Change the PMT value for the give channel; increase or decrease only."""
