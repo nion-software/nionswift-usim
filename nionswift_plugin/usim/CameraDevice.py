@@ -259,7 +259,7 @@ class Camera(camera_base.Camera):
             data_element["spatial_calibrations"] = data_element["spatial_calibrations"][1:]
         return data_element
 
-    # def acquire_sequence_prepare(self) -> None:
+    # def acquire_sequence_prepare(self, n: int) -> None:
     #     pass
 
     # def acquire_sequence(self, n: int) -> dict:
