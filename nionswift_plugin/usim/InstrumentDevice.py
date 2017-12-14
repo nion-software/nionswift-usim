@@ -244,7 +244,7 @@ class Instrument(stem_controller.STEMController):
                 feature_pixel_count = numpy.sum(spectrum)
                 data[:, ...] = spectrum
             else:
-                feature_pixel_count = 0
+                feature_pixel_count = 1
             data = self.__get_binned_data(data, binning_shape)
             data_scale = self.get_total_counts(exposure_s) / feature_pixel_count / slit_attenuation / self.__eels_shape[0]
             poisson_level = data_scale + 5  # camera noise
