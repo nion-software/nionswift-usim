@@ -228,7 +228,7 @@ class Camera(camera_base.Camera):
         mode_index = self.__modes.index(self.__mode)
         exposure_s = self.__exposures_s[mode_index]
         for frame_number in range(integration_count):
-            if not self.__has_data_event.wait(exposure_s * 20):
+            if not self.__has_data_event.wait(exposure_s * 200):
                 raise Exception("No simulator thread.")
             self.__has_data_event.clear()
             if xdata_buffer is None:

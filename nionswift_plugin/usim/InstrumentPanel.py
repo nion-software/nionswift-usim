@@ -58,6 +58,18 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
 
+        defocus_field = ui.create_line_edit_widget()
+        defocus_field.bind_text(Binding.PropertyBinding(instrument, "defocus_m", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+
+        c12_widget = PositionWidget(ui, _("C12"), instrument, "c12")
+
+        c21_widget = PositionWidget(ui, _("C21"), instrument, "c21")
+
+        c23_widget = PositionWidget(ui, _("C23"), instrument, "c23")
+
+        voltage_field = ui.create_line_edit_widget()
+        voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E3)))
+
         blanked_checkbox = ui.create_check_box_widget(_("Beam Blanked"))
         blanked_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_blanked"))
 
@@ -88,10 +100,29 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         eels_row.add(energy_dispersion_field)
         eels_row.add_stretch()
 
+        defocus_row = ui.create_row_widget()
+        defocus_row.add_spacing(8)
+        defocus_row.add_spacing(8)
+        defocus_row.add(ui.create_label_widget("Defocus"))
+        defocus_row.add(defocus_field)
+        defocus_row.add_stretch()
+
+        voltage_row = ui.create_row_widget()
+        voltage_row.add_spacing(8)
+        voltage_row.add_spacing(8)
+        voltage_row.add(ui.create_label_widget("Voltage"))
+        voltage_row.add(voltage_field)
+        voltage_row.add_stretch()
+
         column = self.content_widget
 
         column.add(stage_position_widget)
         column.add(beam_shift_widget)
+        column.add(defocus_row)
+        column.add(c12_widget)
+        column.add(c21_widget)
+        column.add(c23_widget)
+        column.add(voltage_row)
         column.add(beam_row)
         column.add(eels_row)
         column.add_stretch()

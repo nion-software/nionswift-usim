@@ -3,6 +3,7 @@ import math
 import numpy
 import os
 import random
+import scipy.ndimage.interpolation
 import scipy.stats
 import threading
 import typing
@@ -111,6 +112,7 @@ class Instrument(stem_controller.STEMController):
         super().__init__()
         self.__camera_frame_event = threading.Event()
         self.__features = list()
+        stage_size_nm = 150
         sample_size_m = Geometry.FloatSize(height=20, width=20) / 1E9
         feature_percentage = 0.3
         random_state = random.getstate()
@@ -126,12 +128,18 @@ class Instrument(stem_controller.STEMController):
         self.__beam_shift_m = Geometry.FloatPoint()
         self.__convergence_angle_rad = 30 / 1000
         self.__defocus_m = 500 / 1E9
+        self.__c12 = Geometry.FloatPoint()
+        self.__c21 = Geometry.FloatPoint()
+        self.__c23 = Geometry.FloatPoint()
         self.__slit_in = False
         self.__energy_offset_eV = 20
         self.__energy_per_channel_eV = 0.5
+        self.__voltage = 100000
         self.__blanked = False
         self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
+        self.__max_defocus_nm = 5000
+        self.__tv_pixel_angle = math.asin(stage_size_nm / self.__max_defocus_nm) / self.__ronchigram_shape.height
         self.__eels_shape = Geometry.IntSize(256, 1024)
         self.__last_scan_params = None
         self.live_probe_position = None
@@ -201,8 +209,8 @@ class Instrument(stem_controller.STEMController):
         if camera_type == "ronchigram":
             height = readout_area.height
             width = readout_area.width
-            offset_m = self.stage_position_m - self.beam_shift_m
-            full_fov_nm = abs(self.__defocus_m) * math.sin(self.__convergence_angle_rad) * 1E9
+            offset_m = self.stage_position_m
+            full_fov_nm = abs(self.__max_defocus_nm/1E9) * math.sin(self.__convergence_angle_rad) * 1E9
             fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
             center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self.__ronchigram_shape.height- 0.5), full_fov_nm * (readout_area.center.x / self.__ronchigram_shape.width - 0.5))
             size = Geometry.IntSize(height, width)
@@ -218,8 +226,42 @@ class Instrument(stem_controller.STEMController):
             data_scale = self.get_total_counts(exposure_s) / (data.shape[0] * data.shape[1] * thickness_param)
             rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
             data = data * data_scale + rs.poisson(data_scale, size=data.shape) - data_scale
+
+            def apply_aberrations(data, voltage, theta, C0a, C0b, defocus_nm, C12a, C12b, C21a, C21b, C23a, C23b):
+                # derived from code by Juan-Carlos Idrobo and Andy Lupini
+                height, width = data.shape
+                h = 6.626e-34  # Planck's constant, Js
+                m = 9.109e-31  # electron mass, kg
+                e = 1.60e-19  # electron charge, C
+                wavelength_nm = h / math.sqrt(2 * m * e * voltage) * 1E9
+                Txv, Tyv = numpy.meshgrid(numpy.linspace(-theta, theta, width), numpy.linspace(-theta, theta, height))
+                Txv2 = Txv * Txv
+                Tyv2 = Tyv * Tyv
+                Ic1 = (Txv2 + Tyv2) / 2
+                Ic12a = (Txv2 - Tyv2) / 2
+                Ic12b = (Txv * Tyv)
+                Ic21a = Txv * (Txv2 + Tyv2) / 3
+                Ic21b = Tyv * (Txv2 + Tyv2) / 3
+                Ic23a = Txv * (Txv2 - 3 * Tyv2) / 3
+                Ic23b = Tyv * (3 * Txv2 - Tyv2) / 3
+                chi = 2 * math.pi / wavelength_nm * (C0a * Txv + C0b * Tyv + defocus_nm * Ic1 + C12a * Ic12a + C12b * Ic12b + C21a * Ic21a + C21b * Ic21b + C23a * Ic23a + C23b * Ic23b)
+                grad_chi = numpy.gradient(chi)
+                max_chi0 = 2 * math.pi / wavelength_nm * self.__max_defocus_nm * theta  * theta
+                max_chi1 = 2 * math.pi / wavelength_nm * self.__max_defocus_nm * theta  * theta * ((1 - 1/width) * (1 - 1/width) + (1 - 1/height) * (1 - 1/height)) / 2
+                max_chi = max_chi0 - max_chi1
+                c = [grad_chi[0] + height/2, grad_chi[1] + width/2]
+                scale_y = height / 2 / max_chi
+                scale_x = width / 2 / max_chi
+                # scale the offsets so that at max defocus, the coordinates cover the entire area of data.
+                return scipy.ndimage.interpolation.map_coordinates(data, [scale_y * (c[0] - height/2) + height/2, scale_x * (c[1] - width/2) + width/2])
+
+            theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
+            data = apply_aberrations(data, self.__voltage, theta, self.beam_shift_m[1] * 1e9, self.beam_shift_m[0] * 1e9, self.__defocus_m * 1e9,
+                                     self.__c12[0] * 1e9, self.__c12[1] * 1e9, self.__c21[0] * 1e9, self.__c21[1] * 1e9, self.__c23[0] * 1e9, self.__c23[1] * 1e9)
+
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
+
             return DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
         else:
             data = numpy.zeros(tuple(self.__eels_shape), numpy.float)
@@ -256,7 +298,7 @@ class Instrument(stem_controller.STEMController):
         if camera_type == "ronchigram":
             height = readout_area.height
             width = readout_area.width
-            full_fov_nm = abs(self.__defocus_m) * math.sin(self.__convergence_angle_rad) * 1E9
+            full_fov_nm = abs(self.__defocus_m) * math.sin(self.__tv_pixel_angle * self.__ronchigram_shape.height) * 1E9
             fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
             scale_y = binning_shape[0] * fov_nm[0] / readout_area.size[0]
             scale_x = binning_shape[1] * fov_nm[1] / readout_area.size[1]
@@ -301,6 +343,42 @@ class Instrument(stem_controller.STEMController):
     def defocus_m(self, value: float) -> None:
         self.__defocus_m = value
         self.property_changed_event.fire("defocus_m")
+
+    @property
+    def c12(self) -> Geometry.FloatPoint:
+        return self.__c12
+
+    @c12.setter
+    def c12(self, value: Geometry.FloatPoint) -> None:
+        self.__c12 = value
+        self.property_changed_event.fire("c12")
+
+    @property
+    def c21(self) -> Geometry.FloatPoint:
+        return self.__c21
+
+    @c21.setter
+    def c21(self, value: Geometry.FloatPoint) -> None:
+        self.__c21 = value
+        self.property_changed_event.fire("c21")
+
+    @property
+    def c23(self) -> Geometry.FloatPoint:
+        return self.__c23
+
+    @c23.setter
+    def c23(self, value: Geometry.FloatPoint) -> None:
+        self.__c23 = value
+        self.property_changed_event.fire("c23")
+
+    @property
+    def voltage(self) -> float:
+        return self.__voltage
+
+    @voltage.setter
+    def voltage(self, value: float) -> None:
+        self.__voltage = value
+        self.property_changed_event.fire("voltage")
 
     @property
     def is_blanked(self) -> bool:
