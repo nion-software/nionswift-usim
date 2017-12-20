@@ -1,3 +1,9 @@
+"""
+Useful references:
+    http://www.rodenburg.org/guide/index.html
+    http://www.ammrf.org.au/myscope/
+"""
+
 # standard libraries
 import math
 import numpy
@@ -101,6 +107,152 @@ class Feature:
             plot_norm(data, multiplier / math.factorial(n), energy_calibration, self.plasmon_eV * n, math.sqrt(self.plasmon_eV))
 
 
+class AberrationsController:
+    """Track aberrations and apply them.
+
+    All values are SI.
+    """
+    coefficient_names = ("c0a", "c0b", "c10", "c12a", "c12b", "c21a", "c21b", "c23a", "c23b")
+
+    def __init__(self, height, width, theta, max_defocus, defocus):
+        self.__height = height
+        self.__width = width
+        self.__theta = theta
+        self.__max_defocus = max_defocus
+        self.__coefficients = dict()
+        self.__intermediates = dict()  # functions of height/width/theta
+        self.__chis = dict()  # chi's, functions of intermediate and coefficients
+        self.__coefficients["c10"] = defocus
+        self.__chi = None
+        self.__c = None
+
+    def apply(self, aberrations, data):
+        import time
+        t0 = time.perf_counter()
+
+        height = aberrations["height"]
+        width = aberrations["width"]
+        theta = aberrations["theta"]
+
+        if theta != self.__theta or width != self.__width or height != self.__height:
+            self.__width = width
+            self.__height = height
+            self.__theta = theta
+            self.__intermediates = dict()
+            self.__chis = dict()
+            self.__chi = None
+            self.__c = None
+
+        for coefficient_name in self.coefficient_names:
+            if self.__coefficients.get(coefficient_name) != aberrations.get(coefficient_name):
+                # print(f"changed {coefficient_name}")
+                self.__coefficients[coefficient_name] = aberrations[coefficient_name]
+                self.__chis.pop(coefficient_name, None)
+                self.__chi = None
+                self.__c = None
+
+        # below: the tedious part...
+
+        def get_i0ab():
+            i0a = self.__intermediates.get("c0a")
+            i0b = self.__intermediates.get("c0b")
+            if i0a is None or i0b is None:
+                i0a, i0b = numpy.meshgrid(numpy.linspace(-theta, theta, width), numpy.linspace(-theta, theta, height))
+                self.__intermediates["c0a"] = i0a
+                self.__intermediates["c0b"] = i0b
+            return i0a, i0b
+
+        def get_i0a():
+            return get_i0ab()[0]
+
+        def get_i0b():
+            return get_i0ab()[1]
+
+        def get_i0a_squared():
+            i0a_squared = self.__intermediates.get("c0a_squared")
+            if i0a_squared is None:
+                i0a_squared = get_i0a() ** 2
+                self.__intermediates["c0a_squared"] = i0a_squared
+            return i0a_squared
+
+        def get_i0b_squared():
+            i0b_squared = self.__intermediates.get("c0b_squared")
+            if i0b_squared is None:
+                i0b_squared = get_i0b() ** 2
+                self.__intermediates["c0b_squared"] = i0b_squared
+            return i0b_squared
+
+        def get_intermediate(coefficient_name):
+            intermediate = self.__intermediates.get(coefficient_name)
+            if intermediate is None:
+                if coefficient_name == "c0a":
+                    intermediate = get_i0a()
+                elif coefficient_name == "c0b":
+                    intermediate = get_i0b()
+                elif coefficient_name == "c10":
+                    intermediate = (get_i0a_squared() + get_i0b_squared()) / 2
+                elif coefficient_name == "c12a":
+                    intermediate = (get_i0a_squared() - get_i0b_squared()) / 2
+                elif coefficient_name == "c12b":
+                    intermediate = get_i0a() * get_i0b()
+                elif coefficient_name == "c21a":
+                    intermediate = get_i0a() * (get_i0a_squared() + get_i0b_squared()) / 3
+                elif coefficient_name == "c21b":
+                    intermediate = get_i0b() * (get_i0a_squared() + get_i0b_squared()) / 3
+                elif coefficient_name == "c23a":
+                    intermediate = get_i0a() * (get_i0a_squared() - 3 * get_i0b_squared()) / 3
+                elif coefficient_name == "c23b":
+                    intermediate = get_i0b() * (3 * get_i0a_squared() - get_i0b_squared()) / 3
+            return intermediate
+
+        def get_chi(coefficient_name):
+            chi = self.__chis.get(coefficient_name)
+            if chi is None:
+                coefficient = self.__coefficients.get(coefficient_name, 0.0)
+                if coefficient != 0.0:
+                    chi = coefficient * get_intermediate(coefficient_name)
+                if chi is not None:
+                    self.__chis[coefficient_name] = chi
+                else:
+                    self.__chis.pop(coefficient_name, None)
+            return chi
+
+        if self.__chi is None:
+            # print("recalculating chi")
+            for coefficient_name in self.coefficient_names:
+                partial_chi = get_chi(coefficient_name)
+                if partial_chi is not None:
+                    if self.__chi is None:
+                        # print(f"0 {coefficient_name}")
+                        self.__chi = numpy.copy(partial_chi)
+                    else:
+                        # print(f"+ {coefficient_name}")
+                        self.__chi += partial_chi
+            self.__c = None
+
+        if self.__c is None and self.__chi is not None:
+            # print("recalculating grad chi")
+            grad_chi = numpy.gradient(self.__chi)
+            max_chi0 = self.__max_defocus * theta  * theta
+            max_chi1 = self.__max_defocus * theta * theta * ((1 - 1 / width) * (1 - 1 / width) + (1 - 1 / height) * (1 - 1 / height)) / 2
+            max_chi = max_chi0 - max_chi1
+            scale_y = height / 2 / max_chi
+            scale_x = width / 2 / max_chi
+            self.__c = [scale_y * grad_chi[0] + height/2, scale_x * grad_chi[1] + width/2]
+
+        # note, the scaling factor of 2pi/wavelength has been removed from chi since it cancels out.
+
+        if self.__c is not None:
+            # scale the offsets so that at max defocus, the coordinates cover the entire area of data.
+            t1 = time.perf_counter()
+            r = scipy.ndimage.interpolation.map_coordinates(data, self.__c)
+            t2 = time.perf_counter()
+            # print(f"elapsed {t1 - t0} {t2 - t1}")
+            return r
+
+        return numpy.zeros((height, width))
+
+
 def _relativeFile(filename):
     dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
     return os.path.join(dir, filename)
@@ -138,11 +290,13 @@ class Instrument(stem_controller.STEMController):
         self.__blanked = False
         self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
-        self.__max_defocus_nm = 5000
-        self.__tv_pixel_angle = math.asin(stage_size_nm / self.__max_defocus_nm) / self.__ronchigram_shape.height
+        self.__max_defocus = 5000 / 1E9
+        self.__tv_pixel_angle = math.asin(stage_size_nm / (self.__max_defocus * 1E9)) / self.__ronchigram_shape.height
         self.__eels_shape = Geometry.IntSize(256, 1024)
         self.__last_scan_params = None
         self.live_probe_position = None
+        theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
+        self.__aberrations_controller = AberrationsController(self.__ronchigram_shape[0], self.__ronchigram_shape[1], theta, self.__max_defocus, self.__defocus_m)
 
     def trigger_camera_frame(self) -> None:
         self.__camera_frame_event.set()
@@ -210,7 +364,7 @@ class Instrument(stem_controller.STEMController):
             height = readout_area.height
             width = readout_area.width
             offset_m = self.stage_position_m
-            full_fov_nm = abs(self.__max_defocus_nm/1E9) * math.sin(self.__convergence_angle_rad) * 1E9
+            full_fov_nm = abs(self.__max_defocus) * math.sin(self.__convergence_angle_rad) * 1E9
             fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
             center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self.__ronchigram_shape.height- 0.5), full_fov_nm * (readout_area.center.x / self.__ronchigram_shape.width - 0.5))
             size = Geometry.IntSize(height, width)
@@ -227,37 +381,21 @@ class Instrument(stem_controller.STEMController):
             rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
             data = data * data_scale + rs.poisson(data_scale, size=data.shape) - data_scale
 
-            def apply_aberrations(data, voltage, theta, C0a, C0b, defocus_nm, C12a, C12b, C21a, C21b, C23a, C23b):
-                # derived from code by Juan-Carlos Idrobo and Andy Lupini
-                height, width = data.shape
-                h = 6.626e-34  # Planck's constant, Js
-                m = 9.109e-31  # electron mass, kg
-                e = 1.60e-19  # electron charge, C
-                wavelength_nm = h / math.sqrt(2 * m * e * voltage) * 1E9
-                Txv, Tyv = numpy.meshgrid(numpy.linspace(-theta, theta, width), numpy.linspace(-theta, theta, height))
-                Txv2 = Txv * Txv
-                Tyv2 = Tyv * Tyv
-                Ic1 = (Txv2 + Tyv2) / 2
-                Ic12a = (Txv2 - Tyv2) / 2
-                Ic12b = (Txv * Tyv)
-                Ic21a = Txv * (Txv2 + Tyv2) / 3
-                Ic21b = Tyv * (Txv2 + Tyv2) / 3
-                Ic23a = Txv * (Txv2 - 3 * Tyv2) / 3
-                Ic23b = Tyv * (3 * Txv2 - Tyv2) / 3
-                chi = 2 * math.pi / wavelength_nm * (C0a * Txv + C0b * Tyv + defocus_nm * Ic1 + C12a * Ic12a + C12b * Ic12b + C21a * Ic21a + C21b * Ic21b + C23a * Ic23a + C23b * Ic23b)
-                grad_chi = numpy.gradient(chi)
-                max_chi0 = 2 * math.pi / wavelength_nm * self.__max_defocus_nm * theta  * theta
-                max_chi1 = 2 * math.pi / wavelength_nm * self.__max_defocus_nm * theta  * theta * ((1 - 1/width) * (1 - 1/width) + (1 - 1/height) * (1 - 1/height)) / 2
-                max_chi = max_chi0 - max_chi1
-                c = [grad_chi[0] + height/2, grad_chi[1] + width/2]
-                scale_y = height / 2 / max_chi
-                scale_x = width / 2 / max_chi
-                # scale the offsets so that at max defocus, the coordinates cover the entire area of data.
-                return scipy.ndimage.interpolation.map_coordinates(data, [scale_y * (c[0] - height/2) + height/2, scale_x * (c[1] - width/2) + width/2])
-
             theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
-            data = apply_aberrations(data, self.__voltage, theta, self.beam_shift_m[1] * 1e9, self.beam_shift_m[0] * 1e9, self.__defocus_m * 1e9,
-                                     self.__c12[0] * 1e9, self.__c12[1] * 1e9, self.__c21[0] * 1e9, self.__c21[1] * 1e9, self.__c23[0] * 1e9, self.__c23[1] * 1e9)
+            aberrations = dict()
+            aberrations["height"] = data.shape[0]
+            aberrations["width"] = data.shape[1]
+            aberrations["theta"] = theta
+            aberrations["c0a"] = self.beam_shift_m[1]
+            aberrations["c0b"] = self.beam_shift_m[0]
+            aberrations["c10"] = self.__defocus_m
+            aberrations["c12a"] = self.__c12[1]
+            aberrations["c12b"] = self.__c12[0]
+            aberrations["c21a"] = self.__c21[1]
+            aberrations["c21b"] = self.__c21[0]
+            aberrations["c23a"] = self.__c23[1]
+            aberrations["c23b"] = self.__c23[0]
+            data = self.__aberrations_controller.apply(aberrations, data)
 
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_camera_dimensional_calibrations(camera_type, readout_area, binning_shape)
@@ -280,6 +418,11 @@ class Instrument(stem_controller.STEMController):
                 plot_norm(spectrum, 1.0, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
                 size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
+                mean_free_path = 100  # nm. (lambda values from back of Edgerton)
+                thickness = 50  # nm
+                # T/lambda = 0.25 0.5 typical values OLK
+                # ZLP to first plasmon (areas, total count) is T/lambda.
+                # Each plasmon is also reduce by T/L
                 for index, feature in enumerate(self.__features):
                     if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
                         feature.plot_spectrum(spectrum, 1.0 / 10, dimensional_calibrations[1])
