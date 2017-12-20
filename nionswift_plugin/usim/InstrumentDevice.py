@@ -112,7 +112,10 @@ class AberrationsController:
 
     All values are SI.
     """
-    coefficient_names = ("c0a", "c0b", "c10", "c12a", "c12b", "c21a", "c21b", "c23a", "c23b")
+    coefficient_names = (
+        "c0a", "c0b", "c10", "c12a", "c12b", "c21a", "c21b", "c23a", "c23b", "c30", "c32a", "c32b", "c34a", "c34b",
+        "c41a", "c41b", "c43a", "c43b" , "c45a", "c45b", "c50", "c52a", "c52b", "c54a", "c54b", "c56a", "c56b", "c70"
+    )
 
     def __init__(self, height, width, theta, max_defocus, defocus):
         self.__height = height
@@ -182,6 +185,20 @@ class AberrationsController:
                 self.__intermediates["c0b_squared"] = i0b_squared
             return i0b_squared
 
+        def get_iradius():
+            ir = self.__intermediates.get("ir")
+            if ir is None:
+                ir = get_i0a_squared() + get_i0b_squared()
+                self.__intermediates["ir"] = ir
+            return ir
+
+        def get_idiff_sq():
+            ids = self.__intermediates.get("ids")
+            if ids is None:
+                ids = get_i0a_squared() - get_i0b_squared()
+                self.__intermediates["ids"] = ids
+            return ids
+
         def get_intermediate(coefficient_name):
             intermediate = self.__intermediates.get(coefficient_name)
             if intermediate is None:
@@ -190,9 +207,9 @@ class AberrationsController:
                 elif coefficient_name == "c0b":
                     intermediate = get_i0b()
                 elif coefficient_name == "c10":
-                    intermediate = (get_i0a_squared() + get_i0b_squared()) / 2
+                    intermediate = get_iradius() / 2
                 elif coefficient_name == "c12a":
-                    intermediate = (get_i0a_squared() - get_i0b_squared()) / 2
+                    intermediate = get_idiff_sq() / 2
                 elif coefficient_name == "c12b":
                     intermediate = get_i0a() * get_i0b()
                 elif coefficient_name == "c21a":
@@ -202,7 +219,45 @@ class AberrationsController:
                 elif coefficient_name == "c23a":
                     intermediate = get_i0a() * (get_i0a_squared() - 3 * get_i0b_squared()) / 3
                 elif coefficient_name == "c23b":
-                    intermediate = get_i0b() * (3 * get_i0a_squared() - get_i0b_squared()) / 3
+                    intermediate = get_i0b() * (3 * get_idiff_sq()) / 3
+                elif coefficient_name == "c30":
+                    intermediate = get_intermediate("c10") ** 2
+                elif coefficient_name == "c32a":
+                    intermediate = get_intermediate("c10") * get_intermediate("c12a")
+                elif coefficient_name == "c32b":
+                    intermediate = get_intermediate("c10") * get_intermediate("c12b")
+                elif coefficient_name == "c34a":
+                    intermediate = (get_i0a_squared() ** 2 - 6 * get_i0a_squared() * get_i0b_squared() + get_i0b_squared() ** 2) / 4
+                elif coefficient_name == "c34b":
+                    intermediate = get_i0a() ** 3 * get_i0b() - get_i0a() * get_i0b() ** 3
+                elif coefficient_name == "c41a":
+                    intermediate = 4 * get_i0a() * get_intermediate("c10") ** 2 / 5
+                elif coefficient_name == "c41b":
+                    intermediate = 4 * get_i0b() * get_intermediate("c10") ** 2 / 5
+                elif coefficient_name == "c43a":
+                    intermediate = get_iradius() * (get_i0a() * get_idiff_sq()) / 5 - 2 * get_i0a() * get_i0b() ** 2
+                elif coefficient_name == "c43b":
+                    intermediate = get_iradius() * (get_i0b() * get_idiff_sq()) / 5 + 2 * get_i0b() * get_i0a() ** 2
+                elif coefficient_name == "c45a":
+                    intermediate = (get_i0a() * get_idiff_sq() ** 2 - 4 * get_i0a() * get_idiff_sq() * get_i0b() ** 2 - 4 * get_i0a() ** 3 * get_i0b() ** 2) / 5
+                elif coefficient_name == "c45b":
+                    intermediate = (get_i0b() * get_idiff_sq() ** 2 + 4 * get_i0b() * get_idiff_sq() * get_i0a() ** 2 - 4 * get_i0a() ** 2 * get_i0b() ** 3) / 5
+                elif coefficient_name == "c50":
+                    intermediate = 8 * get_intermediate("c10") ** 3 / 6
+                elif coefficient_name == "c52a":
+                    intermediate = get_iradius() ** 2 * get_idiff_sq() / 6
+                elif coefficient_name == "c52b":
+                    intermediate = get_iradius() ** 2 * get_intermediate("c12b") / 3
+                elif coefficient_name == "c54a":
+                    intermediate = (get_iradius() * (get_idiff_sq() ** 2) / 6 - 2 * get_intermediate("c12b")) ** 2
+                elif coefficient_name == "c54b":
+                    intermediate = 2 * get_iradius() * get_idiff_sq() * get_intermediate("c12b") / 3
+                elif coefficient_name == "c56a":
+                    intermediate = get_idiff_sq() ** 3 / 6 - 2 * get_i0a() ** 2 * get_i0b() ** 2 * get_idiff_sq()
+                elif coefficient_name == "c56b":
+                    intermediate = get_intermediate("c12b") * get_idiff_sq() ** 2 - (4 * get_i0a() ** 3 * get_i0b() ** 3) / 3
+                elif coefficient_name == "c70":
+                    intermediate = get_intermediate("c10") ** 4
             return intermediate
 
         def get_chi(coefficient_name):
@@ -283,6 +338,9 @@ class Instrument(stem_controller.STEMController):
         self.__c12 = Geometry.FloatPoint()
         self.__c21 = Geometry.FloatPoint()
         self.__c23 = Geometry.FloatPoint()
+        self.__c30 = 0.0
+        self.__c32 = Geometry.FloatPoint()
+        self.__c34 = Geometry.FloatPoint()
         self.__slit_in = False
         self.__energy_offset_eV = 20
         self.__energy_per_channel_eV = 0.5
@@ -395,6 +453,11 @@ class Instrument(stem_controller.STEMController):
             aberrations["c21b"] = self.__c21[0]
             aberrations["c23a"] = self.__c23[1]
             aberrations["c23b"] = self.__c23[0]
+            aberrations["c30"] = self.__c30
+            aberrations["c32a"] = self.__c32[1]
+            aberrations["c32b"] = self.__c32[0]
+            aberrations["c34a"] = self.__c34[1]
+            aberrations["c34b"] = self.__c34[0]
             data = self.__aberrations_controller.apply(aberrations, data)
 
             intensity_calibration = Calibration.Calibration(units="counts")
@@ -513,6 +576,33 @@ class Instrument(stem_controller.STEMController):
     def c23(self, value: Geometry.FloatPoint) -> None:
         self.__c23 = value
         self.property_changed_event.fire("c23")
+
+    @property
+    def c30(self) -> float:
+        return self.__c30
+
+    @c30.setter
+    def c30(self, value: float) -> None:
+        self.__c30 = value
+        self.property_changed_event.fire("c30")
+
+    @property
+    def c32(self) -> Geometry.FloatPoint:
+        return self.__c32
+
+    @c32.setter
+    def c32(self, value: Geometry.FloatPoint) -> None:
+        self.__c32 = value
+        self.property_changed_event.fire("c32")
+
+    @property
+    def c34(self) -> Geometry.FloatPoint:
+        return self.__c34
+
+    @c34.setter
+    def c34(self, value: Geometry.FloatPoint) -> None:
+        self.__c34 = value
+        self.property_changed_event.fire("c34")
 
     @property
     def voltage(self) -> float:

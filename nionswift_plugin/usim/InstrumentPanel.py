@@ -54,6 +54,9 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         ui = document_controller.ui
 
+        voltage_field = ui.create_line_edit_widget()
+        voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
+
         stage_position_widget = PositionWidget(ui, _("Stage"), instrument, "stage_position_m")
 
         beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
@@ -67,8 +70,12 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         c23_widget = PositionWidget(ui, _("C23"), instrument, "c23")
 
-        voltage_field = ui.create_line_edit_widget()
-        voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
+        c3_field = ui.create_line_edit_widget()
+        c3_field.bind_text(Binding.PropertyBinding(instrument, "c30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+
+        c32_widget = PositionWidget(ui, _("C32"), instrument, "c32")
+
+        c34_widget = PositionWidget(ui, _("C34"), instrument, "c34")
 
         blanked_checkbox = ui.create_check_box_widget(_("Beam Blanked"))
         blanked_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_blanked"))
@@ -107,6 +114,13 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         defocus_row.add(defocus_field)
         defocus_row.add_stretch()
 
+        c3_row = ui.create_row_widget()
+        c3_row.add_spacing(8)
+        c3_row.add_spacing(8)
+        c3_row.add(ui.create_label_widget("Spherical Aberration"))
+        c3_row.add(c3_field)
+        c3_row.add_stretch()
+
         voltage_row = ui.create_row_widget()
         voltage_row.add_spacing(8)
         voltage_row.add_spacing(8)
@@ -116,13 +130,16 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         column = self.content_widget
 
+        column.add(voltage_row)
         column.add(stage_position_widget)
         column.add(beam_shift_widget)
         column.add(defocus_row)
         column.add(c12_widget)
         column.add(c21_widget)
         column.add(c23_widget)
-        column.add(voltage_row)
+        column.add(c3_row)
+        column.add(c32_widget)
+        column.add(c34_widget)
         column.add(beam_row)
         column.add(eels_row)
         column.add_stretch()
