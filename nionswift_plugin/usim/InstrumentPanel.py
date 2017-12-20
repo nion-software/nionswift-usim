@@ -68,7 +68,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         c23_widget = PositionWidget(ui, _("C23"), instrument, "c23")
 
         voltage_field = ui.create_line_edit_widget()
-        voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E3)))
+        voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
 
         blanked_checkbox = ui.create_check_box_widget(_("Beam Blanked"))
         blanked_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_blanked"))
