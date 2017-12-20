@@ -57,6 +57,9 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         voltage_field = ui.create_line_edit_widget()
         voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
 
+        beam_current_field = ui.create_line_edit_widget()
+        beam_current_field.bind_text(Binding.PropertyBinding(instrument, "beam_current", converter=Converter.PhysicalValueToStringConverter(units="pA", multiplier=1E12)))
+
         stage_position_widget = PositionWidget(ui, _("Stage"), instrument, "stage_position_m")
 
         beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
@@ -128,9 +131,17 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         voltage_row.add(voltage_field)
         voltage_row.add_stretch()
 
+        beam_current_row = ui.create_row_widget()
+        beam_current_row.add_spacing(8)
+        beam_current_row.add_spacing(8)
+        beam_current_row.add(ui.create_label_widget("Beam Current"))
+        beam_current_row.add(beam_current_field)
+        beam_current_row.add_stretch()
+
         column = self.content_widget
 
         column.add(voltage_row)
+        column.add(beam_current_row)
         column.add(stage_position_widget)
         column.add(beam_shift_widget)
         column.add(defocus_row)

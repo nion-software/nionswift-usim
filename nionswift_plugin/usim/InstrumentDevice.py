@@ -345,6 +345,7 @@ class Instrument(stem_controller.STEMController):
         self.__energy_offset_eV = 20
         self.__energy_per_channel_eV = 0.5
         self.__voltage = 100000
+        self.__beam_current = 200E-12  # 200 pA
         self.__blanked = False
         self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
@@ -406,14 +407,14 @@ class Instrument(stem_controller.STEMController):
         return 40
 
     def get_electrons_per_pixel(self, pixel_count: int, exposure_s: float) -> float:
-        beam_current_pa = 200
+        beam_current_pa = self.__beam_current * 1E12
         e_per_pa = 6.242E18 / 1E12
         beam_e = beam_current_pa * e_per_pa
         e_per_pixel_per_second = beam_e / pixel_count
         return e_per_pixel_per_second * exposure_s
 
     def get_total_counts(self, exposure_s: float) -> float:
-        beam_current_pa = 200
+        beam_current_pa = self.__beam_current * 1E12
         e_per_pa = 6.242E18 / 1E12
         return beam_current_pa * e_per_pa * exposure_s * self.counts_per_electron
 
@@ -612,6 +613,15 @@ class Instrument(stem_controller.STEMController):
     def voltage(self, value: float) -> None:
         self.__voltage = value
         self.property_changed_event.fire("voltage")
+
+    @property
+    def beam_current(self) -> float:
+        return self.__beam_current
+
+    @beam_current.setter
+    def beam_current(self, value: float) -> None:
+        self.__beam_current = value
+        self.property_changed_event.fire("beam_current")
 
     @property
     def is_blanked(self) -> bool:
