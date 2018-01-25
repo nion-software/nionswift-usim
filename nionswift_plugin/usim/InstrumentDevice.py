@@ -111,6 +111,8 @@ class AberrationsController:
     """Track aberrations and apply them.
 
     All values are SI.
+
+    Derived from code by Juan-Carlos Idrobo and Andy Lupini.
     """
     coefficient_names = (
         "c0a", "c0b", "c10", "c12a", "c12b", "c21a", "c21b", "c23a", "c23b", "c30", "c32a", "c32b", "c34a", "c34b",
