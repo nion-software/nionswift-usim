@@ -12,11 +12,11 @@ of Nion Swift to get everything running.
 If you are looking for a version to work with Nion Swift 0.11 (the latest public release of Nion Swift),
 download `nionswift-usim` here:
 
-[Microscope Simulator for NionSwift 0.11](https://github.com/nion-software/nionswift-usim/archive/nionswift-0.11.1.zip)
+[Microscope Simulator for NionSwift 0.12](https://github.com/nion-software/nionswift-usim/archive/nionswift-0.12.0.zip)
 
 Unzip the file. Then using the command line, run the following commands.
 
-    $ cd nionswift-usim-nionswift-0.11.1
+    $ cd nionswift-usim-nionswift-0.12.0
     $ /path/to/python/pip install --no-deps .
     
 The `no-deps` argument is required since with Nion Swift 0.11 the required packages will not automatically be on
@@ -24,11 +24,11 @@ the `PYTHONPATH`.
 
 If you are running on Windows, you will also need to download `nionswift-instrumentation-kit` here:
 
-[Instrumentation Kit for NionSwift 0.11 -- Windows Only](https://github.com/nion-software/nionswift-instrumentation-kit/archive/nionswift-0.11.1.zip)
+[Instrumentation Kit for NionSwift 0.12 -- Windows Only](https://github.com/nion-software/nionswift-instrumentation-kit/archive/nionswift-0.12.0.zip)
 
 Unzip the file. Then using the command line, run the following commands.
 
-    $ cd nionswift-instrumentation-kit-nionswift-0.11.1
+    $ cd nionswift-instrumentation-kit-nionswift-0.12.0
     $ /path/to/python/pip install --no-deps .
 
 ## Developer Installation
