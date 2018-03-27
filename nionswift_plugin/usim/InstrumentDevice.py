@@ -699,3 +699,11 @@ class Instrument(stem_controller.STEMController):
 
     def InformControl(self, s: str, val: float) -> bool:
         return self.SetVal(s, val)
+
+    def change_stage_position(self, *, dy: int=None, dx: int=None):
+        """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
+        self.stage_position_m += Geometry.FloatPoint(y=-dy, x=-dx)
+
+    def change_pmt_gain(self, pmt_type: stem_controller.PMTType, *, factor: float) -> None:
+        """Change specified PMT by factor. Do not wait for confirmation."""
+        pass
