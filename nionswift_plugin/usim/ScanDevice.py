@@ -71,10 +71,6 @@ class Device:
         profiles.append(scan_base.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 1, "fov_nm": 100}))
         return profiles
 
-    def change_pmt(self, channel_index: int, increase: bool) -> None:
-        """Change the PMT value for the give channel; increase or decrease only."""
-        pass
-
     @property
     def current_frame_parameters(self) -> scan_base.ScanFrameParameters:
         return self.__frame_parameters
