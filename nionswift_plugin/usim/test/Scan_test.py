@@ -9,8 +9,7 @@ from nionswift_plugin.usim import ScanDevice
 class TestSimulatorScan(ScanControl_test.TestScanControlClass):
 
     def _setup_hardware_source(self, instrument) -> HardwareSource.HardwareSource:
-        scan_adapter = scan_base.ScanAdapter(ScanDevice.Device(instrument), "usim_scan_device", "uSim Scan")
-        scan_hardware_source = scan_base.ScanHardwareSource(scan_adapter, "usim_stem_controller")
+        scan_hardware_source = scan_base.ScanHardwareSource("usim_stem_controller", ScanDevice.Device(instrument), "usim_scan_device", "uSim Scan")
         return scan_hardware_source
 
     def _close_hardware_source(self) -> None:

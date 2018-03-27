@@ -12,7 +12,6 @@ from . import InstrumentDevice
 # other plug-ins
 from nion.instrumentation import scan_base
 from nion.utils import Geometry
-from nion.utils import Model
 from nion.utils import Registry
 
 _ = gettext.gettext
@@ -42,11 +41,10 @@ class Frame:
 
 class Device:
 
-    scan_device_id = "usim_scan_device"
-    scan_device_name = _("uSim Scan")
-    stem_controller_id = "usim_stem_controller"
-
     def __init__(self, instrument: InstrumentDevice.Instrument):
+        self.scan_device_id = "usim_scan_device"
+        self.scan_device_name = _("uSim Scan")
+        self.stem_controller_id = "usim_stem_controller"
         self.__instrument = instrument
         self.__channels = self.__get_channels()
         self.__frame = None
