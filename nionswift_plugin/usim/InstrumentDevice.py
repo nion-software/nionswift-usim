@@ -661,6 +661,23 @@ class Instrument(stem_controller.STEMController):
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
 
+    def get_autostem_properties(self):
+        """Return a new autostem properties (dict) to be recorded with an acquisition.
+
+           * use property names that are lower case and separated by underscores
+           * use property names that include the unit attached to the end
+           * avoid using abbreviations
+           * avoid adding None entries
+           * dict must be serializable using json.dumps(dict)
+
+           Be aware that these properties may be used far into the future so take care when designing additions and
+           discuss/review with team members.
+        """
+        return {
+            "high_tension_v": self.voltage,
+            "defocus_m": self.defocus_m,
+        }
+
     # these are required functions to implement the standard stem controller interface.
 
     def TryGetVal(self, s: str) -> (bool, float):
