@@ -23,8 +23,10 @@ _ = gettext.gettext
 class Camera(camera_base.Camera):
     """Implement a camera device."""
 
-    def __init__(self, camera_type: str, instrument: InstrumentDevice.Instrument):
+    def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
+        self.camera_id = camera_id
         self.camera_type = camera_type
+        self.camera_name = camera_name
         self.__instrument = instrument
         self.__sensor_dimensions = instrument.camera_sensor_dimensions(camera_type)
         self.__readout_area = instrument.camera_readout_area(camera_type)
@@ -236,27 +238,26 @@ class Camera(camera_base.Camera):
             else:
                 xdata_buffer += self.__xdata_buffer
         self.__frame_number += 1
-        metadata = xdata_buffer.metadata
-        metadata.setdefault("hardware_source", dict())
-        metadata["hardware_source"]["frame_number"] = self.__frame_number
-        metadata["hardware_source"]["integration_count"] = integration_count
-        metadata["hardware_source"]["counts_per_electron"] = self.__instrument.counts_per_electron
-        xdata_buffer._set_metadata(metadata)
         # note: the data element will include spatial calibrations; but the camera adapter won't use them
         # right now (future fix); it uses a call to 'calibrations' instead.
         # whatever is in "hardware_source" will go into "properties" of data element
-        data_element = ImportExportManager.create_data_element_from_extended_data(xdata_buffer)
+        assert len(xdata_buffer.dimensional_shape) == 2
+        data_element = dict()
+        data_element["version"] = 1
+        data_element["data"] = xdata_buffer.data
+        data_element["timestamp"] = xdata_buffer.timestamp
+        data_element["properties"] = dict()
+        data_element["properties"]["frame_number"] = self.__frame_number
+        data_element["properties"]["integration_count"] = integration_count
+        data_element["properties"]["counts_per_electron"] = self.__instrument.counts_per_electron
+        data_element["intensity_calibration"] = dict()
         data_element["intensity_calibration"]["scale"] = xdata_buffer.intensity_calibration.scale
         data_element["intensity_calibration"]["units"] = xdata_buffer.intensity_calibration.units
-        data = data_element["data"]
-        if data.shape[0] == 2:
-            data_element["collection_dimension_count"] = 1
-            data_element["datum_dimension_count"] = 1
-        elif data.shape[0] == 1:
-            data_element["data"] = numpy.squeeze(data)
+        # data that has been binned vertically to a single row will be converted to 1D
+        if xdata_buffer.dimensional_shape[0] == 1:
+            data_element["data"] = numpy.squeeze(xdata_buffer.data)
             data_element["collection_dimension_count"] = 0
             data_element["datum_dimension_count"] = 1
-            data_element["spatial_calibrations"] = data_element["spatial_calibrations"][1:]
         return data_element
 
     # def acquire_sequence_prepare(self, n: int) -> None:
@@ -305,16 +306,12 @@ class Camera(camera_base.Camera):
 def run(instrument: InstrumentDevice.Instrument) -> None:
     component_types = {"camera_device"}  # the set of component types that this component represents
 
-    camera_device = Camera("ronchigram", instrument)
-    camera_device.camera_id = "usim_ronchigram_camera"
-    camera_device.camera_name = _("uSim Ronchigram Camera")
+    camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
     camera_device.camera_panel_type = "ronchigram"
 
     Registry.register_component(camera_device, component_types)
 
-    camera_device = Camera("eels", instrument)
-    camera_device.camera_id = "usim_eels_camera"
-    camera_device.camera_name = _("uSim EELS Camera")
+    camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
     camera_device.camera_panel_type = "eels"
 
     Registry.register_component(camera_device, component_types)
