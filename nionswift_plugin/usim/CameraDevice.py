@@ -307,11 +307,13 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
     component_types = {"camera_device"}  # the set of component types that this component represents
 
     camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
+    camera_device.stem_controller_id = "usim_stem_controller"
     camera_device.camera_panel_type = "ronchigram"
 
     Registry.register_component(camera_device, component_types)
 
     camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
+    camera_device.stem_controller_id = "usim_stem_controller"
     camera_device.camera_panel_type = "eels"
 
     Registry.register_component(camera_device, component_types)
