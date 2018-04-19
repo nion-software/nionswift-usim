@@ -371,15 +371,15 @@ class Instrument(stem_controller.STEMController):
         height = frame_parameters.size[0]
         width = frame_parameters.size[1]
         offset_m = self.stage_position_m - self.beam_shift_m
-        fov_nm = Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
+        fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
         center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
         size = Geometry.IntSize(height, width)
         data = numpy.zeros((height, width), numpy.float32)
         for feature in self.__features:
-            feature.plot(data, offset_m, fov_nm, center_nm, size)
+            feature.plot(data, offset_m, fov_size_nm, center_nm, size)
         noise_factor = 0.3
         data = (data + numpy.random.randn(height, width) * noise_factor) * frame_parameters.pixel_time_us
-        self.__last_scan_params = size, fov_nm, center_nm
+        self.__last_scan_params = size, fov_size_nm, center_nm
         return data
 
     def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
@@ -426,13 +426,13 @@ class Instrument(stem_controller.STEMController):
             width = readout_area.width
             offset_m = self.stage_position_m
             full_fov_nm = abs(self.__max_defocus) * math.sin(self.__convergence_angle_rad) * 1E9
-            fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
+            fov_size_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
             center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self.__ronchigram_shape.height- 0.5), full_fov_nm * (readout_area.center.x / self.__ronchigram_shape.width - 0.5))
             size = Geometry.IntSize(height, width)
             data = numpy.zeros((height, width), numpy.float32)
             feature_pixel_count = 0
             for feature in self.__features:
-                feature_pixel_count += feature.plot(data, offset_m, fov_nm, center_nm, size)
+                feature_pixel_count += feature.plot(data, offset_m, fov_size_nm, center_nm, size)
             # features will be positive values; thickness can be simulated by subtracting the features from the
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
@@ -482,7 +482,7 @@ class Instrument(stem_controller.STEMController):
             if probe_position is not None:
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
                 plot_norm(spectrum, 1.0, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
-                size, fov_nm, center_nm = self.__last_scan_params  # get these from last scan
+                size, fov_size_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
                 mean_free_path = 100  # nm. (lambda values from back of Edgerton)
                 thickness = 50  # nm
@@ -490,7 +490,7 @@ class Instrument(stem_controller.STEMController):
                 # ZLP to first plasmon (areas, total count) is T/lambda.
                 # Each plasmon is also reduce by T/L
                 for index, feature in enumerate(self.__features):
-                    if feature.intersects(offset_m, fov_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
+                    if feature.intersects(offset_m, fov_size_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
                         feature.plot_spectrum(spectrum, 1.0 / 10, dimensional_calibrations[1])
                 feature_pixel_count = numpy.sum(spectrum)
                 data[:, ...] = spectrum

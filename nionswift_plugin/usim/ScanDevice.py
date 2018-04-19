@@ -175,8 +175,6 @@ class Device:
             data_element = dict()
             data_element["data"] = channel.data
             properties = current_frame.frame_parameters.as_dict()
-            properties["pixels_x"] = current_frame.frame_parameters.size[1]
-            properties["pixels_y"] = current_frame.frame_parameters.size[1]
             properties["center_x_nm"] = current_frame.frame_parameters.center_nm[1]
             properties["center_y_nm"] = current_frame.frame_parameters.center_nm[0]
             properties["rotation_deg"] = math.degrees(current_frame.frame_parameters.rotation_rad)
@@ -216,7 +214,6 @@ class Device:
 
         Device should use these parameters for new acquisition; and update to these parameters during acquisition.
         """
-        self.__thread_pending_frame_parameters = copy.deepcopy(frame_parameters)
         self.__frame_parameters = copy.deepcopy(frame_parameters)
 
     def set_profile_frame_parameters(self, profile_index: int, frame_parameters: scan_base.ScanFrameParameters) -> None:
