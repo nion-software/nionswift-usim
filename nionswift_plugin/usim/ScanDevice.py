@@ -119,9 +119,8 @@ class Device:
         frame_number = current_frame.frame_number
 
         frame_parameters = current_frame.frame_parameters
-        height = frame_parameters.size[0]
-        width = frame_parameters.size[1]
-        total_pixels = height * width
+        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
+        total_pixels = size.height * size.width
         time_slice = 0.005  # 5ms
 
         if current_frame.scan_data is None:
@@ -138,7 +137,7 @@ class Device:
             if frame_parameters.external_clock_mode != 0:
                 h, w = current_frame.scan_data[0].shape
                 y, x = current_frame.data_count // w, current_frame.data_count % w
-                if current_frame.data_count % width == 0:
+                if current_frame.data_count % size.width == 0:
                     # throw away two flyback images at beginning of line
                     if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
                         current_frame.bad = True
@@ -182,16 +181,15 @@ class Device:
             data_element["properties"] = properties
             data_elements.append(data_element)
 
-        width = current_frame.frame_parameters.size[1]
-        current_rows_read = current_frame.data_count // width
+        current_rows_read = current_frame.data_count // size.width
 
         if current_frame.complete:
-            sub_area = ((0, 0), current_frame.frame_parameters.size)
+            sub_area = ((0, 0), size)
             pixels_to_skip = 0
             self.__frame = None
         else:
-            sub_area = ((pixels_to_skip // width, 0), (current_rows_read - pixels_to_skip // width, width))
-            pixels_to_skip = width * current_rows_read
+            sub_area = ((pixels_to_skip // size.width, 0), (current_rows_read - pixels_to_skip // size.width, size.width))
+            pixels_to_skip = size.width * current_rows_read
 
         complete = current_frame.complete
         bad_frame = False
@@ -235,8 +233,9 @@ class Device:
     def __start_next_frame(self):
         frame_parameters = copy.deepcopy(self.__frame_parameters)
         channels = [copy.deepcopy(channel) for channel in self.__channels if channel.enabled]
+        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
         for channel in channels:
-            channel.data = numpy.zeros(frame_parameters.size, numpy.float32)
+            channel.data = numpy.zeros(tuple(size), numpy.float32)
         self.__frame_number += 1
         self.__frame = Frame(self.__frame_number, channels, frame_parameters)
 

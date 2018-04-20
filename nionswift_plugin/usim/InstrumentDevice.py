@@ -368,17 +368,23 @@ class Instrument(stem_controller.STEMController):
         return result
 
     def get_scan_data(self, frame_parameters, channel) -> numpy.ndarray:
-        height = frame_parameters.size[0]
-        width = frame_parameters.size[1]
+        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
         offset_m = self.stage_position_m - self.beam_shift_m
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
+        if frame_parameters.subscan_fractional_size:
+            subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
+            fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height,
+                                             width=fov_size_nm.width * subscan_fractional_size.width)
         center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
-        size = Geometry.IntSize(height, width)
-        data = numpy.zeros((height, width), numpy.float32)
+        if frame_parameters.subscan_fractional_center:
+            subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center)
+            center_nm += Geometry.FloatPoint(y=(subscan_fractional_center.y - 0.5) * fov_size_nm.height,
+                                             x=(subscan_fractional_center.x - 0.5) * fov_size_nm.width)
+        data = numpy.zeros((size.height, size.width), numpy.float32)
         for feature in self.__features:
             feature.plot(data, offset_m, fov_size_nm, center_nm, size)
         noise_factor = 0.3
-        data = (data + numpy.random.randn(height, width) * noise_factor) * frame_parameters.pixel_time_us
+        data = (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us
         self.__last_scan_params = size, fov_size_nm, center_nm
         return data
 
