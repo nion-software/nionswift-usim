@@ -54,6 +54,7 @@ class Device:
         self.__profiles = self.__get_initial_profiles()
         self.__frame_parameters = copy.deepcopy(self.__profiles[0])
         self.flyback_pixels = 2
+        self.__buffer = list()
 
     def close(self):
         pass
@@ -194,6 +195,13 @@ class Device:
         complete = current_frame.complete
         bad_frame = False
 
+        if complete:
+            if len(self.__buffer) > 0 and len(self.__buffer[-1]) != len(data_elements):
+                self.__buffer = list()
+            self.__buffer.append(data_elements)
+            while len(self.__buffer) > 100:
+                del self.__buffer[0]
+
         return data_elements, complete, bad_frame, sub_area, frame_number, pixels_to_skip
 
     def get_profile_frame_parameters(self, profile_index: int) -> scan_base.ScanFrameParameters:
@@ -225,6 +233,7 @@ class Device:
     def start_frame(self, is_continuous: bool) -> int:
         """Start acquiring. Return the frame number."""
         if not self.__is_scanning:
+            self.__buffer = list()
             self.__start_next_frame()
             self.__is_scanning = True
             self.__instrument.live_probe_position = Geometry.FloatPoint() if self.__frame_parameters.external_clock_mode != 0 else None
@@ -251,6 +260,12 @@ class Device:
     @property
     def is_scanning(self) -> bool:
         return self.__is_scanning
+
+    def get_buffer_data(self, start: int, count: int) -> typing.Optional[typing.List[typing.Dict]]:
+        if start < 0:
+            return self.__buffer[start: start+count if count < -start else None]
+        else:
+            return self.__buffer[start: start+count]
 
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
