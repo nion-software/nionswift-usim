@@ -261,7 +261,7 @@ class Device:
     def is_scanning(self) -> bool:
         return self.__is_scanning
 
-    def get_buffer_data(self, start: int, count: int) -> typing.Optional[typing.List[typing.Dict]]:
+    def get_buffer_data(self, start: int, count: int) -> typing.Optional[typing.List[typing.List[typing.Dict]]]:
         if start < 0:
             return self.__buffer[start: start+count if count < -start else None]
         else:
