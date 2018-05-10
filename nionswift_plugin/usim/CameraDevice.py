@@ -60,12 +60,9 @@ class Camera(camera_base.Camera):
         def set_exposure(m):
             self.exposure_ms = m
         def set_binning(m):
-            print(f"set binning- {m}")
             self.binning = m
-            print(f"set binning+")
         def t():
             import functools
-            print("t-")
             for i in range(1):
                 queue_task(functools.partial(set_mode, "run"))
                 # queue_task(functools.partial(set_binning, 1))
@@ -79,7 +76,6 @@ class Camera(camera_base.Camera):
                 # queue_task(functools.partial(set_binning, 4))
                 # set_exposure(0.44, 3)
                 time.sleep(delay)
-            print("t+")
         threading.Thread(target=t).start()
 
     @property
