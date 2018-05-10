@@ -3,5 +3,16 @@
 # Use it like this:
 #   pip install -r test-requirements.txt
 
+-e git://github.com/nion-software/nionutils.git#egg=nionutils
+-e git://github.com/nion-software/nionui.git#egg=nionui
+-e git://github.com/nion-software/niondata.git#egg=niondata
 -e git://github.com/nion-software/nionswift.git#egg=nionswift
 -e git://github.com/nion-software/nionswift-instrumentation-kit.git#egg=nionswift-instrumentation-kit
+
+imageio
+scipy
+numpy
+h5py
+pytz
+tzlocal
+pillow
