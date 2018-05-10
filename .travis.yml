@@ -1,0 +1,14 @@
+# commands to specify testing environments
+language: python
+python:
+  - "3.5"
+  - "3.6"
+
+# command to install dependencies
+install:
+  - pip install -r test-requirements.txt
+
+# command to run tests
+script:
+  # modified discover needed to handle namespace package
+  python -m unittest discover -s nionswift_plugin/usim/test/ -p '*_test.py'

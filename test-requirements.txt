@@ -1,0 +1,7 @@
+# This file allows installation of test requirements.
+#
+# Use it like this:
+#   pip install -r test-requirements.txt
+
+-e git://github.com/nion-software/nionswift.git#egg=nionswift
+-e git://github.com/nion-software/nionswift-instrumentation-kit.git#egg=nionswift-instrumentation-kit
