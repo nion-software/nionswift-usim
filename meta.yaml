@@ -18,6 +18,8 @@ requirements:
     - setuptools
   run:
     - python >=3.5
+    - nionswift
+    - nionswift-instrumentation
 
 test:
   imports:
