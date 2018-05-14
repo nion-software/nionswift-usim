@@ -10,12 +10,13 @@ import os
 
 setuptools.setup(
     name="nionswift-usim",
-    version="0.1.0",
+    version="0.1.1",
     author="Nion Software",
     author_email="swift@nion.com",
     description="A Nion Swift package to simulate a STEM microscope, scanner, and cameras",
     url="https://github.com/nion-software/nionswift-usim",
     packages=["nionswift_plugin.usim", "nionswift_plugin.usim.test"],
+    package_data={"nionswift_plugin.usim": ["manifest.json"]},
     install_requires=['nionswift-instrumentation'],
     license='GPLv3',
     classifiers=[
