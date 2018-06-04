@@ -509,16 +509,17 @@ class Instrument(stem_controller.STEMController):
             data = data * data_scale + (rs.poisson(poisson_level, size=data.shape) - poisson_level)
             return DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
 
-    def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
+    def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect = None, binning_shape: Geometry.IntSize = None):
         if camera_type == "ronchigram":
-            height = readout_area.height
-            width = readout_area.width
+            binning_shape = binning_shape if binning_shape else Geometry.IntSize(1, 1)
+            height = readout_area.height if readout_area else self.__ronchigram_shape[0]
+            width = readout_area.width if readout_area else self.__ronchigram_shape[1]
             full_fov_nm = abs(self.__defocus_m) * math.sin(self.__tv_pixel_angle * self.__ronchigram_shape.height) * 1E9
             fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
-            scale_y = binning_shape[0] * fov_nm[0] / readout_area.size[0]
-            scale_x = binning_shape[1] * fov_nm[1] / readout_area.size[1]
-            offset_y = -scale_y * readout_area.size[0] * 0.5
-            offset_x = -scale_x * readout_area.size[1] * 0.5
+            scale_y = binning_shape[0] * fov_nm[0] / height
+            scale_x = binning_shape[1] * fov_nm[1] / width
+            offset_y = -scale_y * height * 0.5
+            offset_x = -scale_x * width * 0.5
             dimensional_calibrations = [
                 Calibration.Calibration(offset=offset_y, scale=scale_y, units="nm"),
                 Calibration.Calibration(offset=offset_x, scale=scale_x, units="nm")
@@ -687,10 +688,26 @@ class Instrument(stem_controller.STEMController):
     # these are required functions to implement the standard stem controller interface.
 
     def TryGetVal(self, s: str) -> (bool, float):
+
+        def parse_camera_values(p: str, s: str) -> (bool, float):
+            if s == "y_offset":
+                return True, self.get_camera_dimensional_calibrations(p)[0].offset
+            elif s == "x_offset":
+                return True, self.get_camera_dimensional_calibrations(p)[1].offset
+            elif s == "y_scale":
+                return True, self.get_camera_dimensional_calibrations(p)[0].scale
+            elif s == "x_scale":
+                return True, self.get_camera_dimensional_calibrations(p)[1].scale
+            return False, None
+
         if s == "EELS_MagneticShift_Offset":
             return True, self.energy_offset_eV
         elif s == "C_Blanked":
             return True, 1.0 if self.is_blanked else 0.0
+        elif s.startswith("ronchigram_"):
+            return parse_camera_values("ronchigram", s[len("ronchigram_"):])
+        elif s.startswith("eels_"):
+            return parse_camera_values("eels", s[len("eels_"):])
         return False, None
 
     def GetVal(self, s: str, default_value: float=None) -> float:

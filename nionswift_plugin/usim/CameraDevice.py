@@ -199,12 +199,21 @@ class Camera(camera_base.Camera):
         self.__processing = value
 
     @property
-    def calibration(self) -> typing.List[dict]:
-        """Return list of calibrations, one for each dimension."""
-        readout_area = self.readout_area
-        binning_shape = Geometry.IntSize(self.binning, self.binning if self.__symmetric_binning else 1)
-        dimensional_calibrations = self.__instrument.get_camera_dimensional_calibrations(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape)
-        return [dimensional_calibration.rpc_dict for dimensional_calibration in dimensional_calibrations]
+    def calibration_controls(self) -> dict:
+        """Define the STEM calibration controls for this camera.
+
+        The controls should be unique for each camera if there are more than one.
+        """
+        return {
+            "x_scale_control": self.camera_type + "_x_scale",
+            "x_offset_control": self.camera_type + "_x_offset",
+            "x_units_value": "eV" if self.camera_type == "eels" else "nm",
+            "y_scale_control": self.camera_type + "_y_scale",
+            "y_offset_control": self.camera_type + "_y_offset",
+            "y_units_value": "" if self.camera_type == "eels" else "nm",
+            "intensity_units_value": "counts",
+            "counts_per_electron_value": self.__instrument.counts_per_electron
+        }
 
     def start_live(self) -> None:
         """Start live acquisition. Required before using acquire_image."""
@@ -245,10 +254,6 @@ class Camera(camera_base.Camera):
         data_element["properties"] = dict()
         data_element["properties"]["frame_number"] = self.__frame_number
         data_element["properties"]["integration_count"] = integration_count
-        data_element["properties"]["counts_per_electron"] = self.__instrument.counts_per_electron
-        data_element["intensity_calibration"] = dict()
-        data_element["intensity_calibration"]["scale"] = xdata_buffer.intensity_calibration.scale
-        data_element["intensity_calibration"]["units"] = xdata_buffer.intensity_calibration.units
         # data that has been binned vertically to a single row will be converted to 1D
         if xdata_buffer.dimensional_shape[0] == 1:
             data_element["data"] = numpy.squeeze(xdata_buffer.data)
