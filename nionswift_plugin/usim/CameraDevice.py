@@ -3,14 +3,15 @@ import copy
 import datetime
 import gettext
 import numpy
+import queue
 import threading
 import time
 import typing
 
 # local libraries
+from nion.utils import Event
 from nion.utils import Geometry
 from nion.utils import Registry
-from nion.swift.model import ImportExportManager
 
 from . import InstrumentDevice
 
@@ -39,12 +40,9 @@ class Camera(camera_base.Camera):
         self.__has_data_event = threading.Event()
         self.__cancel = False
         self.__is_playing = False
-        self.__modes = ("run", "tune", "snap")
-        self.__exposures_s = [0.1, 0.2, 0.5]
-        self.__binnings = [2, 2, 1]
+        self.__exposure = 1.0
+        self.__binning = 1
         self.__processing = None
-        self.__mode = self.__modes[0]
-        self.on_low_level_parameter_changed = None
         self.__thread.start()
 
     def close(self):
@@ -57,10 +55,6 @@ class Camera(camera_base.Camera):
         delay = 0.05
         def set_mode(m):
             self.mode = m
-        def set_exposure(m):
-            self.exposure_ms = m
-        def set_binning(m):
-            self.binning = m
         def t():
             import functools
             for i in range(1):
@@ -113,80 +107,29 @@ class Camera(camera_base.Camera):
         readout_area = self.__readout_area
         return (readout_area[2] - readout_area[0]) // binning, (readout_area[3] - readout_area[1]) // binning
 
-    @property
-    def mode(self):
-        """Return the current mode of the camera, as a case-insensitive string identifier."""
-        return self.__mode
-
-    @mode.setter
-    def mode(self, mode) -> None:
-        """Set the current mode of the camera, using a case-insensitive string identifier."""
-        if True or mode.lower() != self.__mode.lower():
-            self.__mode = mode.lower()
-            if callable(self.on_low_level_parameter_changed):
-                self.on_low_level_parameter_changed("mode")
-
-    @property
-    def mode_as_index(self) -> int:
-        """Return the index of the current mode of the camera."""
-        return self.__modes.index(self.__mode.lower())
-
-    def get_exposure_ms(self, mode_id) -> float:
-        """Return the exposure (in milliseconds) for the mode."""
-        mode_index = self.__modes.index(mode_id.lower())
-        return self.__exposures_s[mode_index] * 1000
-
-    def set_exposure_ms(self, exposure_ms: float, mode_id) -> None:
-        """Set the exposure (in milliseconds) for the mode."""
-        mode_index = self.__modes.index(mode_id.lower())
-        exposure_s = exposure_ms / 1000
-        if int(exposure_s * 1E6) != int(self.__exposures_s[mode_index] * 1E6):
-            self.__exposures_s[mode_index] = exposure_s
-            if callable(self.on_low_level_parameter_changed):
-                self.on_low_level_parameter_changed("exposureTimems")
-
-    def get_binning(self, mode_id) -> int:
-        """Return the binning for the mode."""
-        mode_index = self.__modes.index(mode_id.lower())
-        return self.__binnings[mode_index]
-
-    def set_binning(self, binning: int, mode_id) -> None:
-        """Set the binning for the mode."""
-        mode_index = self.__modes.index(mode_id.lower())
-        if binning != self.__binnings[mode_index]:
-            self.__binnings[mode_index] = binning
-            if callable(self.on_low_level_parameter_changed):
-                self.on_low_level_parameter_changed("binning")
-            # if parameter_name == "mode":
-            #     self.on_mode_changed(self.mode)
-            # elif parameter_name in ("exposureTimems", "binning"):
-            #     for mode in enumerate(self.modes):
-            #         self.on_mode_parameter_changed(mode, "exposure_ms", self.get_exposure_ms(mode))
-            #         self.on_mode_parameter_changed(mode, "binning", self.get_binning(mode))
-
-    def set_integration_count(self, integration_count: int, mode_id) -> None:
+    def set_integration_count(self, integration_count: int, mode_id=None) -> None:
         """Set the integration code for the mode."""
         self.__integration_count = integration_count
 
     @property
     def exposure_ms(self) -> float:
         """Return the exposure (in milliseconds) for the current mode."""
-        return self.get_exposure_ms(self.__mode)
+        return self.__exposure * 1000
 
     @exposure_ms.setter
     def exposure_ms(self, value: float) -> None:
         """Set the exposure (in milliseconds) for the current mode."""
-        self.set_exposure_ms(value, self.__mode)
+        self.__exposure = value / 1000
 
     @property
     def binning(self) -> int:
         """Return the binning for the current mode."""
-        return self.get_binning(self.__mode)
+        return self.__binning
 
     @binning.setter
     def binning(self, value: int) -> None:
         """Set the binning for the current mode."""
-        self.set_binning(value, self.__mode)
+        self.__binning = value
 
     @property
     def processing(self) -> typing.Optional[str]:
@@ -232,10 +175,8 @@ class Camera(camera_base.Camera):
         """Acquire the most recent data."""
         xdata_buffer = None
         integration_count = self.__integration_count or 1
-        mode_index = self.__modes.index(self.__mode)
-        exposure_s = self.__exposures_s[mode_index]
         for frame_number in range(integration_count):
-            if not self.__has_data_event.wait(exposure_s * 200):
+            if not self.__has_data_event.wait(self.__exposure * 200):
                 raise Exception("No simulator thread.")
             self.__has_data_event.clear()
             if xdata_buffer is None:
@@ -267,14 +208,6 @@ class Camera(camera_base.Camera):
     # def acquire_sequence(self, n: int) -> dict:
     #     pass
 
-    def show_config_window(self) -> None:
-        """Show a configuration dialog, if needed. Dialog can be modal or modeless."""
-        pass
-
-    def start_monitor(self) -> None:
-        """Show a monitor dialog, if needed. Dialog can be modal or modeless."""
-        pass
-
     def __acquisition_thread(self):
         while True:
             if self.__cancel:  # case where exposure was canceled.
@@ -289,9 +222,7 @@ class Camera(camera_base.Camera):
                 binning_shape = Geometry.IntSize(self.binning, self.binning if self.__symmetric_binning else 1)
                 xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.exposure_ms / 1000)
                 elapsed = time.time() - start
-                mode_index = self.__modes.index(self.__mode)
-                exposure_s = self.__exposures_s[mode_index]
-                wait_s = max(exposure_s - elapsed, 0)
+                wait_s = max(self.__exposure - elapsed, 0)
                 if not self.__thread_event.wait(wait_s):
                     # thread event was not triggered during wait; signal that we have data
                     xdata._set_timestamp(datetime.datetime.utcnow())
@@ -304,17 +235,141 @@ class Camera(camera_base.Camera):
                     self.__thread_event.clear()
 
 
+class CameraSettings:
+
+    def __init__(self):
+        # these events must be defined
+        self.current_frame_parameters_changed_event = Event.Event()
+        self.record_frame_parameters_changed_event = Event.Event()
+        self.profile_changed_event = Event.Event()
+        self.frame_parameters_changed_event = Event.Event()
+
+        # the list of possible modes should be defined here
+        self.modes = ["Run", "Tune", "Snap"]
+
+        # configure profiles
+        self.__settings = [
+            camera_base.CameraFrameParameters({"exposure_ms": 100, "binning": 2}),
+            camera_base.CameraFrameParameters({"exposure_ms": 200, "binning": 2}),
+            camera_base.CameraFrameParameters({"exposure_ms": 500, "binning": 1}),
+        ]
+
+        self.__current_settings_index = 0
+        self.__current_settings = copy.deepcopy(self.__settings[self.__current_settings_index])
+
+        self.__frame_parameters = copy.deepcopy(self.__settings[self.__current_settings_index])
+        self.__record_parameters = copy.deepcopy(self.__settings[-1])
+
+        # the task queue is a list of tasks that must be executed on the UI thread. items are added to the queue
+        # and executed at a later time in the __handle_executing_task_queue method.
+        self.__task_queue = queue.Queue()
+
+    def close(self):
+        pass
+
+    def set_current_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
+        """Set the current frame parameters and fire the current frame parameters changed event."""
+        self.__frame_parameters = copy.copy(frame_parameters)
+        self.current_frame_parameters_changed_event.fire(frame_parameters)
+
+    def get_current_frame_parameters(self) -> camera_base.CameraFrameParameters:
+        """Get the current frame parameters."""
+        return self.__frame_parameters
+
+    def set_record_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
+        """Set the record frame parameters and fire the record frame parameters changed event."""
+        self.__record_parameters = copy.copy(frame_parameters)
+        self.record_frame_parameters_changed_event.fire(frame_parameters)
+
+    def get_record_frame_parameters(self) -> camera_base.CameraFrameParameters:
+        """Get the record frame parameters."""
+        return self.__record_parameters
+
+    def set_frame_parameters(self, settings_index: int, frame_parameters: camera_base.CameraFrameParameters) -> None:
+        """Set the frame parameters with the settings index and fire the frame parameters changed event.
+
+        If the settings index matches the current settings index, call set current frame parameters.
+
+        If the settings index matches the record settings index, call set record frame parameters.
+        """
+        assert 0 <= settings_index < len(self.modes)
+        frame_parameters = copy.copy(frame_parameters)
+        self.__settings[settings_index] = frame_parameters
+        # update the local frame parameters
+        if settings_index == self.__current_settings_index:
+            self.set_current_frame_parameters(frame_parameters)
+        if settings_index == len(self.modes) - 1:
+            self.set_record_frame_parameters(frame_parameters)
+        self.frame_parameters_changed_event.fire(settings_index, frame_parameters)
+
+    def get_frame_parameters(self, settings_index) -> camera_base.CameraFrameParameters:
+        """Get the frame parameters for the settings index."""
+        return copy.copy(self.__settings[settings_index])
+
+    def set_selected_profile_index(self, settings_index: int) -> None:
+        """Set the current settings index.
+
+        Call set current frame parameters if it changed.
+
+        Fire profile changed event if it changed."""
+        assert 0 <= settings_index < len(self.modes)
+        if self.__current_settings_index != settings_index:
+            self.__current_settings_index = settings_index
+            # set current frame parameters
+            self.set_current_frame_parameters(self.__settings[self.__current_settings_index])
+            self.profile_changed_event.fire(settings_index)
+
+    @property
+    def selected_profile_index(self) -> int:
+        """Return the current settings index."""
+        return self.__current_settings_index
+
+    def get_mode(self) -> str:
+        """Return the current mode (named version of current settings index)."""
+        return self.modes[self.__current_settings_index]
+
+    def set_mode(self, mode: str) -> None:
+        """Set the current mode (named version of current settings index)."""
+        self.set_selected_profile_index(self.modes.index(mode))
+
+    def _handle_executing_task_queue(self):
+        # gather the pending tasks, then execute them.
+        # doing it this way prevents tasks from triggering more tasks in an endless loop.
+        tasks = list()
+        while not self.__task_queue.empty():
+            task = self.__task_queue.get(False)
+            tasks.append(task)
+            self.__task_queue.task_done()
+        for task in tasks:
+            try:
+                task()
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                traceback.print_stack()
+
+
+class CameraModule:
+
+    def __init__(self, stem_controller_id: str, camera_device: Camera, camera_settings: CameraSettings):
+        self.stem_controller_id = stem_controller_id
+        self.camera_device = camera_device
+        self.camera_settings = camera_settings
+
+
 def run(instrument: InstrumentDevice.Instrument) -> None:
-    component_types = {"camera_device"}  # the set of component types that this component represents
+    component_types = {"camera_module"}  # the set of component types that this component represents
 
     camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
-    camera_device.stem_controller_id = "usim_stem_controller"
     camera_device.camera_panel_type = "ronchigram"
 
-    Registry.register_component(camera_device, component_types)
+    camera_settings = CameraSettings()
+
+    Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
 
     camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
-    camera_device.stem_controller_id = "usim_stem_controller"
     camera_device.camera_panel_type = "eels"
 
-    Registry.register_component(camera_device, component_types)
+    camera_settings = CameraSettings()
+
+    Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)

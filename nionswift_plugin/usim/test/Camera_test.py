@@ -28,7 +28,9 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
         camera_id = "usim_ronchigram_camera" if not is_eels else "usim_eels_camera"
         camera_type = "ronchigram" if not is_eels else "eels"
         camera_name = "uSim Camera"
-        camera_hardware_source = camera_base.CameraHardwareSource("usim_stem_controller", CameraDevice.Camera(camera_id, camera_type, camera_name, instrument))
+        camera_settings = CameraDevice.CameraSettings()
+        camera_device = CameraDevice.Camera(camera_id, camera_type, camera_name, instrument)
+        camera_hardware_source = camera_base.CameraHardwareSource("usim_stem_controller", camera_device, camera_settings)
         if is_eels:
             camera_hardware_source.features["is_eels_camera"] = True
             camera_hardware_source.add_channel_processor(0, HardwareSource.SumProcessor(((0.25, 0.0), (0.5, 1.0))))
