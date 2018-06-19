@@ -3,7 +3,6 @@ import copy
 import datetime
 import gettext
 import numpy
-import queue
 import threading
 import time
 import typing
@@ -250,11 +249,10 @@ class CameraSettings:
         self.__frame_parameters = copy.deepcopy(self.__settings[self.__current_settings_index])
         self.__record_parameters = copy.deepcopy(self.__settings[-1])
 
-        # the task queue is a list of tasks that must be executed on the UI thread. items are added to the queue
-        # and executed at a later time in the __handle_executing_task_queue method.
-        self.__task_queue = queue.Queue()
-
     def close(self):
+        pass
+
+    def initialize(self, **kwargs):
         pass
 
     def get_frame_parameters_from_dict(self, d):
@@ -324,22 +322,6 @@ class CameraSettings:
     def set_mode(self, mode: str) -> None:
         """Set the current mode (named version of current settings index)."""
         self.set_selected_profile_index(self.modes.index(mode))
-
-    def _handle_executing_task_queue(self):
-        # gather the pending tasks, then execute them.
-        # doing it this way prevents tasks from triggering more tasks in an endless loop.
-        tasks = list()
-        while not self.__task_queue.empty():
-            task = self.__task_queue.get(False)
-            tasks.append(task)
-            self.__task_queue.task_done()
-        for task in tasks:
-            try:
-                task()
-            except Exception as e:
-                import traceback
-                traceback.print_exc()
-                traceback.print_stack()
 
 
 class CameraModule:
