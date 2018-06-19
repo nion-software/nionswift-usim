@@ -107,39 +107,11 @@ class Camera(camera_base.Camera):
         readout_area = self.__readout_area
         return (readout_area[2] - readout_area[0]) // binning, (readout_area[3] - readout_area[1]) // binning
 
-    def set_integration_count(self, integration_count: int, mode_id=None) -> None:
-        """Set the integration code for the mode."""
-        self.__integration_count = integration_count
-
-    @property
-    def exposure_ms(self) -> float:
-        """Return the exposure (in milliseconds) for the current mode."""
-        return self.__exposure * 1000
-
-    @exposure_ms.setter
-    def exposure_ms(self, value: float) -> None:
-        """Set the exposure (in milliseconds) for the current mode."""
-        self.__exposure = value / 1000
-
-    @property
-    def binning(self) -> int:
-        """Return the binning for the current mode."""
-        return self.__binning
-
-    @binning.setter
-    def binning(self, value: int) -> None:
-        """Set the binning for the current mode."""
-        self.__binning = value
-
-    @property
-    def processing(self) -> typing.Optional[str]:
-        """Return processing actions for the current mode."""
-        return self.__processing
-
-    @processing.setter
-    def processing(self, value: str) -> None:
-        """Set processing actions for the current mode."""
-        self.__processing = value
+    def set_frame_parameters(self, frame_parameters) -> None:
+        self.__exposure = frame_parameters.exposure_ms / 1000
+        self.__binning = frame_parameters.binning
+        self.__processing = frame_parameters.processing
+        self.__integration_count = frame_parameters.integration_count
 
     @property
     def calibration_controls(self) -> dict:
@@ -219,8 +191,8 @@ class Camera(camera_base.Camera):
             while self.__is_playing and not self.__cancel:
                 start = time.time()
                 readout_area = self.readout_area
-                binning_shape = Geometry.IntSize(self.binning, self.binning if self.__symmetric_binning else 1)
-                xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.exposure_ms / 1000)
+                binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
+                xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure)
                 elapsed = time.time() - start
                 wait_s = max(self.__exposure - elapsed, 0)
                 if not self.__thread_event.wait(wait_s):
@@ -233,6 +205,24 @@ class Camera(camera_base.Camera):
                     # thread event was triggered during wait; continue loop
                     self.__has_data_event.clear()
                     self.__thread_event.clear()
+
+
+class CameraFrameParameters:
+
+    def __init__(self, d=None):
+        d = d or dict()
+        self.exposure_ms = d.get("exposure_ms", 125)
+        self.binning = d.get("binning", 1)
+        self.processing = d.get("processing")
+        self.integration_count = d.get("integration_count")
+
+    def as_dict(self):
+        return {
+            "exposure_ms": self.exposure_ms,
+            "binning": self.binning,
+            "processing": self.processing,
+            "integration_count": self.integration_count,
+        }
 
 
 class CameraSettings:
@@ -249,9 +239,9 @@ class CameraSettings:
 
         # configure profiles
         self.__settings = [
-            camera_base.CameraFrameParameters({"exposure_ms": 100, "binning": 2}),
-            camera_base.CameraFrameParameters({"exposure_ms": 200, "binning": 2}),
-            camera_base.CameraFrameParameters({"exposure_ms": 500, "binning": 1}),
+            CameraFrameParameters({"exposure_ms": 100, "binning": 2}),
+            CameraFrameParameters({"exposure_ms": 200, "binning": 2}),
+            CameraFrameParameters({"exposure_ms": 500, "binning": 1}),
         ]
 
         self.__current_settings_index = 0
@@ -267,25 +257,28 @@ class CameraSettings:
     def close(self):
         pass
 
-    def set_current_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
+    def get_frame_parameters_from_dict(self, d):
+        return CameraFrameParameters(d)
+
+    def set_current_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
         """Set the current frame parameters and fire the current frame parameters changed event."""
         self.__frame_parameters = copy.copy(frame_parameters)
         self.current_frame_parameters_changed_event.fire(frame_parameters)
 
-    def get_current_frame_parameters(self) -> camera_base.CameraFrameParameters:
+    def get_current_frame_parameters(self) -> CameraFrameParameters:
         """Get the current frame parameters."""
         return self.__frame_parameters
 
-    def set_record_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
+    def set_record_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
         """Set the record frame parameters and fire the record frame parameters changed event."""
         self.__record_parameters = copy.copy(frame_parameters)
         self.record_frame_parameters_changed_event.fire(frame_parameters)
 
-    def get_record_frame_parameters(self) -> camera_base.CameraFrameParameters:
+    def get_record_frame_parameters(self) -> CameraFrameParameters:
         """Get the record frame parameters."""
         return self.__record_parameters
 
-    def set_frame_parameters(self, settings_index: int, frame_parameters: camera_base.CameraFrameParameters) -> None:
+    def set_frame_parameters(self, settings_index: int, frame_parameters: CameraFrameParameters) -> None:
         """Set the frame parameters with the settings index and fire the frame parameters changed event.
 
         If the settings index matches the current settings index, call set current frame parameters.
@@ -302,7 +295,7 @@ class CameraSettings:
             self.set_record_frame_parameters(frame_parameters)
         self.frame_parameters_changed_event.fire(settings_index, frame_parameters)
 
-    def get_frame_parameters(self, settings_index) -> camera_base.CameraFrameParameters:
+    def get_frame_parameters(self, settings_index) -> CameraFrameParameters:
         """Get the frame parameters for the settings index."""
         return copy.copy(self.__settings[settings_index])
 
