@@ -226,12 +226,23 @@ class CameraFrameParameters:
 
 class CameraSettings:
 
-    def __init__(self):
+    def __init__(self, camera_id: str):
         # these events must be defined
         self.current_frame_parameters_changed_event = Event.Event()
         self.record_frame_parameters_changed_event = Event.Event()
         self.profile_changed_event = Event.Event()
         self.frame_parameters_changed_event = Event.Event()
+
+        # optional event and identifier for settings. defining settings_id signals that
+        # the settings should be managed as a dict by the container of this class. the container
+        # will call apply_settings to initialize settings and then expect settings_changed_event
+        # to be fired when settings change.
+        self.settings_changed_event = Event.Event()
+        self.settings_id = camera_id
+
+        self.__config_file = None
+
+        self.__camera_id = camera_id
 
         # the list of possible modes should be defined here
         self.modes = ["Run", "Tune", "Snap"]
@@ -244,7 +255,6 @@ class CameraSettings:
         ]
 
         self.__current_settings_index = 0
-        self.__current_settings = copy.deepcopy(self.__settings[self.__current_settings_index])
 
         self.__frame_parameters = copy.deepcopy(self.__settings[self.__current_settings_index])
         self.__record_parameters = copy.deepcopy(self.__settings[-1])
@@ -255,12 +265,31 @@ class CameraSettings:
     def initialize(self, **kwargs):
         pass
 
+    def apply_settings(self, settings_dict: typing.Dict) -> None:
+        """Initialize the settings with the settings_dict."""
+        if isinstance(settings_dict, dict):
+            settings_list = settings_dict.get("settings", list())
+            if len(settings_list) == 3:
+                self.__settings = [CameraFrameParameters(settings) for settings in settings_list]
+            self.__current_settings_index = settings_dict.get("current_settings_index", 0)
+            self.__frame_parameters = CameraFrameParameters(settings_dict.get("current_settings", self.__settings[0].as_dict()))
+            self.__record_parameters = copy.deepcopy(self.__settings[-1])
+
+    def __save_settings(self) -> typing.Dict:
+        settings_dict = {
+            "settings": [settings.as_dict() for settings in self.__settings],
+            "current_settings_index": self.__current_settings_index,
+            "current_settings": self.__frame_parameters.as_dict()
+        }
+        return settings_dict
+
     def get_frame_parameters_from_dict(self, d):
         return CameraFrameParameters(d)
 
     def set_current_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
         """Set the current frame parameters and fire the current frame parameters changed event."""
         self.__frame_parameters = copy.copy(frame_parameters)
+        self.settings_changed_event.fire(self.__save_settings())
         self.current_frame_parameters_changed_event.fire(frame_parameters)
 
     def get_current_frame_parameters(self) -> CameraFrameParameters:
@@ -291,6 +320,7 @@ class CameraSettings:
             self.set_current_frame_parameters(frame_parameters)
         if settings_index == len(self.modes) - 1:
             self.set_record_frame_parameters(frame_parameters)
+        self.settings_changed_event.fire(self.__save_settings())
         self.frame_parameters_changed_event.fire(settings_index, frame_parameters)
 
     def get_frame_parameters(self, settings_index) -> CameraFrameParameters:
@@ -308,6 +338,7 @@ class CameraSettings:
             self.__current_settings_index = settings_index
             # set current frame parameters
             self.set_current_frame_parameters(self.__settings[self.__current_settings_index])
+            self.settings_changed_event.fire(self.__save_settings())
             self.profile_changed_event.fire(settings_index)
 
     @property
@@ -338,13 +369,13 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
     camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
     camera_device.camera_panel_type = "ronchigram"
 
-    camera_settings = CameraSettings()
+    camera_settings = CameraSettings("usim_ronchigram_camera")
 
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
 
     camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
     camera_device.camera_panel_type = "eels"
 
-    camera_settings = CameraSettings()
+    camera_settings = CameraSettings("usim_eels_camera")
 
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
