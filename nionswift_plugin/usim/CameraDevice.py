@@ -20,7 +20,7 @@ from nion.instrumentation import camera_base
 _ = gettext.gettext
 
 
-class Camera(camera_base.Camera2):
+class Camera(camera_base.CameraDevice):
     """Implement a camera device."""
 
     def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
