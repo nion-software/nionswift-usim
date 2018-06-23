@@ -317,8 +317,9 @@ def _relativeFile(filename):
 
 class Instrument(stem_controller.STEMController):
 
-    def __init__(self):
+    def __init__(self, instrument_id: str):
         super().__init__()
+        self.instrument_id = instrument_id
         self.__camera_frame_event = threading.Event()
         self.__features = list()
         stage_size_nm = 150

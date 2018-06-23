@@ -6,6 +6,7 @@ from nion.swift.model import HardwareSource
 from nion.swift import DocumentController
 from nion.instrumentation import camera_base
 from nion.instrumentation.test import CameraControl_test
+from nion.utils import Registry
 from nionswift_plugin.nion_instrumentation_ui import CameraControlPanel
 from nionswift_plugin.usim import CameraDevice
 from nionswift_plugin.usim import InstrumentDevice
@@ -22,8 +23,8 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
         # initial settings.
         self.exposure = 0.04
 
-        instrument = InstrumentDevice.Instrument()
-        HardwareSource.HardwareSourceManager().register_instrument("usim_stem_controller", instrument)
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        Registry.register_component(instrument, {"stem_controller"})
 
         camera_id = "usim_ronchigram_camera" if not is_eels else "usim_eels_camera"
         camera_type = "ronchigram" if not is_eels else "eels"

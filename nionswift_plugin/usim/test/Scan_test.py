@@ -4,6 +4,7 @@ from nion.swift import Facade
 from nion.swift.model import HardwareSource
 from nion.instrumentation import scan_base
 from nion.instrumentation.test import ScanControl_test
+from nion.utils import Registry
 from nionswift_plugin.usim import InstrumentDevice
 from nionswift_plugin.usim import ScanDevice
 
@@ -19,8 +20,8 @@ class TestSimulatorScan(ScanControl_test.TestScanControlClass):
         pass
 
     def _setup_instrument(self):
-        instrument = InstrumentDevice.Instrument()
-        HardwareSource.HardwareSourceManager().register_instrument("usim_stem_controller", instrument)
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        Registry.register_component(instrument, {"stem_controller"})
         return instrument
 
     def _close_instrument(self, instrument) -> None:
