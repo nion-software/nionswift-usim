@@ -14,6 +14,7 @@ setuptools.setup(
     author="Nion Software",
     author_email="swift@nion.com",
     description="A Nion Swift package to simulate a STEM microscope, scanner, and cameras",
+    long_description=open("README.rst").read(),
     url="https://github.com/nion-software/nionswift-usim",
     packages=["nionswift_plugin.usim", "nionswift_plugin.usim.test"],
     package_data={"nionswift_plugin.usim": ["manifest.json"]},
