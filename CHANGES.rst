@@ -1,8 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
-UNRELEASED
-----------
+0.1.2 (2018-06-25)
+------------------
+
+- Specify lower priorities for all simulator devices.
 
 - Add persistence of camera settings.
 
