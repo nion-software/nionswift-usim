@@ -270,5 +270,5 @@ class Device:
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
     scan_device = Device(instrument)
-    component_types = {"scan_device"}  # the set of component types that this component represents
-    Registry.register_component(scan_device, component_types)
+    scan_device.priority = 20
+    Registry.register_component(scan_device, {"scan_device"})

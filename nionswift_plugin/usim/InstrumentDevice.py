@@ -319,6 +319,7 @@ class Instrument(stem_controller.STEMController):
 
     def __init__(self, instrument_id: str):
         super().__init__()
+        self.priority = 20
         self.instrument_id = instrument_id
         self.__camera_frame_event = threading.Event()
         self.__features = list()

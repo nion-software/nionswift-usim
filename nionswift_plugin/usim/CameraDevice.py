@@ -361,6 +361,7 @@ class CameraModule:
         self.stem_controller_id = stem_controller_id
         self.camera_device = camera_device
         self.camera_settings = camera_settings
+        self.priority = 20
 
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
