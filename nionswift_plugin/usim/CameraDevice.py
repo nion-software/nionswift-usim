@@ -287,7 +287,10 @@ class CameraSettings:
         return CameraFrameParameters(d)
 
     def set_current_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
-        """Set the current frame parameters and fire the current frame parameters changed event."""
+        """Set the current frame parameters.
+
+        Fire the current frame parameters changed event and optionally the settings changed event.
+        """
         self.__frame_parameters = copy.copy(frame_parameters)
         self.settings_changed_event.fire(self.__save_settings())
         self.current_frame_parameters_changed_event.fire(frame_parameters)
@@ -297,7 +300,10 @@ class CameraSettings:
         return self.__frame_parameters
 
     def set_record_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
-        """Set the record frame parameters and fire the record frame parameters changed event."""
+        """Set the record frame parameters.
+
+        Fire the record frame parameters changed event and optionally the settings changed event.
+        """
         self.__record_parameters = copy.copy(frame_parameters)
         self.record_frame_parameters_changed_event.fire(frame_parameters)
 
@@ -332,7 +338,8 @@ class CameraSettings:
 
         Call set current frame parameters if it changed.
 
-        Fire profile changed event if it changed."""
+        Fire profile changed event if it changed.
+        """
         assert 0 <= settings_index < len(self.modes)
         if self.__current_settings_index != settings_index:
             self.__current_settings_index = settings_index
