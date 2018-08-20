@@ -8,6 +8,8 @@ import time
 import typing
 
 # local libraries
+from nion.data import Core
+from nion.data import DataAndMetadata
 from nion.utils import Event
 from nion.utils import Geometry
 from nion.utils import Registry
@@ -39,6 +41,7 @@ class Camera(camera_base.CameraDevice):
         self.__has_data_event = threading.Event()
         self.__cancel = False
         self.__is_playing = False
+        self.__cancel_sequence = False
         self.__exposure = 1.0
         self.__binning = 1
         self.__processing = None
@@ -173,11 +176,46 @@ class Camera(camera_base.CameraDevice):
             data_element["datum_dimension_count"] = 1
         return data_element
 
-    # def acquire_sequence_prepare(self, n: int) -> None:
-    #     pass
+    def acquire_sequence_prepare(self, n: int) -> None:
+        self.__cancel_sequence = False
 
-    # def acquire_sequence(self, n: int) -> dict:
-    #     pass
+    def acquire_sequence(self, n: int) -> typing.Optional[typing.Dict]:
+        # if the device does not implement acquire_sequence, fall back to looping acquisition.
+        was_live = self.__is_playing
+        self.start_live()
+        try:
+            properties = None
+            data = None
+            for index in range(n):
+                if self.__cancel_sequence:
+                    return None
+                frame_data_element = self.acquire_image()
+                frame_data = frame_data_element["data"]
+                if data is None:
+                    if self.__processing == "sum_project" and len(frame_data.shape) > 1:
+                        data = numpy.empty((n,) + frame_data.shape[1:], frame_data.dtype)
+                    else:
+                        data = numpy.empty((n,) + frame_data.shape, frame_data.dtype)
+                if self.__processing == "sum_project" and len(frame_data.shape) > 1:
+                    data[index] = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data), 0).data
+                else:
+                    data[index] = frame_data
+                properties = copy.deepcopy(frame_data_element["properties"])
+                if self.__processing == "sum_project":
+                    properties["valid_rows"] = 1
+                    spatial_properties = properties.get("spatial_calibrations")
+                    if spatial_properties is not None:
+                        properties["spatial_calibrations"] = spatial_properties[1:]
+        finally:
+            if not was_live:
+                self.stop_live()
+        data_element = dict()
+        data_element["data"] = data
+        data_element["properties"] = properties
+        return data_element
+
+    def acquire_sequence_cancel(self) -> None:
+        self.__cancel_sequence = True
 
     def __acquisition_thread(self):
         while True:

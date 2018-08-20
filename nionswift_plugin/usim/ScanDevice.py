@@ -140,13 +140,13 @@ class Device:
                 y, x = current_frame.data_count // w, current_frame.data_count % w
                 if current_frame.data_count % size.width == 0:
                     # throw away two flyback images at beginning of line
-                    if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
+                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
                         current_frame.bad = True
                         current_frame.complete = True
-                    if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
+                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
                         current_frame.bad = True
                         current_frame.complete = True
-                if not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
+                if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
                     current_frame.bad = True
                     current_frame.complete = True
                 self.__instrument.live_probe_position = Geometry.FloatPoint(y=y / h, x=x / w)
@@ -252,6 +252,7 @@ class Device:
         """Cancel acquisition (immediate)."""
         self.__is_scanning = False
         self.__instrument.live_probe_position = None
+        self.__instrument.trigger_camera_frame()
 
     def stop(self) -> None:
         """Stop acquiring."""
