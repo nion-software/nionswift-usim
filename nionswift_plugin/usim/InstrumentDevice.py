@@ -15,6 +15,7 @@ import threading
 import typing
 
 from nion.data import Calibration
+from nion.data import Core
 from nion.data import DataAndMetadata
 
 from nion.utils import Event
@@ -382,10 +383,20 @@ class Instrument(stem_controller.STEMController):
             subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center)
             center_nm += Geometry.FloatPoint(y=(subscan_fractional_center.y - 0.5) * fov_size_nm.height,
                                              x=(subscan_fractional_center.x - 0.5) * fov_size_nm.width)
-        data = numpy.zeros((size.height, size.width), numpy.float32)
+        extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
+        used_size = size + Geometry.IntSize(height=extra, width=extra)
+        data = numpy.zeros((used_size.height, used_size.width), numpy.float32)
         for feature in self.__features:
-            feature.plot(data, offset_m, fov_size_nm, center_nm, size)
+            feature.plot(data, offset_m, fov_size_nm, center_nm, used_size)
         noise_factor = 0.3
+        if frame_parameters.rotation_rad != 0:
+            inner_height = size.height / used_size.height
+            inner_width = size.width / used_size.width
+            inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
+            data = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -frame_parameters.rotation_rad).data
+            # TODO: data is not always the correct size
+        else:
+            data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
         data = (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us
         self.__last_scan_params = size, fov_size_nm, center_nm
         return data
