@@ -715,8 +715,10 @@ class Instrument(stem_controller.STEMController):
 
         if s == "EELS_MagneticShift_Offset":
             return True, self.energy_offset_eV
-        elif s == "C_Blanked":
+        elif s == "C_Blank":
             return True, 1.0 if self.is_blanked else 0.0
+        elif s == "C10":
+            return True, self.defocus_m
         elif s.startswith("ronchigram_"):
             return parse_camera_values("ronchigram", s[len("ronchigram_"):])
         elif s.startswith("eels_"):
@@ -739,6 +741,8 @@ class Instrument(stem_controller.STEMController):
         elif s == "C_Blank":
             self.is_blanked = val != 0.0
             return True
+        elif s == "C10":
+            self.defocus_m = val
         return False
 
     def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
