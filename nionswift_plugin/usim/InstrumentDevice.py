@@ -743,6 +743,7 @@ class Instrument(stem_controller.STEMController):
             return True
         elif s == "C10":
             self.defocus_m = val
+            return True
         return False
 
     def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
