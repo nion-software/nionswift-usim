@@ -244,14 +244,23 @@ class Camera(camera_base.CameraDevice):
                     self.__thread_event.clear()
 
 
-class CameraFrameParameters:
+class CameraFrameParameters(dict):
 
-    def __init__(self, d=None):
-        d = d or dict()
-        self.exposure_ms = d.get("exposure_ms", 125)
-        self.binning = d.get("binning", 1)
-        self.processing = d.get("processing")
-        self.integration_count = d.get("integration_count")
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.__dict__ = self
+        self.exposure_ms = self.get("exposure_ms", 125)
+        self.binning = self.get("binning", 1)
+        self.processing = self.get("processing")
+        self.integration_count = self.get("integration_count")
+
+    def __copy__(self):
+        return self.__class__(copy.copy(dict(self)))
+
+    def __deepcopy__(self, memo):
+        deepcopy = self.__class__(copy.deepcopy(dict(self)))
+        memo[id(self)] = deepcopy
+        return deepcopy
 
     def as_dict(self):
         return {
@@ -335,7 +344,7 @@ class CameraSettings:
 
     def get_current_frame_parameters(self) -> CameraFrameParameters:
         """Get the current frame parameters."""
-        return self.__frame_parameters
+        return CameraFrameParameters(self.__frame_parameters)
 
     def set_record_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
         """Set the record frame parameters.
