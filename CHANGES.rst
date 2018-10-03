@@ -1,8 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
-UNRELEASED
-----------
+0.1.3 (2018-10-03)
+------------------
+
+- Update support for API.
 
 - Add support for rotated scans.
 
