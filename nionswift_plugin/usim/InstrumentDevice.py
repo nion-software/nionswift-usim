@@ -541,7 +541,7 @@ class Instrument(stem_controller.STEMController):
         if camera_type == "eels":
             dimensional_calibrations = [
                 Calibration.Calibration(),
-                Calibration.Calibration(offset=-self.__energy_offset_eV, scale=self.__energy_per_channel_eV, units="eV")
+                Calibration.Calibration(offset=self.__energy_offset_eV, scale=self.__energy_per_channel_eV, units="eV")
             ]
             return dimensional_calibrations
         return [{}, {}]
