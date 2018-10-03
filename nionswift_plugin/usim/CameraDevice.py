@@ -41,6 +41,7 @@ class Camera(camera_base.CameraDevice):
         self.__has_data_event = threading.Event()
         self.__cancel = False
         self.__is_playing = False
+        self.__is_acquiring = False
         self.__cancel_sequence = False
         self.__exposure = 1.0
         self.__binning = 1
@@ -181,8 +182,9 @@ class Camera(camera_base.CameraDevice):
 
     def acquire_sequence(self, n: int) -> typing.Optional[typing.Dict]:
         # if the device does not implement acquire_sequence, fall back to looping acquisition.
-        was_live = self.__is_playing
-        self.start_live()
+        self.__is_acquiring = True
+        self.__has_data_event.clear()  # ensure any has_data_event is new data
+        self.__thread_event.set()
         try:
             properties = None
             data = None
@@ -207,8 +209,7 @@ class Camera(camera_base.CameraDevice):
                     if spatial_properties is not None:
                         properties["spatial_calibrations"] = spatial_properties[1:]
         finally:
-            if not was_live:
-                self.stop_live()
+            self.__is_acquiring = False
         data_element = dict()
         data_element["data"] = data
         data_element["properties"] = properties
@@ -225,7 +226,7 @@ class Camera(camera_base.CameraDevice):
             self.__thread_event.clear()
             if self.__cancel:
                 break
-            while self.__is_playing and not self.__cancel:
+            while (self.__is_playing or self.__is_acquiring) and not self.__cancel:
                 start = time.time()
                 readout_area = self.readout_area
                 binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
