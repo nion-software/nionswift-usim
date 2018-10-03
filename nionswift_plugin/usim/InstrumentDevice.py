@@ -347,7 +347,7 @@ class Instrument(stem_controller.STEMController):
         self.__c32 = Geometry.FloatPoint()
         self.__c34 = Geometry.FloatPoint()
         self.__slit_in = False
-        self.__energy_offset_eV = 20
+        self.__energy_offset_eV = -20
         self.__energy_per_channel_eV = 0.5
         self.__voltage = 100000
         self.__beam_current = 200E-12  # 200 pA
@@ -511,7 +511,7 @@ class Instrument(stem_controller.STEMController):
                 for index, feature in enumerate(self.__features):
                     if feature.intersects(offset_m, fov_size_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
                         feature.plot_spectrum(spectrum, 1.0 / 10, dimensional_calibrations[1])
-                feature_pixel_count = numpy.sum(spectrum)
+                feature_pixel_count = max(numpy.sum(spectrum), 0.01)
                 data[:, ...] = spectrum
             else:
                 feature_pixel_count = 1
