@@ -1,6 +1,11 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.1.5 (2018-10-04)
+------------------
+
+- Fix issue with scan content position (introduced with rotated scans).
+
 0.1.4 (2018-10-03)
 ------------------
 

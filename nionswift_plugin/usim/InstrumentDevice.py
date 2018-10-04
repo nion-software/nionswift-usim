@@ -384,10 +384,11 @@ class Instrument(stem_controller.STEMController):
             center_nm += Geometry.FloatPoint(y=(subscan_fractional_center.y - 0.5) * fov_size_nm.height,
                                              x=(subscan_fractional_center.x - 0.5) * fov_size_nm.width)
         extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
+        extra_nm = Geometry.FloatPoint(y=(extra / size.height) * fov_size_nm[0], x=(extra / size.width) * fov_size_nm[1])
         used_size = size + Geometry.IntSize(height=extra, width=extra)
         data = numpy.zeros((used_size.height, used_size.width), numpy.float32)
         for feature in self.__features:
-            feature.plot(data, offset_m, fov_size_nm, center_nm, used_size)
+            feature.plot(data, offset_m, fov_size_nm + extra_nm, center_nm, used_size)
         noise_factor = 0.3
         if frame_parameters.rotation_rad != 0:
             inner_height = size.height / used_size.height
