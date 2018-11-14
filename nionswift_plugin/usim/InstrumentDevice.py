@@ -540,9 +540,11 @@ class Instrument(stem_controller.STEMController):
             ]
             return dimensional_calibrations
         if camera_type == "eels":
+            energy_offset_eV = self.__energy_offset_eV
+            # energy_offset_eV += random.uniform(-1, 1) * self.__energy_per_channel_eV * 5
             dimensional_calibrations = [
                 Calibration.Calibration(),
-                Calibration.Calibration(offset=self.__energy_offset_eV, scale=self.__energy_per_channel_eV, units="eV")
+                Calibration.Calibration(offset=energy_offset_eV, scale=self.__energy_per_channel_eV, units="eV")
             ]
             return dimensional_calibrations
         return [{}, {}]
