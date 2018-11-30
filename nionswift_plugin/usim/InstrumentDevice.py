@@ -311,11 +311,6 @@ class AberrationsController:
         return numpy.zeros((height, width))
 
 
-def _relativeFile(filename):
-    dir = os.path.abspath(os.path.dirname(os.path.realpath(__file__)))
-    return os.path.join(dir, filename)
-
-
 class Instrument(stem_controller.STEMController):
 
     def __init__(self, instrument_id: str):
