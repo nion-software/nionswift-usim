@@ -151,7 +151,7 @@ class Camera(camera_base.CameraDevice):
         xdata_buffer = None
         integration_count = self.__integration_count or 1
         for frame_number in range(integration_count):
-            if not self.__has_data_event.wait(self.__exposure * 200):
+            if not self.__has_data_event.wait(self.__exposure * 200) and not self.__thread.is_alive():
                 raise Exception("No simulator thread.")
             self.__has_data_event.clear()
             if xdata_buffer is None:
