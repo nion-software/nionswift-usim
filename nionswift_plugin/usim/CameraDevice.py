@@ -185,6 +185,7 @@ class Camera(camera_base.CameraDevice):
         self.__is_acquiring = True
         self.__has_data_event.clear()  # ensure any has_data_event is new data
         self.__thread_event.set()
+        self.__instrument.sequence_progress = 0
         try:
             properties = None
             data = None
@@ -208,6 +209,7 @@ class Camera(camera_base.CameraDevice):
                     spatial_properties = properties.get("spatial_calibrations")
                     if spatial_properties is not None:
                         properties["spatial_calibrations"] = spatial_properties[1:]
+                self.__instrument.increment_sequence_progress()
         finally:
             self.__is_acquiring = False
         data_element = dict()

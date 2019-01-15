@@ -150,7 +150,9 @@ class Device:
                     current_frame.bad = True
                     current_frame.complete = True
                 self.__instrument.live_probe_position = Geometry.FloatPoint(y=y / h, x=x / w)
-                target_count = current_frame.data_count + 1
+                sequence_progress = self.__instrument.sequence_progress
+                target_count = max(sequence_progress - 2*(sequence_progress//(size.width+2) + 1) + 1,
+                                   current_frame.data_count + 1)
             else:
                 pixels_remaining = total_pixels - current_frame.data_count
                 pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)

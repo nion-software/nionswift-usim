@@ -356,6 +356,22 @@ class Instrument(stem_controller.STEMController):
         self.live_probe_position = None
         theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
         self.__aberrations_controller = AberrationsController(self.__ronchigram_shape[0], self.__ronchigram_shape[1], theta, self.__max_defocus, self.__defocus_m)
+        self.__sequence_progress = 0
+        self.__lock = threading.Lock()
+
+    @property
+    def sequence_progress(self):
+        with self.__lock:
+            return self.__sequence_progress
+
+    @sequence_progress.setter
+    def sequence_progress(self, value):
+        with self.__lock:
+            self.__sequence_progress = value
+
+    def increment_sequence_progress(self):
+        with self.__lock:
+            self.__sequence_progress += 1
 
     def trigger_camera_frame(self) -> None:
         self.__camera_frame_event.set()
