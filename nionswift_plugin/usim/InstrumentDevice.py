@@ -543,11 +543,12 @@ class Instrument(stem_controller.STEMController):
             fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
             scale_y = binning_shape[0] * fov_nm[0] / height
             scale_x = binning_shape[1] * fov_nm[1] / width
+            scale_y = scale_x = self.__tv_pixel_angle
             offset_y = -scale_y * height * 0.5
             offset_x = -scale_x * width * 0.5
             dimensional_calibrations = [
-                Calibration.Calibration(offset=offset_y, scale=scale_y, units="nm"),
-                Calibration.Calibration(offset=offset_x, scale=scale_x, units="nm")
+                Calibration.Calibration(offset=offset_y, scale=scale_y, units="rad"),
+                Calibration.Calibration(offset=offset_x, scale=scale_x, units="rad")
             ]
             return dimensional_calibrations
         if camera_type == "eels":
