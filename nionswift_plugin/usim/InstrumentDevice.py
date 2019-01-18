@@ -13,6 +13,7 @@ import scipy.ndimage.interpolation
 import scipy.stats
 import threading
 import typing
+import re
 
 from nion.data import Calibration
 from nion.data import Core
@@ -341,6 +342,15 @@ class Instrument(stem_controller.STEMController):
         self.__c30 = 0.0
         self.__c32 = Geometry.FloatPoint()
         self.__c34 = Geometry.FloatPoint()
+        self.__order_1_max_angle = 0.008
+        self.__order_2_max_angle = 0.012
+        self.__order_3_max_angle = 0.024
+        self.__order_1_patch = 0.006
+        self.__order_2_patch = 0.006
+        self.__order_3_patch = 0.006
+        self.__c1_range = 4e-9
+        self.__c2_range = 300e-9
+        self.__c3_range = 17e-6
         self.__slit_in = False
         self.__energy_offset_eV = -20
         self.__energy_per_channel_eV = 0.5
@@ -472,14 +482,28 @@ class Instrument(stem_controller.STEMController):
             data_scale = self.get_total_counts(exposure_s) / (data.shape[0] * data.shape[1] * thickness_param)
             rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
             data = data * data_scale + rs.poisson(data_scale, size=data.shape) - data_scale
+            probe_position = Geometry.FloatPoint(0.5, 0.5)
+            if self.probe_state == "scanning":
+                probe_position = self.live_probe_position
+            elif self.probe_state == "positioned" and self.probe_position is not None:
+                probe_position = self.probe_position
+            elif self.probe_state == "parked":
+                pass
+
+            scan_offset = Geometry.FloatPoint()
+            if self.__last_scan_params is not None and probe_position is not None:
+                scan_size, scan_fov_size_nm, scan_center_nm = self.__last_scan_params  # get these from last scan
+                scan_offset = Geometry.FloatPoint.make((probe_position[0]*scan_fov_size_nm[0] - scan_fov_size_nm[0]/2,
+                                                        probe_position[1]*scan_fov_size_nm[1] - scan_fov_size_nm[1]/2))
+                scan_offset = scan_offset*1e-9
 
             theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
             aberrations = dict()
             aberrations["height"] = data.shape[0]
             aberrations["width"] = data.shape[1]
             aberrations["theta"] = theta
-            aberrations["c0a"] = self.beam_shift_m[1]
-            aberrations["c0b"] = self.beam_shift_m[0]
+            aberrations["c0a"] = self.beam_shift_m[1] + scan_offset[0]
+            aberrations["c0b"] = self.beam_shift_m[0] + scan_offset[1]
             aberrations["c10"] = self.__defocus_m
             aberrations["c12a"] = self.__c12[1]
             aberrations["c12b"] = self.__c12[0]
@@ -696,6 +720,87 @@ class Instrument(stem_controller.STEMController):
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
 
+    @property
+    def order_1_max_angle(self) -> float:
+        return self.__order_1_max_angle
+
+    @order_1_max_angle.setter
+    def order_1_max_angle(self, value: float) -> None:
+        self.__order_1_max_angle = value
+        self.property_changed_event.fire("order_1_max_angle")
+
+    @property
+    def order_2_max_angle(self) -> float:
+        return self.__order_2_max_angle
+
+    @order_2_max_angle.setter
+    def order_2_max_angle(self, value: float) -> None:
+        self.__order_2_max_angle = value
+        self.property_changed_event.fire("order_2_max_angle")
+
+    @property
+    def order_3_max_angle(self) -> float:
+        return self.__order_3_max_angle
+
+    @order_3_max_angle.setter
+    def order_3_max_angle(self, value: float) -> None:
+        self.__order_3_max_angle = value
+        self.property_changed_event.fire("order_3_max_angle")
+
+    @property
+    def order_1_patch(self) -> float:
+        return self.__order_1_patch
+
+    @order_1_patch.setter
+    def order_1_patch(self, value: float) -> None:
+        self.__order_1_patch = value
+        self.property_changed_event.fire("order_1_patch")
+
+    @property
+    def order_2_patch(self) -> float:
+        return self.__order_2_patch
+
+    @order_2_patch.setter
+    def order_2_patch(self, value: float) -> None:
+        self.__order_2_patch = value
+        self.property_changed_event.fire("order_2_patch")
+
+    @property
+    def order_3_patch(self) -> float:
+        return self.__order_3_patch
+
+    @order_3_patch.setter
+    def order_3_patch(self, value: float) -> None:
+        self.__order_3_patch = value
+        self.property_changed_event.fire("order_3_patch")
+
+    @property
+    def c1_range(self) -> float:
+        return self.__c1_range
+
+    @c1_range.setter
+    def c1_range(self, value: float) -> None:
+        self.__c1_range = value
+        self.property_changed_event.fire("c1_range")
+
+    @property
+    def c2_range(self) -> float:
+        return self.__c2_range
+
+    @c2_range.setter
+    def c2_range(self, value: float) -> None:
+        self.__c2_range = value
+        self.property_changed_event.fire("c2_range")
+
+    @property
+    def c3_range(self) -> float:
+        return self.__c3_range
+
+    @c3_range.setter
+    def c3_range(self, value: float) -> None:
+        self.__c3_range = value
+        self.property_changed_event.fire("c3_range")
+
     def get_autostem_properties(self):
         """Return a new autostem properties (dict) to be recorded with an acquisition.
 
@@ -734,6 +839,34 @@ class Instrument(stem_controller.STEMController):
             return True, 1.0 if self.is_blanked else 0.0
         elif s == "C10":
             return True, self.defocus_m
+        # This handles all supported aberration coefficients
+        elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
+            split_s = s.split('.')
+            control = getattr(self, split_s[0].lower(), None)
+            if control is not None:
+                if len(split_s) > 1:
+                     if split_s[1] in ("aux"):
+                         return True, control.x
+                     elif split_s[1] in ("bvy"):
+                         return True, control.y
+                else:
+                    return True, control
+        # This handles the target values for all supported aberration coefficients
+        elif re.match("(\^C[1-3][0-4])(\.[auxbvy]|$)$", s):
+            return True, 0.0
+        # This handles the "require" values for all supported aberration coefficients
+        elif re.match("C[1-3][0-4]?Range$", s):
+            value = getattr(self, f"{s[:2].lower()}_range", None)
+            if value is not None:
+                return True, value
+        # This handles the tuning max angles for all supported aberration coefficients
+        elif re.match("Order[1-3](MaxAngle|Patch)$", s):
+            if s.endswith("MaxAngle"):
+                value = getattr(self, f"order_{s[5]}_max_angle", None)
+            else:
+                value = getattr(self, f"order_{s[5]}_patch", None)
+            if value is not None:
+                return True, value
         elif s.startswith("ronchigram_"):
             return parse_camera_values("ronchigram", s[len("ronchigram_"):])
         elif s.startswith("eels_"):
@@ -759,6 +892,21 @@ class Instrument(stem_controller.STEMController):
         elif s == "C10":
             self.defocus_m = val
             return True
+        # This handles all supported aberration coefficients
+        elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
+            split_s = s.split('.')
+            control = getattr(self, split_s[0].lower(), None)
+            if control is not None:
+                if len(split_s) > 1:
+                     if split_s[1] in ("aux"):
+                         setattr(self, split_s[0].lower(), control.make((control.y, val)))
+                         return True
+                     elif split_s[1] in ("bvy"):
+                         setattr(self, split_s[0].lower(), control.make((val, control.x)))
+                         return True
+                else:
+                    setattr(self, split_s[0].lower(), val)
+                    return True
         return False
 
     def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
