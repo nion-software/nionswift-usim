@@ -1,6 +1,17 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.1.6 (UNRELEASED)
+------------------
+
+- Add controls used in 4D acquisition.
+
+- Change Ronchigram units to radians.
+
+- Improve/fix reliability with camera running faster than scan.
+
+Contributors: @Brow71189 @cmeyer
+
 0.1.5 (2018-10-04)
 ------------------
 
