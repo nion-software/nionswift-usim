@@ -125,10 +125,10 @@ class Camera(camera_base.CameraDevice):
         return {
             "x_scale_control": self.camera_type + "_x_scale",
             "x_offset_control": self.camera_type + "_x_offset",
-            "x_units_value": "eV" if self.camera_type == "eels" else "nm",
+            "x_units_value": "eV" if self.camera_type == "eels" else "rad",
             "y_scale_control": self.camera_type + "_y_scale",
             "y_offset_control": self.camera_type + "_y_offset",
-            "y_units_value": "" if self.camera_type == "eels" else "nm",
+            "y_units_value": "" if self.camera_type == "eels" else "rad",
             "intensity_units_value": "counts",
             "counts_per_electron_value": self.__instrument.counts_per_electron
         }
