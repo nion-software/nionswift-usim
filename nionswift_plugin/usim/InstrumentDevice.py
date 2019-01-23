@@ -315,9 +315,13 @@ class AberrationsController:
 class Control:
     """
     Controls keep an output value equal to the weight sum of input values plus a local value.
+
+    TODO: add optional noise (continuous and periodic)
+    TODO: add response time to changes
+    TODO: add hysteresis
     """
 
-    def __init__(self, name: str, local_value: float=0.0, weighted_inputs: typing.Optional[typing.Tuple["Control", float]]=None):
+    def __init__(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", float]]] = None):
         self.name = name
         self.weighted_inputs = weighted_inputs if weighted_inputs else list()
         self.dependents = list()
@@ -359,6 +363,9 @@ class Control:
 
 
 class Instrument(stem_controller.STEMController):
+    """
+    TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
+    """
 
     def __init__(self, instrument_id: str):
         super().__init__()
