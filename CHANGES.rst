@@ -4,6 +4,8 @@ Changelog (nionswift-usim)
 0.1.6 (UNRELEASED)
 ------------------
 
+- Add support for ZLP tare control / inform.
+
 - Add controls used in 4D acquisition.
 
 - Change Ronchigram units to radians.

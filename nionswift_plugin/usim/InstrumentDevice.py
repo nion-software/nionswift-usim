@@ -71,7 +71,7 @@ class Feature:
         probe_position_m = Geometry.FloatPoint(y=probe_position.y * scan_rect_m.height + scan_rect_m.top, x=probe_position.x * scan_rect_m.width + scan_rect_m.left)
         return scan_rect_m.intersects_rect(feature_rect_m) and feature_rect_m.contains_point(probe_position_m)
 
-    def plot(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> None:
+    def plot(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> int:
         # TODO: how does center_nm interact with stage position?
         # TODO: take into account feature angle
         # TODO: take into account frame parameters angle
@@ -312,6 +312,52 @@ class AberrationsController:
         return numpy.zeros((height, width))
 
 
+class Control:
+    """
+    Controls keep an output value equal to the weight sum of input values plus a local value.
+    """
+
+    def __init__(self, name: str, local_value: float=0.0, weighted_inputs: typing.Optional[typing.Tuple["Control", float]]=None):
+        self.name = name
+        self.weighted_inputs = weighted_inputs if weighted_inputs else list()
+        self.dependents = list()
+        self.local_value = float(local_value)
+        for input, _ in self.weighted_inputs:
+            input.add_dependent(self)
+
+    def __str__(self):
+        return "{}: {} + {} = {}".format(self.name, self.__weighted_input_value, self.local_value, self.output_value)
+
+    @property
+    def __weighted_input_value(self) -> float:
+        return sum([weight * input.output_value for input, weight in self.weighted_inputs])
+
+    @property
+    def output_value(self) -> float:
+        return self.__weighted_input_value + self.local_value
+
+    def add_input(self, input: "Control", weight: float) -> None:
+        self.weighted_inputs.append((input, weight))
+
+    def add_dependent(self, dependent: "Control") -> None:
+        self.dependents.append(dependent)
+
+    def set_local_value(self, value: float) -> None:
+        self.local_value = value
+
+    def set_output_value(self, value: float) -> None:
+        self.local_value = value - self.__weighted_input_value
+
+    def inform_output_value(self, value: float) -> None:
+        # save old dependent output values so they can stay constant
+        old_dependent_outputs = [dependent.output_value for dependent in self.dependents]
+        # set the output value
+        self.set_output_value(value)
+        # update dependent output values to old values
+        for dependent, dependent_output in zip(self.dependents, old_dependent_outputs):
+            dependent.set_output_value(dependent_output)
+
+
 class Instrument(stem_controller.STEMController):
 
     def __init__(self, instrument_id: str):
@@ -352,8 +398,16 @@ class Instrument(stem_controller.STEMController):
         self.__c2_range = 300e-9
         self.__c3_range = 17e-6
         self.__slit_in = False
-        self.__energy_offset_eV = -20
         self.__energy_per_channel_eV = 0.5
+
+        zlp_tare_control = Control("ZLPtare")
+        zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
+
+        self.__controls = {
+            "ZLPtare": zlp_tare_control,
+            "ZLPoffset": zlp_offset_control,
+        }
+
         self.__voltage = 100000
         self.__beam_current = 200E-12  # 200 pA
         self.__blanked = False
@@ -536,7 +590,9 @@ class Instrument(stem_controller.STEMController):
                 probe_position = self.live_probe_position
             if probe_position is not None:
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
-                plot_norm(spectrum, 1.0, dimensional_calibrations[1], 0, 0.5 / slit_attenuation)
+                used_calibration = dimensional_calibrations[1]
+                used_calibration.offset = self.__controls["ZLPoffset"].local_value
+                plot_norm(spectrum, 1.0, used_calibration, 0, 0.5 / slit_attenuation)
                 size, fov_size_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
                 mean_free_path = 100  # nm. (lambda values from back of Edgerton)
@@ -546,7 +602,7 @@ class Instrument(stem_controller.STEMController):
                 # Each plasmon is also reduce by T/L
                 for index, feature in enumerate(self.__features):
                     if feature.intersects(offset_m, fov_size_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
-                        feature.plot_spectrum(spectrum, 1.0 / 10, dimensional_calibrations[1])
+                        feature.plot_spectrum(spectrum, 1.0 / 10, used_calibration)
                 feature_pixel_count = max(numpy.sum(spectrum), 0.01)
                 data[:, ...] = spectrum
             else:
@@ -576,7 +632,7 @@ class Instrument(stem_controller.STEMController):
             ]
             return dimensional_calibrations
         if camera_type == "eels":
-            energy_offset_eV = self.__energy_offset_eV
+            energy_offset_eV = self.energy_offset_eV
             # energy_offset_eV += random.uniform(-1, 1) * self.__energy_per_channel_eV * 5
             dimensional_calibrations = [
                 Calibration.Calibration(),
@@ -704,11 +760,12 @@ class Instrument(stem_controller.STEMController):
 
     @property
     def energy_offset_eV(self) -> float:
-        return self.__energy_offset_eV
+        return self.__controls["ZLPoffset"].output_value
 
     @energy_offset_eV.setter
     def energy_offset_eV(self, value: float) -> None:
-        self.__energy_offset_eV = value
+        self.__controls["ZLPoffset"].set_output_value(value)
+        # TODO: this should be fired whenever ZLPoffset changes; not just when this method is called.
         self.property_changed_event.fire("energy_offset_eV")
 
     @property
@@ -839,6 +896,8 @@ class Instrument(stem_controller.STEMController):
             return True, 1.0 if self.is_blanked else 0.0
         elif s == "C10":
             return True, self.defocus_m
+        elif s in self.__controls:
+            return True, self.__controls[s].output_value
         # This handles all supported aberration coefficients
         elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
             split_s = s.split('.')
@@ -892,6 +951,9 @@ class Instrument(stem_controller.STEMController):
         elif s == "C10":
             self.defocus_m = val
             return True
+        elif s in self.__controls:
+            self.__controls[s].set_output_value(val)
+            return True
         # This handles all supported aberration coefficients
         elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
             split_s = s.split('.')
@@ -919,6 +981,9 @@ class Instrument(stem_controller.STEMController):
         return self.SetVal(s, self.GetVal(s) + delta)
 
     def InformControl(self, s: str, val: float) -> bool:
+        if s in self.__controls:
+            self.__controls[s].inform_output_value(val)
+            return True
         return self.SetVal(s, val)
 
     def change_stage_position(self, *, dy: int=None, dx: int=None):
