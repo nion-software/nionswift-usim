@@ -546,10 +546,8 @@ class Instrument(stem_controller.STEMController):
             probe_position = Geometry.FloatPoint(0.5, 0.5)
             if self.probe_state == "scanning":
                 probe_position = self.live_probe_position
-            elif self.probe_state == "positioned" and self.probe_position is not None:
+            elif self.probe_state == "parked" and self.probe_position is not None:
                 probe_position = self.probe_position
-            elif self.probe_state == "parked":
-                pass
 
             scan_offset = Geometry.FloatPoint()
             if self.__last_scan_params is not None and probe_position is not None:
@@ -563,8 +561,8 @@ class Instrument(stem_controller.STEMController):
             aberrations["height"] = data.shape[0]
             aberrations["width"] = data.shape[1]
             aberrations["theta"] = theta
-            aberrations["c0a"] = self.beam_shift_m[1] + scan_offset[0]
-            aberrations["c0b"] = self.beam_shift_m[0] + scan_offset[1]
+            aberrations["c0a"] = self.beam_shift_m[1] + scan_offset[1]
+            aberrations["c0b"] = self.beam_shift_m[0] + scan_offset[0]
             aberrations["c10"] = self.__defocus_m
             aberrations["c12a"] = self.__c12[1]
             aberrations["c12b"] = self.__c12[0]
