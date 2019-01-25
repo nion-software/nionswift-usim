@@ -7,7 +7,6 @@ Useful references:
 # standard libraries
 import math
 import numpy
-import os
 import random
 import scipy.ndimage.interpolation
 import scipy.stats
@@ -328,6 +327,8 @@ class Control:
         self.local_value = float(local_value)
         for input, _ in self.weighted_inputs:
             input.add_dependent(self)
+        self.__last_output_value = None
+        self.on_changed = None
 
     def __str__(self):
         return "{}: {} + {} = {}".format(self.name, self.__weighted_input_value, self.local_value, self.output_value)
@@ -342,15 +343,17 @@ class Control:
 
     def add_input(self, input: "Control", weight: float) -> None:
         self.weighted_inputs.append((input, weight))
+        self._notify_change()
 
     def add_dependent(self, dependent: "Control") -> None:
         self.dependents.append(dependent)
 
     def set_local_value(self, value: float) -> None:
         self.local_value = value
+        self._notify_change()
 
     def set_output_value(self, value: float) -> None:
-        self.local_value = value - self.__weighted_input_value
+        self.set_local_value(value - self.__weighted_input_value)
 
     def inform_output_value(self, value: float) -> None:
         # save old dependent output values so they can stay constant
@@ -360,6 +363,15 @@ class Control:
         # update dependent output values to old values
         for dependent, dependent_output in zip(self.dependents, old_dependent_outputs):
             dependent.set_output_value(dependent_output)
+
+    def _notify_change(self) -> None:
+        output_value = self.output_value
+        if output_value != self.__last_output_value:
+            self.__last_output_value = output_value
+            if callable(self.on_changed):
+                self.on_changed(self)
+            for dependent in self.dependents:
+                dependent._notify_change()
 
 
 class Instrument(stem_controller.STEMController):
@@ -371,6 +383,7 @@ class Instrument(stem_controller.STEMController):
         super().__init__()
         self.priority = 20
         self.instrument_id = instrument_id
+        self.property_changed_event = Event.Event()
         self.__camera_frame_event = threading.Event()
         self.__features = list()
         stage_size_nm = 150
@@ -388,7 +401,6 @@ class Instrument(stem_controller.STEMController):
         self.__stage_position_m = Geometry.FloatPoint()
         self.__beam_shift_m = Geometry.FloatPoint()
         self.__convergence_angle_rad = 30 / 1000
-        self.__defocus_m = 500 / 1E9
         self.__c12 = Geometry.FloatPoint()
         self.__c21 = Geometry.FloatPoint()
         self.__c23 = Geometry.FloatPoint()
@@ -407,18 +419,28 @@ class Instrument(stem_controller.STEMController):
         self.__slit_in = False
         self.__energy_per_channel_eV = 0.5
 
+        c10_control = Control("C10", 500 / 1e9)
         zlp_tare_control = Control("ZLPtare")
         zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
+        # dependent controls
+        defocus_m_control = Control("defocus_m", c10_control.output_value, [(c10_control, 1.0)])
 
         self.__controls = {
+            "C10": c10_control,
             "ZLPtare": zlp_tare_control,
             "ZLPoffset": zlp_offset_control,
+            "defocus_m_control": defocus_m_control,
         }
+
+        def control_changed(control: Control) -> None:
+            self.property_changed_event.fire(control.name)
+
+        for control in self.__controls.values():
+            control.on_changed = control_changed
 
         self.__voltage = 100000
         self.__beam_current = 200E-12  # 200 pA
         self.__blanked = False
-        self.property_changed_event = Event.Event()
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
         self.__max_defocus = 5000 / 1E9
         self.__tv_pixel_angle = math.asin(stage_size_nm / (self.__max_defocus * 1E9)) / self.__ronchigram_shape.height
@@ -426,7 +448,7 @@ class Instrument(stem_controller.STEMController):
         self.__last_scan_params = None
         self.live_probe_position = None
         theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
-        self.__aberrations_controller = AberrationsController(self.__ronchigram_shape[0], self.__ronchigram_shape[1], theta, self.__max_defocus, self.__defocus_m)
+        self.__aberrations_controller = AberrationsController(self.__ronchigram_shape[0], self.__ronchigram_shape[1], theta, self.__max_defocus, self.defocus_m)
         self.__sequence_progress = 0
         self.__lock = threading.Lock()
 
@@ -563,7 +585,7 @@ class Instrument(stem_controller.STEMController):
             aberrations["theta"] = theta
             aberrations["c0a"] = self.beam_shift_m[1] + scan_offset[1]
             aberrations["c0b"] = self.beam_shift_m[0] + scan_offset[0]
-            aberrations["c10"] = self.__defocus_m
+            aberrations["c10"] = self.defocus_m
             aberrations["c12a"] = self.__c12[1]
             aberrations["c12b"] = self.__c12[0]
             aberrations["c21a"] = self.__c21[1]
@@ -624,7 +646,7 @@ class Instrument(stem_controller.STEMController):
             binning_shape = binning_shape if binning_shape else Geometry.IntSize(1, 1)
             height = readout_area.height if readout_area else self.__ronchigram_shape[0]
             width = readout_area.width if readout_area else self.__ronchigram_shape[1]
-            full_fov_nm = abs(self.__defocus_m) * math.sin(self.__tv_pixel_angle * self.__ronchigram_shape.height) * 1E9
+            full_fov_nm = abs(self.defocus_m) * math.sin(self.__tv_pixel_angle * self.__ronchigram_shape.height) * 1E9
             fov_nm = Geometry.FloatSize(full_fov_nm * height / self.__ronchigram_shape.height, full_fov_nm * width / self.__ronchigram_shape.width)
             scale_y = binning_shape[0] * fov_nm[0] / height
             scale_x = binning_shape[1] * fov_nm[1] / width
@@ -666,12 +688,11 @@ class Instrument(stem_controller.STEMController):
 
     @property
     def defocus_m(self) -> float:
-        return self.__defocus_m
+        return self.__controls["C10"].output_value
 
     @defocus_m.setter
     def defocus_m(self, value: float) -> None:
-        self.__defocus_m = value
-        self.property_changed_event.fire("defocus_m")
+        self.__controls["C10"].set_output_value(value)
 
     @property
     def c12(self) -> Geometry.FloatPoint:
@@ -899,8 +920,6 @@ class Instrument(stem_controller.STEMController):
             return True, self.energy_offset_eV
         elif s == "C_Blank":
             return True, 1.0 if self.is_blanked else 0.0
-        elif s == "C10":
-            return True, self.defocus_m
         elif s in self.__controls:
             return True, self.__controls[s].output_value
         # This handles all supported aberration coefficients
@@ -952,9 +971,6 @@ class Instrument(stem_controller.STEMController):
             return True
         elif s == "C_Blank":
             self.is_blanked = val != 0.0
-            return True
-        elif s == "C10":
-            self.defocus_m = val
             return True
         elif s in self.__controls:
             self.__controls[s].set_output_value(val)
