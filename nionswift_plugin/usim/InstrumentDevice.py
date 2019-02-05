@@ -446,11 +446,20 @@ class Instrument(stem_controller.STEMController):
         self.__tv_pixel_angle = math.asin(stage_size_nm / (self.__max_defocus * 1E9)) / self.__ronchigram_shape.height
         self.__eels_shape = Geometry.IntSize(256, 1024)
         self.__last_scan_params = None
-        self.live_probe_position = None
+        self.__live_probe_position = None
         theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
         self.__aberrations_controller = AberrationsController(self.__ronchigram_shape[0], self.__ronchigram_shape[1], theta, self.__max_defocus, self.defocus_m)
         self.__sequence_progress = 0
         self.__lock = threading.Lock()
+
+    @property
+    def live_probe_position(self):
+        return self.__live_probe_position
+
+    @live_probe_position.setter
+    def live_probe_position(self, position):
+        self.__live_probe_position = position
+        self.property_changed_event.fire("live_probe_position")
 
     @property
     def sequence_progress(self):
