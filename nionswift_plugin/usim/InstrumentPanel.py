@@ -65,20 +65,20 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
 
         defocus_field = ui.create_line_edit_widget()
-        defocus_field.bind_text(Binding.PropertyBinding(instrument, "defocus_m", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        defocus_field.bind_text(Binding.PropertyBinding(instrument, "C10", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
-        c12_widget = PositionWidget(ui, _("C12"), instrument, "c12")
+        c12_widget = PositionWidget(ui, _("C12"), instrument, "C12")
 
-        c21_widget = PositionWidget(ui, _("C21"), instrument, "c21")
+        c21_widget = PositionWidget(ui, _("C21"), instrument, "C21")
 
-        c23_widget = PositionWidget(ui, _("C23"), instrument, "c23")
+        c23_widget = PositionWidget(ui, _("C23"), instrument, "C23")
 
         c3_field = ui.create_line_edit_widget()
-        c3_field.bind_text(Binding.PropertyBinding(instrument, "c30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        c3_field.bind_text(Binding.PropertyBinding(instrument, "C30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
-        c32_widget = PositionWidget(ui, _("C32"), instrument, "c32")
+        c32_widget = PositionWidget(ui, _("C32"), instrument, "C32")
 
-        c34_widget = PositionWidget(ui, _("C34"), instrument, "c34")
+        c34_widget = PositionWidget(ui, _("C34"), instrument, "C34")
 
         blanked_checkbox = ui.create_check_box_widget(_("Beam Blanked"))
         blanked_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_blanked"))

@@ -401,12 +401,6 @@ class Instrument(stem_controller.STEMController):
         self.__stage_position_m = Geometry.FloatPoint()
         self.__beam_shift_m = Geometry.FloatPoint()
         self.__convergence_angle_rad = 30 / 1000
-        self.__c12 = Geometry.FloatPoint()
-        self.__c21 = Geometry.FloatPoint()
-        self.__c23 = Geometry.FloatPoint()
-        self.__c30 = 0.0
-        self.__c32 = Geometry.FloatPoint()
-        self.__c34 = Geometry.FloatPoint()
         self.__order_1_max_angle = 0.008
         self.__order_2_max_angle = 0.012
         self.__order_3_max_angle = 0.024
@@ -418,26 +412,6 @@ class Instrument(stem_controller.STEMController):
         self.__c3_range = 17e-6
         self.__slit_in = False
         self.__energy_per_channel_eV = 0.5
-
-        c10_control = Control("C10", 500 / 1e9)
-        zlp_tare_control = Control("ZLPtare")
-        zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
-        # dependent controls
-        defocus_m_control = Control("defocus_m", c10_control.output_value, [(c10_control, 1.0)])
-
-        self.__controls = {
-            "C10": c10_control,
-            "ZLPtare": zlp_tare_control,
-            "ZLPoffset": zlp_offset_control,
-            "defocus_m_control": defocus_m_control,
-        }
-
-        def control_changed(control: Control) -> None:
-            self.property_changed_event.fire(control.name)
-
-        for control in self.__controls.values():
-            control.on_changed = control_changed
-
         self.__voltage = 100000
         self.__beam_current = 200E-12  # 200 pA
         self.__blanked = False
@@ -447,10 +421,121 @@ class Instrument(stem_controller.STEMController):
         self.__eels_shape = Geometry.IntSize(256, 1024)
         self.__last_scan_params = None
         self.__live_probe_position = None
-        theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
-        self.__aberrations_controller = AberrationsController(self.__ronchigram_shape[0], self.__ronchigram_shape[1], theta, self.__max_defocus, self.defocus_m)
         self.__sequence_progress = 0
         self.__lock = threading.Lock()
+
+        zlp_tare_control = Control("ZLPtare")
+        zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
+        c10 = Control("C10", 500 / 1e9)
+        c12_x = Control("C12.x")
+        c12_y = Control("C12.y")
+        c21_x = Control("C21.x")
+        c21_y = Control("C21.y")
+        c23_x = Control("C23.x")
+        c23_y = Control("C23.y")
+        c30 = Control("C30")
+        c32_x = Control("C32.x")
+        c32_y = Control("C32.y")
+        c34_x = Control("C34.x")
+        c34_y = Control("C34.y")
+        c10Control = Control("C10Control", 0.0, [(c10, 1.0)])
+        c12Control_x = Control("C12Control.x", 0.0, [(c12_x, 1.0)])
+        c12Control_y = Control("C12Control.y", 0.0, [(c12_y, 1.0)])
+        c21Control_x = Control("C21Control.x", 0.0, [(c21_x, 1.0)])
+        c21Control_y = Control("C21Control.y", 0.0, [(c21_y, 1.0)])
+        c23Control_x = Control("C23Control.x", 0.0, [(c23_x, 1.0)])
+        c23Control_y = Control("C23Control.y", 0.0, [(c23_y, 1.0)])
+        c30Control = Control("C30Control", 0.0, [(c30, 1.0)])
+        c32Control_x = Control("C32Control.x", 0.0, [(c32_x, 1.0)])
+        c32Control_y = Control("C32Control.y", 0.0, [(c32_y, 1.0)])
+        c34Control_x = Control("C34Control.x", 0.0, [(c34_x, 1.0)])
+        c34Control_y = Control("C34Control.y", 0.0, [(c34_y, 1.0)])
+        # dependent controls
+        defocus_m_control = Control("defocus_m", c10.output_value, [(c10, 1.0)])
+
+        self.__controls = {
+            "ZLPtare": zlp_tare_control,
+            "ZLPoffset": zlp_offset_control,
+            "C10": c10,
+            "C12.x": c12_x,
+            "C12.y": c12_y,
+            "C21.x": c21_x,
+            "C21.y": c21_y,
+            "C23.x": c23_x,
+            "C23.y": c23_y,
+            "C30": c30,
+            "C32.x": c32_x,
+            "C32.y": c32_y,
+            "C34.x": c34_x,
+            "C34.y": c34_y,
+            "C10Control": c10Control,
+            "C12Control.x": c12Control_x,
+            "C12Control.y": c12Control_y,
+            "C21Control.x": c21Control_x,
+            "C21Control.y": c21Control_y,
+            "C23Control.x": c23Control_x,
+            "C23Control.y": c23Control_y,
+            "C30Control": c30Control,
+            "C32Control.x": c32Control_x,
+            "C32Control.y": c32Control_y,
+            "C34Control.x": c34Control_x,
+            "C34Control.y": c34Control_y,
+            "defocus_m_control": defocus_m_control,
+            }
+
+        def control_changed(control: Control) -> None:
+            self.property_changed_event.fire(control.name)
+
+        for control in self.__controls.values():
+            control.on_changed = control_changed
+
+        theta = self.__tv_pixel_angle * self.__ronchigram_shape.height / 2  # half angle on camera
+        self.__aberrations_controller = AberrationsController(self.__ronchigram_shape[0], self.__ronchigram_shape[1], theta, self.__max_defocus, self.defocus_m)
+
+        controls_added = []
+        for name, control in self.__controls.items():
+            if "." in name and not name in controls_added:
+                splitname = name.split(".")
+                if splitname[1] == "x":
+                    x_name = name
+                    y_name = splitname[0] + "." + "y"
+                elif splitname[1] == "y":
+                    y_name = name
+                    x_name = splitname[0] + "." + "x"
+                else:
+                    continue
+                # we need to wrap the getter and setter functions into these "creator" functions in order to
+                # de-reference the y_name and x_name variables. Otherwise python keeps using the variable names
+                # which change with each iteration of the for-loop.
+                def make_getter(y_name, x_name):
+                    def getter(self):
+                        return Geometry.FloatPoint(self.__controls[y_name].output_value,
+                                                   self.__controls[x_name].output_value)
+                    return getter
+                def make_setter(y_name, x_name):
+                    def setter(self, value):
+                        self.__controls[y_name].set_output_value(value.y)
+                        self.__controls[x_name].set_output_value(value.x)
+                        self.property_changed_event.fire(y_name.split(".")[0])
+                    return setter
+
+                setattr(Instrument, splitname[0], property(make_getter(y_name, x_name),
+                                                           make_setter(y_name, x_name)))
+                controls_added.append(x_name)
+                controls_added.append(y_name)
+            elif name not in controls_added:
+                def make_getter(name):
+                    def getter(self):
+                        return self.__controls[name].output_value
+                    return getter
+                def make_setter(name):
+                    def setter(self, value):
+                        self.__controls[name].set_output_value(value)
+                        self.property_changed_event.fire(name)
+                    return setter
+
+                setattr(Instrument, name, property(make_getter(name), make_setter(name)))
+                controls_added.append(name)
 
     @property
     def live_probe_position(self):
@@ -594,18 +679,18 @@ class Instrument(stem_controller.STEMController):
             aberrations["theta"] = theta
             aberrations["c0a"] = self.beam_shift_m[1] + scan_offset[1]
             aberrations["c0b"] = self.beam_shift_m[0] + scan_offset[0]
-            aberrations["c10"] = self.defocus_m
-            aberrations["c12a"] = self.__c12[1]
-            aberrations["c12b"] = self.__c12[0]
-            aberrations["c21a"] = self.__c21[1]
-            aberrations["c21b"] = self.__c21[0]
-            aberrations["c23a"] = self.__c23[1]
-            aberrations["c23b"] = self.__c23[0]
-            aberrations["c30"] = self.__c30
-            aberrations["c32a"] = self.__c32[1]
-            aberrations["c32b"] = self.__c32[0]
-            aberrations["c34a"] = self.__c34[1]
-            aberrations["c34b"] = self.__c34[0]
+            aberrations["c10"] = self.C10
+            aberrations["c12a"] = self.C12[1]
+            aberrations["c12b"] = self.C12[0]
+            aberrations["c21a"] = self.C21[1]
+            aberrations["c21b"] = self.C21[0]
+            aberrations["c23a"] = self.C23[1]
+            aberrations["c23b"] = self.C23[0]
+            aberrations["c30"] = self.C30
+            aberrations["c32a"] = self.C32[1]
+            aberrations["c32b"] = self.C32[0]
+            aberrations["c34a"] = self.C34[1]
+            aberrations["c34b"] = self.C34[0]
             data = self.__aberrations_controller.apply(aberrations, data)
 
             intensity_calibration = Calibration.Calibration(units="counts")
@@ -627,7 +712,7 @@ class Instrument(stem_controller.STEMController):
             if probe_position is not None:
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
                 used_calibration = dimensional_calibrations[1]
-                used_calibration.offset = self.__controls["ZLPoffset"].local_value
+                used_calibration.offset = self.ZLPoffset.local_value
                 plot_norm(spectrum, 1.0, used_calibration, 0, 0.5 / slit_attenuation)
                 size, fov_size_nm, center_nm = self.__last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
@@ -702,60 +787,6 @@ class Instrument(stem_controller.STEMController):
     @defocus_m.setter
     def defocus_m(self, value: float) -> None:
         self.__controls["C10"].set_output_value(value)
-
-    @property
-    def c12(self) -> Geometry.FloatPoint:
-        return self.__c12
-
-    @c12.setter
-    def c12(self, value: Geometry.FloatPoint) -> None:
-        self.__c12 = value
-        self.property_changed_event.fire("c12")
-
-    @property
-    def c21(self) -> Geometry.FloatPoint:
-        return self.__c21
-
-    @c21.setter
-    def c21(self, value: Geometry.FloatPoint) -> None:
-        self.__c21 = value
-        self.property_changed_event.fire("c21")
-
-    @property
-    def c23(self) -> Geometry.FloatPoint:
-        return self.__c23
-
-    @c23.setter
-    def c23(self, value: Geometry.FloatPoint) -> None:
-        self.__c23 = value
-        self.property_changed_event.fire("c23")
-
-    @property
-    def c30(self) -> float:
-        return self.__c30
-
-    @c30.setter
-    def c30(self, value: float) -> None:
-        self.__c30 = value
-        self.property_changed_event.fire("c30")
-
-    @property
-    def c32(self) -> Geometry.FloatPoint:
-        return self.__c32
-
-    @c32.setter
-    def c32(self, value: Geometry.FloatPoint) -> None:
-        self.__c32 = value
-        self.property_changed_event.fire("c32")
-
-    @property
-    def c34(self) -> Geometry.FloatPoint:
-        return self.__c34
-
-    @c34.setter
-    def c34(self, value: Geometry.FloatPoint) -> None:
-        self.__c34 = value
-        self.property_changed_event.fire("c34")
 
     @property
     def voltage(self) -> float:
@@ -867,31 +898,31 @@ class Instrument(stem_controller.STEMController):
         self.property_changed_event.fire("order_3_patch")
 
     @property
-    def c1_range(self) -> float:
+    def C1_range(self) -> float:
         return self.__c1_range
 
-    @c1_range.setter
-    def c1_range(self, value: float) -> None:
+    @C1_range.setter
+    def C1_range(self, value: float) -> None:
         self.__c1_range = value
-        self.property_changed_event.fire("c1_range")
+        self.property_changed_event.fire("C1_range")
 
     @property
-    def c2_range(self) -> float:
+    def C2_range(self) -> float:
         return self.__c2_range
 
-    @c2_range.setter
-    def c2_range(self, value: float) -> None:
+    @C2_range.setter
+    def C2_range(self, value: float) -> None:
         self.__c2_range = value
-        self.property_changed_event.fire("c2_range")
+        self.property_changed_event.fire("C2_range")
 
     @property
-    def c3_range(self) -> float:
+    def C3_range(self) -> float:
         return self.__c3_range
 
-    @c3_range.setter
-    def c3_range(self, value: float) -> None:
+    @C3_range.setter
+    def C3_range(self, value: float) -> None:
         self.__c3_range = value
-        self.property_changed_event.fire("c3_range")
+        self.property_changed_event.fire("C3_range")
 
     def get_autostem_properties(self):
         """Return a new autostem properties (dict) to be recorded with an acquisition.
@@ -934,7 +965,7 @@ class Instrument(stem_controller.STEMController):
         # This handles all supported aberration coefficients
         elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
             split_s = s.split('.')
-            control = getattr(self, split_s[0].lower(), None)
+            control = getattr(self, split_s[0], None)
             if control is not None:
                 if len(split_s) > 1:
                      if split_s[1] in ("aux"):
@@ -948,10 +979,10 @@ class Instrument(stem_controller.STEMController):
             return True, 0.0
         # This handles the "require" values for all supported aberration coefficients
         elif re.match("C[1-3][0-4]?Range$", s):
-            value = getattr(self, f"{s[:2].lower()}_range", None)
+            value = getattr(self, f"{s[:2]}_range", None)
             if value is not None:
                 return True, value
-        # This handles the tuning max angles for all supported aberration coefficients
+        # This handles the tuning max angles and patch sizes for all supported aberration coefficients
         elif re.match("Order[1-3](MaxAngle|Patch)$", s):
             if s.endswith("MaxAngle"):
                 value = getattr(self, f"order_{s[5]}_max_angle", None)
@@ -987,17 +1018,17 @@ class Instrument(stem_controller.STEMController):
         # This handles all supported aberration coefficients
         elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
             split_s = s.split('.')
-            control = getattr(self, split_s[0].lower(), None)
+            control = getattr(self, split_s[0], None)
             if control is not None:
                 if len(split_s) > 1:
                      if split_s[1] in ("aux"):
-                         setattr(self, split_s[0].lower(), control.make((control.y, val)))
+                         setattr(self, split_s[0], control.make((control.y, val)))
                          return True
                      elif split_s[1] in ("bvy"):
-                         setattr(self, split_s[0].lower(), control.make((val, control.x)))
+                         setattr(self, split_s[0], control.make((val, control.x)))
                          return True
                 else:
-                    setattr(self, split_s[0].lower(), val)
+                    setattr(self, split_s[0], val)
                     return True
         return False
 
@@ -1011,8 +1042,33 @@ class Instrument(stem_controller.STEMController):
         return self.SetVal(s, self.GetVal(s) + delta)
 
     def InformControl(self, s: str, val: float) -> bool:
-        if s in self.__controls:
+        # here we need to check first for the match with aberration coefficients. Otherwise the
+        # "property_changed_event" will be fired with the wrong paramter
+        # This handles all supported aberration coefficients
+        if re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
+            split_s = s.split('.')
+            if len(split_s) > 1:
+                 if split_s[1] in ("aux"):
+                     control = self.__controls.get(split_s[0] + ".x")
+                     if control:
+                         control.inform_output_value(val)
+                         self.property_changed_event.fire(split_s[0])
+                         return True
+                 elif split_s[1] in ("bvy"):
+                     control = self.__controls.get(split_s[0] + ".y")
+                     if control:
+                         control.inform_output_value(val)
+                         self.property_changed_event.fire(split_s[0])
+                         return True
+            else:
+                control = self.__controls.get(s)
+                if control:
+                    control.inform_output_value(val)
+                    self.property_changed_event.fire(s)
+                    return True
+        elif s in self.__controls:
             self.__controls[s].inform_output_value(val)
+            self.property_changed_event.fire(s)
             return True
         return self.SetVal(s, val)
 
