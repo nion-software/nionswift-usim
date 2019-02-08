@@ -24,16 +24,65 @@ from nion.utils import Geometry
 from nion.instrumentation import stem_controller
 
 
+"""
+from nionswift_plugin.usim import InstrumentDevice
+from nion.data import Calibration
+import scipy.stats
+data = numpy.zeros((1000, ))
+InstrumentDevice.plot_powerlaw(data, 1, Calibration.Calibration(), 100, 30)
+show(data)
+data = numpy.zeros((1000, ))
+InstrumentDevice.plot_powerlaw(data, 1, Calibration.Calibration(offset=10), 100, 30)
+show(data)
+
+from nionswift_plugin.usim import InstrumentDevice
+from nion.data import Calibration
+import scipy.stats
+data = numpy.zeros((1000, ))
+InstrumentDevice.plot_norm(data, 1, Calibration.Calibration(), 100, 30)
+show(data)
+data = numpy.zeros((1000, ))
+InstrumentDevice.plot_norm(data, 1, Calibration.Calibration(offset=10), 100, 30)
+show(data)
+
+from nionswift_plugin.usim import InstrumentDevice
+from nion.data import Calibration
+import scipy.stats
+data = numpy.zeros((1000, ))
+powerlaw = scipy.stats.powerlaw(4, loc=0, scale=4000)
+show(powerlaw.pdf(numpy.linspace(1000, 0, data.shape[0])))
+show(powerlaw.pdf(numpy.linspace(900, -100, data.shape[0])))
+
+from nionswift_plugin.usim import InstrumentDevice
+from nion.data import Calibration
+import scipy.stats
+data = numpy.zeros((1000, ))
+show(scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(0, 1000, data.shape[0])))
+show(scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(100, 1100, data.shape[0])))
+
+
+from nionswift_plugin.usim import InstrumentDevice
+from nion.data import Calibration
+import scipy.stats
+data = numpy.zeros((1000, ))
+powerlaw = scipy.stats.powerlaw(8, loc=0, scale=4000)
+show(powerlaw.pdf(numpy.linspace(4000 - 0, 4000 - 1000, data.shape[0])) * scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(0, 1000, data.shape[0])))
+show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])) * scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(100, 1100, data.shape[0])))
+# show(powerlaw.pdf(numpy.linspace(4000 - 0, 4000 - 1000, data.shape[0])))
+# show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])))
+"""
+
+
 def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, offset_eV: float, onset_eV: float) -> None:
     # calculate the range
     # 1 represents 0eV, 0 represents 4000eV
     # TODO: sub-pixel accuracy
-    data_range = [0, data.shape[0]]
-    energy_range_eV = [energy_calibration.convert_to_calibrated_value(data_range[0]), energy_calibration.convert_to_calibrated_value(data_range[1])]
+    energy_range_eV = [energy_calibration.convert_to_calibrated_value(0), energy_calibration.convert_to_calibrated_value(data.shape[0])]
     envelope = scipy.stats.norm(loc=offset_eV, scale=onset_eV).cdf(numpy.linspace(energy_range_eV[0], energy_range_eV[1], data.shape[0]))
-    powerlaw = scipy.stats.powerlaw(4, loc=0, scale=4000)
-    if energy_range_eV[1] - offset_eV > 0:
-        data += envelope * multiplier * powerlaw.pdf(numpy.linspace(energy_range_eV[1], energy_range_eV[0], data_range[1])) / powerlaw.pdf(energy_range_eV[1] - offset_eV)
+    max_ev = 4000
+    powerlaw_dist = scipy.stats.powerlaw(8, loc=0, scale=max_ev)  # this is an increasing function; must be reversed below; 8 is arbitrary but looks good
+    powerlaw = powerlaw_dist.pdf(numpy.linspace(max_ev - energy_range_eV[0], max_ev - energy_range_eV[1], data.shape[0]))
+    data += envelope * multiplier * powerlaw
 
 
 def plot_norm(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, energy_eV: float, energy_width_eV: float) -> None:
@@ -102,6 +151,7 @@ class Feature:
 
     def plot_spectrum(self, data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
         for edge_eV, onset_eV in self.edges:
+            # print(f"edge_eV {edge_eV} onset_eV {onset_eV}")
             strength = multiplier * 0.1
             plot_powerlaw(data, strength, energy_calibration, edge_eV, onset_eV)
         for n in range(1, self.plurality + 1):
@@ -406,6 +456,10 @@ class CameraSimulator:
         self.__probe_state_changed_event_listener = None
 
     @property
+    def _camera_shape(self) -> Geometry.IntSize:
+        return self._sensor_dimensions
+
+    @property
     def instrument(self) -> "Instrument":
         return self.__instrument
 
@@ -441,6 +495,19 @@ class CameraSimulator:
         return data
 
 
+class PoissonNoise:
+
+    def __init__(self):
+        self.enabled = True
+        self.poisson_level = None
+
+    def apply(self, input: DataAndMetadata.DataAndMetadata) -> DataAndMetadata.DataAndMetadata:
+        if self.enabled and self.poisson_level:
+            rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
+            return input + (rs.poisson(self.poisson_level, size=input.data.shape) - self.poisson_level)
+        return input
+
+
 class RonchigramCameraSimulator(CameraSimulator):
     depends_on = ["C10", "C12", "C21", "C23", "C30", "C32", "C34", "C34", "stage_position_m", "probe_state",
                   "probe_position", "live_probe_position", "features", "beam_shift_m", "is_blanked", "beam_current"]
@@ -457,6 +524,7 @@ class RonchigramCameraSimulator(CameraSimulator):
         theta = tv_pixel_angle * ronchigram_shape.height / 2  # half angle on camera
         defocus_m = instrument.defocus_m
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
+        self.noise = PoissonNoise()
 
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, last_scan_params=None) -> DataAndMetadata.DataAndMetadata:
         # check if one of the arguments has changed since last call
@@ -478,12 +546,9 @@ class RonchigramCameraSimulator(CameraSimulator):
             # features will be positive values; thickness can be simulated by subtracting the features from the
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
-            feature_pixel_count = 0
-            if self.is_blanked:
-                feature_pixel_count = 1
-            else:
+            if not self.is_blanked:
                 for feature in self.instrument.features:
-                    feature_pixel_count += feature.plot(data, offset_m, fov_size_nm, center_nm, size)
+                    feature.plot(data, offset_m, fov_size_nm, center_nm, size)
                 data = thickness_param - data
             data = self._get_binned_data(data, binning_shape)
 
@@ -529,8 +594,8 @@ class RonchigramCameraSimulator(CameraSimulator):
             self.__data_scale = self.get_total_counts(exposure_s) / (data.shape[0] * data.shape[1] * thickness_param)
             self._needs_recalculation = False
 
-        rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
-        return self.__cached_frame * self.__data_scale + rs.poisson(self.__data_scale, size=self.__cached_frame.data.shape) - self.__data_scale
+        self.noise.poisson_level = self.__data_scale
+        return self.noise.apply(self.__cached_frame * self.__data_scale)
 
     def get_dimensional_calibrations(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
         height = readout_area.height if readout_area else self._sensor_dimensions[0]
@@ -555,8 +620,46 @@ class EELSCameraSimulator(CameraSimulator):
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)
         self.__cached_frame = None
         self.__data_scale = 1.0
+        self.noise = PoissonNoise()
 
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, last_scan_params=None):
+        """
+        Features at the probe position will add plasmons and edges in addition to a ZLP.
+
+        There are two inputs to this model: the beam current and the T/l (thickness / mean free path).
+
+        The sum of the spectrum data should add up to the beam current (using counts per electron and conversion from
+        electrons to amps).
+
+        The natural log of the ratio of the sum of the spectrum to the sum of the ZLP should equal thickness / mean free
+        path.
+
+        The strategy is to have low level routines for adding the shapes of the ZLP (gaussian normal) and plasmons and
+        edges (power law multiplied by integrated gaussian normal) and then scaling these shapes such that they satisfy
+        the conditions above.
+
+        A complication of this is that the specified energy range may not include the ZLP. So two spectrums are built:
+        the one for caller and the one for reference. The reference one is used for calculating the scaling of the ZLP
+        and edges, which are then applied to the spectrum for the caller.
+
+        If we define the following values:
+            z = sum/integration of unscaled ZLP gaussian
+            f = sum/integration of unscaled plasmons/edges
+            P = target count such that P / counts_per_electron matches beam current
+            T = thickness (nm)
+            L = lambda (mean_free_path_nm)
+            T/l = thickness / lambda (mean free path)
+        then we can solve for two unknowns:
+            A = scale of ZLP
+            B = scale of plasmons/edges
+        using the two equations:
+            Az + Bf = P (beam current)
+            ln(P / Az) = T/l => P / Az = exp(T/l) (thickness = natural log of ratio of total counts to ZLP counts)
+        solving:
+            A = P / exp(T/l) / z
+            B = (P - Az) / f
+        """
+
         # check if one of the arguments has changed since last call
         new_frame_settings = [readout_area, binning_shape, exposure_s, last_scan_params]
         if new_frame_settings != self._last_frame_settings:
@@ -576,34 +679,79 @@ class EELSCameraSimulator(CameraSimulator):
             elif self.probe_state == "parked" and self.probe_position is not None:
                 probe_position = self.probe_position
 
+            # typical thickness over mean free path (T/l) will be 0.5
+            mean_free_path_nm = 100  # nm. (lambda values from back of Edgerton)
+            thickness_per_layer_nm = 30  # nm
+
+            # this is the number of pixel counts expected if the ZLP is visible in vacuum for the given exposure
+            # and beam current (in get_total_counts).
+            target_pixel_count = self.get_total_counts(exposure_s) / data.shape[0]
+
+            # grab the specific calibration for the energy direction and offset by ZLPoffset
+            used_calibration = dimensional_calibrations[1]
+            used_calibration.offset = self.instrument.get_control("ZLPoffset").local_value
+
             if last_scan_params is not None and probe_position is not None:
+
+                # make a buffer for the spectrum
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
-                used_calibration = dimensional_calibrations[1]
-                used_calibration.offset = self.instrument.get_control("ZLPoffset").local_value
-                plot_norm(spectrum, 1.0, used_calibration, 0, 0.5 / slit_attenuation)
+
+                # configure a calibration for the reference spectrum. then plot the ZLP on the reference data. sum it to
+                # get the zlp_pixel_count and the zlp_scale. this is the value to multiple zlp data by to scale it so
+                # that it will produce the target pixel count. since we will be storing the spectra in a 2d array,
+                # divide by the height of that array so that when it is summed, the value comes out correctly.
+                zlp0_calibration = Calibration.Calibration(scale=used_calibration.scale, offset=-20)
+                spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), numpy.float)
+                plot_norm(spectrum_ref, 1.0, Calibration.Calibration(scale=used_calibration.scale, offset=-20), 0, 0.5 / slit_attenuation)
+                zlp_ref_pixel_count = float(numpy.sum(spectrum_ref))
+
+                # build the spectrum and reference spectrum by adding the features. the data is unscaled.
+                spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), numpy.float)
                 size, fov_size_nm, center_nm = last_scan_params  # get these from last scan
                 offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
-                mean_free_path = 100  # nm. (lambda values from back of Edgerton)
-                thickness = 50  # nm
-                # T/lambda = 0.25 0.5 typical values OLK
-                # ZLP to first plasmon (areas, total count) is T/lambda.
-                # Each plasmon is also reduce by T/L
+                feature_layer_count = 0
                 for index, feature in enumerate(self.instrument.features):
                     if feature.intersects(offset_m, fov_size_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
-                        feature.plot_spectrum(spectrum, 1.0 / 10, used_calibration)
-                feature_pixel_count = max(numpy.sum(spectrum), 0.01)
+                        feature.plot_spectrum(spectrum, 1.0, used_calibration)
+                        feature.plot_spectrum(spectrum_ref, 1.0, zlp0_calibration)
+                        feature_layer_count += 1
+                feature_pixel_count = max(numpy.sum(spectrum_ref), 0.01)
+
+                # make the calculations for A, B (zlp_scale and feature_scale).
+                thickness_factor = feature_layer_count * thickness_per_layer_nm / mean_free_path_nm
+                zlp_scale = target_pixel_count / math.exp(thickness_factor) / zlp_ref_pixel_count
+                feature_scale = (target_pixel_count - (target_pixel_count / math.exp(thickness_factor))) / feature_pixel_count
+                # print(f"thickness_factor {thickness_factor}")
+
+                # apply the scaling. spectrum holds the features at this point, but not the ZLP. just multiple by
+                # feature_scale to make the feature part of the spectrum final. then plot the ZLP scaled by zlp_scale.
+                spectrum *= feature_scale
+                # print(f"sum {numpy.sum(spectrum) * data.shape[0]}")
+                # print(f"zlp_ref_pixel_count {zlp_ref_pixel_count} feature_pixel_count {feature_pixel_count}")
+                # print(f"zlp_scale {zlp_scale} feature_scale {feature_scale}")
+                plot_norm(spectrum, zlp_scale, used_calibration, 0, 0.5 / slit_attenuation)
+                # print(f"sum {numpy.sum(spectrum) * data.shape[0]}")
+                # print(f"target_pixel_count {target_pixel_count}")
+
+                # finally, store the spectrum into each row of the data
                 data[:, ...] = spectrum
-            else:
-                feature_pixel_count = 1
+
+                # spectrum_pixel_count = float(numpy.sum(spectrum)) * data.shape[0]
+                # print(f"z0 {zlp_ref_pixel_count * data.shape[0]} / {used_calibration.offset}")
+                # print(f"beam current {self.instrument.beam_current * 1e12}pA")
+                # print(f"current {spectrum_pixel_count / exposure_s / self.instrument.counts_per_electron / 6.242e18 * 1e12:#.2f}pA")
+                # print(f"target {target_pixel_count}  actual {spectrum_pixel_count}")
+                # print(f"s {spectrum_pixel_count} z {zlp_ref_pixel_count * zlp_scale * data.shape[0]}")
+                # print(f"{math.log(spectrum_pixel_count / (zlp_ref_pixel_count * zlp_scale * data.shape[0]))} {thickness_factor}")
+
             data = self._get_binned_data(data, binning_shape)
+
             self.__cached_frame = DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
-            self.__data_scale = self.get_total_counts(exposure_s) / feature_pixel_count / slit_attenuation / self._sensor_dimensions[0]
+            self.__data_scale = self.get_total_counts(exposure_s) / target_pixel_count / slit_attenuation / self._sensor_dimensions[0]
             self._needs_recalculation = False
 
-        poisson_level = self.__data_scale + 5  # camera noise
-        rs = numpy.random.RandomState()  # use this to avoid blocking other calls to poisson
-        return_frame = self.__cached_frame * self.__data_scale + (rs.poisson(poisson_level, size=self.__cached_frame.data.shape) - poisson_level)
-        return return_frame
+        self.noise.poisson_level = self.__data_scale
+        return self.noise.apply(self.__cached_frame)
 
     def get_dimensional_calibrations(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
         energy_offset_eV = self.energy_offset_eV
@@ -641,7 +789,7 @@ class Instrument(stem_controller.STEMController):
         for i in range(100):
             position_m = Geometry.FloatPoint(y=(2 * random.random() - 1.0) * sample_size_m.height, x=(2 * random.random() - 1.0) * sample_size_m.width)
             size_m = feature_percentage * Geometry.FloatSize(height=random.random() * sample_size_m.height, width=random.random() * sample_size_m.width)
-            self.__features.append(Feature(position_m, size_m, energies[i%len(energies)], plasmons[i%len(energies)], 4))
+            self.__features.append(Feature(position_m, size_m, energies[i%len(energies)], plasmons[i%len(plasmons)], 4))
         random.setstate(random_state)
         self.__stage_position_m = Geometry.FloatPoint()
         self.__beam_shift_m = Geometry.FloatPoint()
@@ -786,6 +934,9 @@ class Instrument(stem_controller.STEMController):
         for camera in self.__cameras.values():
             camera.close()
         self.__cameras = dict()
+
+    def _get_camera_simulator(self, camera_id: str) -> CameraSimulator:
+        return self.__cameras[camera_id]
 
     @property
     def features(self):

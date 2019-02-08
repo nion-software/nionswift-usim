@@ -4,6 +4,8 @@ Changelog (nionswift-usim)
 0.1.6 (UNRELEASED)
 ------------------
 
+- Fix scaling of spectra to be consistent with beam current, sample thickness, and energy offset.
+
 - Improve performance for cameras.
 
 - Add support for ZLP tare control / inform.
