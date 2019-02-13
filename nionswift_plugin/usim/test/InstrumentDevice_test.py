@@ -8,7 +8,9 @@ from nion.data import xdata_1_0 as xd
 from nion.utils import Geometry
 
 from nion.instrumentation import scan_base
+from nionswift_plugin.usim import EELSCameraSimulator
 from nionswift_plugin.usim import InstrumentDevice
+from nionswift_plugin.usim import RonchigramCameraSimulator
 
 
 def measure_thickness(d: numpy.ndarray) -> float:
@@ -40,7 +42,7 @@ class MeasureThickness:
         self.__src = src
 
 
-class TestCamera(unittest.TestCase):
+class TestInstrumentDevice(unittest.TestCase):
 
     def test_defocus_is_observable(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
@@ -68,7 +70,7 @@ class TestCamera(unittest.TestCase):
 
     def test_ronchigram_handles_dependencies_properly(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
-        camera = InstrumentDevice.RonchigramCameraSimulator(instrument, Geometry.IntSize(128, 128), 10, 0.030)
+        camera = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize(128, 128), 10, 0.030)
         camera._needs_recalculation = False
         instrument.defocus_m += 10 / 1E9
         self.assertTrue(camera._needs_recalculation)
@@ -86,11 +88,11 @@ class TestCamera(unittest.TestCase):
         offset_eV = 100
         onset_eV = 30
         data1 = numpy.zeros((1000, ))
-        InstrumentDevice.plot_powerlaw(data1, 1.0E6, Calibration.Calibration(), offset_eV, onset_eV)
+        EELSCameraSimulator.plot_powerlaw(data1, 1.0E6, Calibration.Calibration(), offset_eV, onset_eV)
         data2 = numpy.zeros((1000, ))
-        InstrumentDevice.plot_powerlaw(data2, 1.0E6, Calibration.Calibration(offset=10), offset_eV, onset_eV)
+        EELSCameraSimulator.plot_powerlaw(data2, 1.0E6, Calibration.Calibration(offset=10), offset_eV, onset_eV)
         data3 = numpy.zeros((1000, ))
-        InstrumentDevice.plot_powerlaw(data3, 1.0E6, Calibration.Calibration(offset=100), offset_eV, onset_eV)
+        EELSCameraSimulator.plot_powerlaw(data3, 1.0E6, Calibration.Calibration(offset=100), offset_eV, onset_eV)
         self.assertEqual(int(data1[500]), int(data2[500 - 10]))
         self.assertEqual(int(data1[500]), int(data3[500 - 100]))
 
@@ -98,11 +100,11 @@ class TestCamera(unittest.TestCase):
         offset_eV = 100
         onset_eV = 30
         data1 = numpy.zeros((1000, ))
-        InstrumentDevice.plot_norm(data1, 1.0E6, Calibration.Calibration(), offset_eV, onset_eV)
+        EELSCameraSimulator.plot_norm(data1, 1.0E6, Calibration.Calibration(), offset_eV, onset_eV)
         data2 = numpy.zeros((1000, ))
-        InstrumentDevice.plot_norm(data2, 1.0E6, Calibration.Calibration(offset=10), offset_eV, onset_eV)
+        EELSCameraSimulator.plot_norm(data2, 1.0E6, Calibration.Calibration(offset=10), offset_eV, onset_eV)
         data3 = numpy.zeros((1000, ))
-        InstrumentDevice.plot_norm(data3, 1.0E6, Calibration.Calibration(offset=100), offset_eV, onset_eV)
+        EELSCameraSimulator.plot_norm(data3, 1.0E6, Calibration.Calibration(offset=100), offset_eV, onset_eV)
         self.assertEqual(int(data1[500]), int(data2[500 - 10]))
         self.assertEqual(int(data1[500]), int(data3[500 - 100]))
 
