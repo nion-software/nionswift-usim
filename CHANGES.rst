@@ -1,7 +1,7 @@
 Changelog (nionswift-usim)
 ==========================
 
-0.1.6 (UNRELEASED)
+0.1.6 (2019-02-27)
 ------------------
 
 - Fix scaling of spectra to be consistent with beam current, sample thickness, and energy offset.

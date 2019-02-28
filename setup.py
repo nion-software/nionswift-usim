@@ -10,7 +10,7 @@ import os
 
 setuptools.setup(
     name="nionswift-usim",
-    version="0.1.5",
+    version="0.1.6",
     author="Nion Software",
     author_email="swift@nion.com",
     description="A Nion Swift package to simulate a STEM microscope, scanner, and cameras",
@@ -22,8 +22,8 @@ setuptools.setup(
     license='GPLv3',
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
-        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
     ],
     include_package_data=True,
-    python_requires='~=3.5',
+    python_requires='~=3.6',
 )
