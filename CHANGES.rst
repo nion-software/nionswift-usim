@@ -1,7 +1,7 @@
 Changelog (nionswift-usim)
 ==========================
 
-0.1.7 (UNRELEASED)
+0.1.7 (2019-04-29)
 ------------------
 
 - Ensure noise gets added as float32 to ensure good display performance.
