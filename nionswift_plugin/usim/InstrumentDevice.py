@@ -17,6 +17,8 @@ from nion.data import DataAndMetadata
 from nion.utils import Event
 from nion.utils import Geometry
 
+from nion.swift.model import Utility
+
 from nion.instrumentation import stem_controller
 
 from . import CameraSimulator
@@ -94,29 +96,38 @@ class Control:
         self.on_changed = None
 
     def __str__(self):
-        return "{}: {} + {} = {}".format(self.name, self.__weighted_input_value, self.local_value, self.output_value)
+        return "{}: {} + {} = {}".format(self.name, self.weighted_input_value, self.local_value, self.output_value)
 
     @property
-    def __weighted_input_value(self) -> float:
+    def weighted_input_value(self) -> float:
         return sum([weight * input.output_value for input, weight in self.weighted_inputs])
 
     @property
     def output_value(self) -> float:
-        return self.__weighted_input_value + self.local_value
+        return self.weighted_input_value + self.local_value
 
     def add_input(self, input: "Control", weight: float) -> None:
-        self.weighted_inputs.append((input, weight))
+        # if input is already in the list of weighted inputs, overwrite it
+        inputs = [control for control, _ in self.weighted_inputs]
+        if input in inputs:
+            input_index = inputs.index(input)
+            self.weighted_inputs[input_index] = (input, weight)
+        else:
+            self.weighted_inputs.append((input, weight))
+        # we can always call add dependent because it checks if self is already in input's dependents
+        input.add_dependent(self)
         self._notify_change()
 
     def add_dependent(self, dependent: "Control") -> None:
-        self.dependents.append(dependent)
+        if dependent not in self.dependents:
+            self.dependents.append(dependent)
 
     def set_local_value(self, value: float) -> None:
         self.local_value = value
         self._notify_change()
 
     def set_output_value(self, value: float) -> None:
-        self.set_local_value(value - self.__weighted_input_value)
+        self.set_local_value(value - self.weighted_input_value)
 
     def inform_output_value(self, value: float) -> None:
         # save old dependent output values so they can stay constant
@@ -137,6 +148,138 @@ class Control:
                 dependent._notify_change()
 
 
+class ConvertedControl:
+    """
+    This object is returned when accessing a 'sub-control' from a 2D control in another than its native axis.
+    It behaves like a normal 'Control' for getting and setting local and output values, but it does not actually
+    save any of these in itself. Instead it converts all values to the native axis and saves them in the
+    'original' Control.
+    It does not allow adding inputs or dependents, because this should only be done in the native axis.
+    """
+
+    def __init__(self, control_2d: "Control2D", index: int, axis: typing.Tuple[str, str]):
+        self.__index = index
+        self.__control_2d = control_2d
+        self.__axis = axis
+
+    @property
+    def __weighted_input_value_2d(self) -> float:
+        value_a = self.__control_2d.controls[0].weighted_input_value
+        value_b = self.__control_2d.controls[1].weighted_input_value
+        return AxisManager().convert_vector((value_a, value_b), self.__control_2d.native_axis, self.__axis)
+
+    @property
+    def weighted_input_value(self) -> float:
+        return self.__weighted_input_value_2d[self.__index]
+
+    @property
+    def __output_value_2d(self) -> typing.Tuple[float, float]:
+        value_a = self.__control_2d.controls[0].output_value
+        value_b = self.__control_2d.controls[1].output_value
+        return AxisManager().convert_vector((value_a, value_b), self.__control_2d.native_axis, self.__axis)
+
+    @property
+    def output_value(self) -> float:
+        return self.__output_value_2d[self.__index]
+
+    @property
+    def __local_value_2d(self) -> typing.Tuple[float, float]:
+        value_a = self.__control_2d.controls[0].local_value
+        value_b = self.__control_2d.controls[1].local_value
+        return AxisManager().convert_vector((value_a, value_b), self.__control_2d.native_axis, self.__axis)
+
+    @property
+    def local_value(self) -> float:
+        return self.__local_value_2d[self.__index]
+
+    def set_local_value(self, value: float) -> None:
+        value_2d = list(self.__local_value_2d)
+        value_2d[self.__index] = value
+        value_2d_native = AxisManager().convert_vector(tuple(value_2d), self.__axis, self.__control_2d.native_axis)
+        self.__control_2d.controls[0].set_local_value(value_2d_native[0])
+        self.__control_2d.controls[1].set_local_value(value_2d_native[1])
+
+    def set_output_value(self, value: float) -> None:
+        self.set_local_value(value - self.weighted_input_value)
+
+    def inform_output_value(self, value: float) -> None:
+        value_2d = list(self.__output_value_2d)
+        value_2d[self.__index] = value
+        value_2d_native = AxisManager().convert_vector(tuple(value_2d), self.__axis, self.__control_2d.native_axis)
+        self.__control_2d.controls[0].inform_output_value(value_2d_native[0])
+        self.__control_2d.controls[1].inform_output_value(value_2d_native[1])
+
+
+class AxisManager(metaclass=Utility.Singleton):
+    """
+    This object keeps track of all supported axis and performs conversions between them.
+    Right now, it does not actually do anything. But it already implements the required 'API' that is used by 2D
+    controls and converted controls, so it should be enough to change 'convert_vector' to actually do some conversion
+    if we need to support axis with different rotations between each other.
+    """
+
+    def __init__(self):
+        self.__supported_axis_names = [('a', 'b'), ('x', 'y'), ('u', 'v'), ('mx', 'my'), ('px', 'py'), ('sx', 'sy'), ('sa', 'sb')]
+
+    @property
+    def supported_axis_names(self):
+        return self.__supported_axis_names.copy()
+
+    def convert_vector(self, vector: typing.Tuple[float, float], from_axis: typing.Tuple[str, str], to_axis: typing.Tuple[str, str]):
+        return vector
+
+
+class Control2D:
+    """
+    This object represents a 2-dimensional control (i.e. a vector) that supports accessing its components in different
+    coordinate systems. It mainly bundles two 1d-controls together and keeps track of the relation between them.
+    When creating it, `name` should only be the 'basename' of the control, without a dot in the end or any axis names.
+    Different axis can be accessed by using the regular attribute access syntax, i.e. for a control 'C12' you can
+    access the components of the vector in ('a', 'b')-coordinates by calling C12.a and C12.b, respectively.
+    """
+
+    def __init__(self,
+                 name: str,
+                 native_axis: typing.Tuple[str, str],
+                 local_values: typing.Tuple[float, float] = (0.0, 0.0),
+                 weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", float]],
+                                                               typing.List[typing.Tuple["Control", float]]]] = None):
+        self.name = name
+        self.native_axis = native_axis
+        if weighted_inputs is None:
+            weighted_inputs = (None, None)
+        # give both 'sub-controls' the same name so that the 'property_changed_event' will be fired with the name of
+        # the 'parent' 2d-control
+        control_b = Control(name, local_value=local_values[1], weighted_inputs=weighted_inputs[1])
+        control_a = Control(name, local_value=local_values[0], weighted_inputs=weighted_inputs[0])
+
+        self.__controls = (control_a, control_b)
+
+    def __str__(self):
+        return "{0}.{1[0]}: {2} + {3} = {4}\n{0}.{1[1]}: {5} + {6} = {7}\n".format(self.name,
+                                                                                   self.native_axis,
+                                                                                   self.__controls[0].weighted_input_value,
+                                                                                   self.__controls[0].local_value,
+                                                                                   self.__controls[0].output_value,
+                                                                                   self.__controls[1].weighted_input_value,
+                                                                                   self.__controls[1].local_value,
+                                                                                   self.__controls[1].output_value)
+
+    @property
+    def controls(self) -> typing.Tuple["Control", "Control"]:
+        return self.__controls
+
+    def __getattr__(self, attr):
+        if attr in self.native_axis:
+            return self.__controls[self.native_axis.index(attr)]
+        axis_names = AxisManager().supported_axis_names
+        for axis in axis_names:
+            if attr in axis:
+                converted = ConvertedControl(self, axis.index(attr), axis)
+                return converted
+        raise AttributeError(f"'{self.__class__.__name__}' has not attribute '{attr}'")
+
+
 class Instrument(stem_controller.STEMController):
     """
     TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
@@ -155,17 +298,7 @@ class Instrument(stem_controller.STEMController):
         self.max_defocus = 5000 / 1E9
 
         self.__stage_position_m = Geometry.FloatPoint()
-        self.__beam_shift_m = Geometry.FloatPoint()
         self.__convergence_angle_rad = 30 / 1000
-        self.__order_1_max_angle = 0.008
-        self.__order_2_max_angle = 0.012
-        self.__order_3_max_angle = 0.024
-        self.__order_1_patch = 0.006
-        self.__order_2_patch = 0.006
-        self.__order_3_patch = 0.006
-        self.__c1_range = 4e-9
-        self.__c2_range = 300e-9
-        self.__c3_range = 17e-6
         self.__slit_in = False
         self.__energy_per_channel_eV = 0.5
         self.__voltage = 100000
@@ -177,121 +310,55 @@ class Instrument(stem_controller.STEMController):
         self.__live_probe_position = None
         self.__sequence_progress = 0
         self.__lock = threading.Lock()
+        self.__controls = dict()
 
-        zlp_tare_control = Control("ZLPtare")
-        zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
-        c10 = Control("C10", 500 / 1e9)
-        c12_x = Control("C12.x")
-        c12_y = Control("C12.y")
-        c21_x = Control("C21.x")
-        c21_y = Control("C21.y")
-        c23_x = Control("C23.x")
-        c23_y = Control("C23.y")
-        c30 = Control("C30")
-        c32_x = Control("C32.x")
-        c32_y = Control("C32.y")
-        c34_x = Control("C34.x")
-        c34_y = Control("C34.y")
-        c10Control = Control("C10Control", 0.0, [(c10, 1.0)])
-        c12Control_x = Control("C12Control.x", 0.0, [(c12_x, 1.0)])
-        c12Control_y = Control("C12Control.y", 0.0, [(c12_y, 1.0)])
-        c21Control_x = Control("C21Control.x", 0.0, [(c21_x, 1.0)])
-        c21Control_y = Control("C21Control.y", 0.0, [(c21_y, 1.0)])
-        c23Control_x = Control("C23Control.x", 0.0, [(c23_x, 1.0)])
-        c23Control_y = Control("C23Control.y", 0.0, [(c23_y, 1.0)])
-        c30Control = Control("C30Control", 0.0, [(c30, 1.0)])
-        c32Control_x = Control("C32Control.x", 0.0, [(c32_x, 1.0)])
-        c32Control_y = Control("C32Control.y", 0.0, [(c32_y, 1.0)])
-        c34Control_x = Control("C34Control.x", 0.0, [(c34_x, 1.0)])
-        c34Control_y = Control("C34Control.y", 0.0, [(c34_y, 1.0)])
-        # dependent controls
-        defocus_m_control = Control("defocus_m", c10.output_value, [(c10, 1.0)])
-
-        self.__controls = {
-            "ZLPtare": zlp_tare_control,
-            "ZLPoffset": zlp_offset_control,
-            "C10": c10,
-            "C12.x": c12_x,
-            "C12.y": c12_y,
-            "C21.x": c21_x,
-            "C21.y": c21_y,
-            "C23.x": c23_x,
-            "C23.y": c23_y,
-            "C30": c30,
-            "C32.x": c32_x,
-            "C32.y": c32_y,
-            "C34.x": c34_x,
-            "C34.y": c34_y,
-            "C10Control": c10Control,
-            "C12Control.x": c12Control_x,
-            "C12Control.y": c12Control_y,
-            "C21Control.x": c21Control_x,
-            "C21Control.y": c21Control_y,
-            "C23Control.x": c23Control_x,
-            "C23Control.y": c23Control_y,
-            "C30Control": c30Control,
-            "C32Control.x": c32Control_x,
-            "C32Control.y": c32Control_y,
-            "C34Control.x": c34Control_x,
-            "C34Control.y": c34Control_y,
-            "defocus_m_control": defocus_m_control,
-            }
-
-        def control_changed(control: Control) -> None:
-            self.property_changed_event.fire(control.name)
-
-        for control in self.__controls.values():
-            control.on_changed = control_changed
-
-        controls_added = []
-        for name, control in self.__controls.items():
-            if "." in name and not name in controls_added:
-                splitname = name.split(".")
-                if splitname[1] == "x":
-                    x_name = name
-                    y_name = splitname[0] + "." + "y"
-                elif splitname[1] == "y":
-                    y_name = name
-                    x_name = splitname[0] + "." + "x"
-                else:
-                    continue
-                # we need to wrap the getter and setter functions into these "creator" functions in order to
-                # de-reference the y_name and x_name variables. Otherwise python keeps using the variable names
-                # which change with each iteration of the for-loop.
-                def make_getter(y_name, x_name):
-                    def getter(self):
-                        return Geometry.FloatPoint(self.__controls[y_name].output_value,
-                                                   self.__controls[x_name].output_value)
-                    return getter
-                def make_setter(y_name, x_name):
-                    def setter(self, value):
-                        self.__controls[y_name].set_output_value(value.y)
-                        self.__controls[x_name].set_output_value(value.x)
-                        self.property_changed_event.fire(y_name.split(".")[0])
-                    return setter
-
-                setattr(Instrument, splitname[0], property(make_getter(y_name, x_name),
-                                                           make_setter(y_name, x_name)))
-                controls_added.append(x_name)
-                controls_added.append(y_name)
-            elif name not in controls_added:
-                def make_getter(name):
-                    def getter(self):
-                        return self.__controls[name].output_value
-                    return getter
-                def make_setter(name):
-                    def setter(self, value):
-                        self.__controls[name].set_output_value(value)
-                        self.property_changed_event.fire(name)
-                    return setter
-
-                setattr(Instrument, name, property(make_getter(name), make_setter(name)))
-                controls_added.append(name)
+        built_in_controls = self.__create_built_in_controls()
+        for control in built_in_controls:
+            self.add_control(control)
 
         self.__cameras = {
             "ronchigram": RonchigramCameraSimulator.RonchigramCameraSimulator(self, self.__ronchigram_shape, self.counts_per_electron, self.__convergence_angle_rad),
             "eels": EELSCameraSimulator.EELSCameraSimulator(self, self.__eels_shape, self.counts_per_electron)
         }
+
+    def __getattr__(self, attr):
+        """
+        self.__getattr__ and self.__setattr__ are implemented such that the "PropertyAttributeBindings" used in
+        "InstrumentPanel" work with 1D- and 2D-controls.
+        In more detail this means that for a  1d-control "C10", `instrument.C10` returns the output value of this
+        control. Similarly, executing `instrument.C10 = 1.5` sets the output value of "C10" to 1.5.
+        For a 2d-control "C12", accessing `instrument.C12` returns a `Geometry.FloatPoint` object with the output
+        values of the two sub-controls in "C12" in their native axis.
+        Assigning to `instrument.C12` sets the output values of the two sub-controls in "C12" (in their native axis)
+        to the x-, and y-coordinate of the assigned value if this is a `Geometry.FloatPoint` object. Otherwise the
+        assignment will be ignored.
+        """
+        # we need to exclude "self.__controls" because accessing it here leads to infinite recursion when
+        # accessing it before it is set
+        if attr != "_Instrument__controls" and attr in self.__controls:
+            control = self.__controls[attr]
+            if isinstance(control, Control2D):
+                return Geometry.FloatPoint(getattr(control, control.native_axis[1]).output_value,
+                                           getattr(control, control.native_axis[0]).output_value)
+            else:
+                return control.output_value
+        raise AttributeError(f"'{self.__class__.__name__}' has not attribute '{attr}'")
+
+    def __setattr__(self, attr, value):
+        """
+        see self.__getattr__ for a detailed description.
+        """
+
+        # We need to make sure "self.__controls" exists to avoid AttributeErrors
+        if hasattr(self, "_Instrument__controls") and attr in self.__controls:
+            control = self.__controls[attr]
+            if isinstance(control, Control2D) and isinstance(value, Geometry.FloatPoint):
+                getattr(control, control.native_axis[1]).set_output_value(value.y)
+                getattr(control, control.native_axis[0]).set_output_value(value.x)
+            elif isinstance(control, Control):
+                control.set_output_value(value)
+        else:
+            super().__setattr__(attr, value)
 
     def close(self):
         for camera in self.__cameras.values():
@@ -300,6 +367,42 @@ class Instrument(stem_controller.STEMController):
 
     def _get_camera_simulator(self, camera_id: str) -> CameraSimulator:
         return self.__cameras[camera_id]
+
+    def __create_built_in_controls(self):
+        zlp_tare_control = Control("ZLPtare")
+        zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
+        c10 = Control("C10", 500 / 1e9)
+        c12 = Control2D("C12", ("x", "y"))
+        c21 = Control2D("C21", ("x", "y"))
+        c23 = Control2D("C23", ("x", "y"))
+        c30 = Control("C30")
+        c32 = Control2D("C32", ("x", "y"))
+        c34 = Control2D("C34", ("x", "y"))
+        c10Control = Control("C10Control", 0.0, [(c10, 1.0)])
+        c12Control = Control2D("C12Control", ("x", "y"), weighted_inputs=([(c12.x, 1.0)], [(c12.y, 1.0)]))
+        c21Control = Control2D("C21Control", ("x", "y"), weighted_inputs=([(c21.x, 1.0)], [(c21.y, 1.0)]))
+        c23Control = Control2D("C23Control", ("x", "y"), weighted_inputs=([(c23.x, 1.0)], [(c23.y, 1.0)]))
+        c30Control = Control("C30Control", 0.0, [(c30, 1.0)])
+        c32Control = Control2D("C32Control", ("x", "y"), weighted_inputs=([(c32.x, 1.0)], [(c32.y, 1.0)]))
+        c34Control = Control2D("C34Control", ("x", "y"), weighted_inputs=([(c34.x, 1.0)], [(c34.y, 1.0)]))
+        csh = Control2D("CSH", ("x", "y"))
+        drift = Control2D("Drift", ("x", "y"))
+        # tuning parameters
+        order_1_max_angle = Control("Order1MaxAngle", 0.008)
+        order_2_max_angle = Control("Order2MaxAngle", 0.012)
+        order_3_max_angle = Control("Order3MaxAngle", 0.024)
+        order_1_patch = Control("Order1Patch", 0.006)
+        order_2_patch = Control("Order2Patch", 0.006)
+        order_3_patch = Control("Order3Patch", 0.006)
+        c1_range = Control("C1Range")
+        c2_range = Control("C2Range")
+        c3_range = Control("C3Range")
+        # dependent controls
+        beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
+        return [zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control, c12Control,
+                c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift,
+                beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, order_1_patch,
+                order_2_patch, order_3_patch, c1_range, c2_range, c3_range]
 
     @property
     def sample(self) -> SampleSimulator.Sample:
@@ -314,8 +417,34 @@ class Instrument(stem_controller.STEMController):
         self.__live_probe_position = position
         self.property_changed_event.fire("live_probe_position")
 
-    def get_control(self, control_name: str) -> Control:
-        return self.__controls[control_name]
+    def control_changed(self, control: Control) -> None:
+        self.property_changed_event.fire(control.name)
+
+    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", float]]] = None):
+        return Control(name, local_value, weighted_inputs)
+
+    def create_2d_control(self, name: str, native_axis: typing.Tuple[str, str], local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", float]], typing.List[typing.Tuple["Control", float]]]] = None):
+        return Control2D(name, native_axis, local_values, weighted_inputs)
+
+    def add_control(self, control: typing.Union[Control, Control2D]) -> None:
+        if control.name in self.__controls:
+            raise ValueError(f"A control with name {control.name} already exists.")
+        if isinstance(control, Control2D):
+            control.controls[0].on_changed = self.control_changed
+            control.controls[1].on_changed = self.control_changed
+        else:
+            control.on_changed = self.control_changed
+        self.__controls[control.name] = control
+
+    def get_control(self, control_name: str) -> typing.Union[Control, Control2D, None]:
+        if "." in control_name:
+            split_name = control_name.split(".")
+            control = self.__controls.get(split_name[0])
+            if isinstance(control, Control2D):
+                control = getattr(control, split_name[1], None)
+        else:
+            control = self.__controls.get(control_name)
+        return control
 
     @property
     def sequence_progress(self):
@@ -410,21 +539,12 @@ class Instrument(stem_controller.STEMController):
         self.property_changed_event.fire("stage_position_m")
 
     @property
-    def beam_shift_m(self) -> Geometry.FloatPoint:
-        return self.__beam_shift_m
-
-    @beam_shift_m.setter
-    def beam_shift_m(self, value: Geometry.FloatPoint) -> None:
-        self.__beam_shift_m = value
-        self.property_changed_event.fire("beam_shift_m")
-
-    @property
     def defocus_m(self) -> float:
-        return self.__controls["C10"].output_value
+        return self.C10
 
     @defocus_m.setter
     def defocus_m(self, value: float) -> None:
-        self.__controls["C10"].set_output_value(value)
+        self.C10 = value
 
     @property
     def voltage(self) -> float:
@@ -481,86 +601,6 @@ class Instrument(stem_controller.STEMController):
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
 
-    @property
-    def order_1_max_angle(self) -> float:
-        return self.__order_1_max_angle
-
-    @order_1_max_angle.setter
-    def order_1_max_angle(self, value: float) -> None:
-        self.__order_1_max_angle = value
-        self.property_changed_event.fire("order_1_max_angle")
-
-    @property
-    def order_2_max_angle(self) -> float:
-        return self.__order_2_max_angle
-
-    @order_2_max_angle.setter
-    def order_2_max_angle(self, value: float) -> None:
-        self.__order_2_max_angle = value
-        self.property_changed_event.fire("order_2_max_angle")
-
-    @property
-    def order_3_max_angle(self) -> float:
-        return self.__order_3_max_angle
-
-    @order_3_max_angle.setter
-    def order_3_max_angle(self, value: float) -> None:
-        self.__order_3_max_angle = value
-        self.property_changed_event.fire("order_3_max_angle")
-
-    @property
-    def order_1_patch(self) -> float:
-        return self.__order_1_patch
-
-    @order_1_patch.setter
-    def order_1_patch(self, value: float) -> None:
-        self.__order_1_patch = value
-        self.property_changed_event.fire("order_1_patch")
-
-    @property
-    def order_2_patch(self) -> float:
-        return self.__order_2_patch
-
-    @order_2_patch.setter
-    def order_2_patch(self, value: float) -> None:
-        self.__order_2_patch = value
-        self.property_changed_event.fire("order_2_patch")
-
-    @property
-    def order_3_patch(self) -> float:
-        return self.__order_3_patch
-
-    @order_3_patch.setter
-    def order_3_patch(self, value: float) -> None:
-        self.__order_3_patch = value
-        self.property_changed_event.fire("order_3_patch")
-
-    @property
-    def C1_range(self) -> float:
-        return self.__c1_range
-
-    @C1_range.setter
-    def C1_range(self, value: float) -> None:
-        self.__c1_range = value
-        self.property_changed_event.fire("C1_range")
-
-    @property
-    def C2_range(self) -> float:
-        return self.__c2_range
-
-    @C2_range.setter
-    def C2_range(self, value: float) -> None:
-        self.__c2_range = value
-        self.property_changed_event.fire("C2_range")
-
-    @property
-    def C3_range(self) -> float:
-        return self.__c3_range
-
-    @C3_range.setter
-    def C3_range(self, value: float) -> None:
-        self.__c3_range = value
-        self.property_changed_event.fire("C3_range")
 
     def get_autostem_properties(self):
         """Return a new autostem properties (dict) to be recorded with an acquisition.
@@ -598,40 +638,26 @@ class Instrument(stem_controller.STEMController):
             return True, self.energy_offset_eV
         elif s == "C_Blank":
             return True, 1.0 if self.is_blanked else 0.0
-        elif s in self.__controls:
-            return True, self.__controls[s].output_value
-        # This handles all supported aberration coefficients
-        elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
-            split_s = s.split('.')
-            control = getattr(self, split_s[0], None)
-            if control is not None:
-                if len(split_s) > 1:
-                     if split_s[1] in ("aux"):
-                         return True, control.x
-                     elif split_s[1] in ("bvy"):
-                         return True, control.y
-                else:
-                    return True, control
-        # This handles the target values for all supported aberration coefficients
-        elif re.match("(\^C[1-3][0-4])(\.[auxbvy]|$)$", s):
+        # This handles the target values for all aberration coefficients up to 5th order (needed for tuning)
+        elif re.match("(\^C[1-5][0-6])(\.[auxbvy]|$)$", s):
             return True, 0.0
-        # This handles the "require" values for all supported aberration coefficients
-        elif re.match("C[1-3][0-4]?Range$", s):
-            value = getattr(self, f"{s[:2]}_range", None)
-            if value is not None:
-                return True, value
-        # This handles the tuning max angles and patch sizes for all supported aberration coefficients
-        elif re.match("Order[1-3](MaxAngle|Patch)$", s):
-            if s.endswith("MaxAngle"):
-                value = getattr(self, f"order_{s[5]}_max_angle", None)
-            else:
-                value = getattr(self, f"order_{s[5]}_patch", None)
-            if value is not None:
-                return True, value
         elif s.startswith("ronchigram_"):
             return parse_camera_values("ronchigram", s[len("ronchigram_"):])
         elif s.startswith("eels_"):
             return parse_camera_values("eels", s[len("eels_"):])
+        elif "." in s:
+            split_s = s.split('.')
+            control = self.get_control(split_s[0]) # get the 2d control
+            if isinstance(control, Control2D):
+                axis = getattr(control, split_s[1], None) # get the control that holds the value for the right axis
+                if axis is not None:
+                    value = axis.output_value # get the actual value
+                    if value is not None:
+                        return True, value
+        else:
+            control = self.get_control(s)
+            if isinstance(control, Control):
+                return True, control.output_value
         return False, None
 
     def GetVal(self, s: str, default_value: float=None) -> float:
@@ -650,24 +676,19 @@ class Instrument(stem_controller.STEMController):
         elif s == "C_Blank":
             self.is_blanked = val != 0.0
             return True
-        elif s in self.__controls:
-            self.__controls[s].set_output_value(val)
-            return True
-        # This handles all supported aberration coefficients
-        elif re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
+        elif "." in s:
             split_s = s.split('.')
-            control = getattr(self, split_s[0], None)
-            if control is not None:
-                if len(split_s) > 1:
-                     if split_s[1] in ("aux"):
-                         setattr(self, split_s[0], control.make((control.y, val)))
-                         return True
-                     elif split_s[1] in ("bvy"):
-                         setattr(self, split_s[0], control.make((val, control.x)))
-                         return True
-                else:
-                    setattr(self, split_s[0], val)
+            control = self.get_control(split_s[0]) # get the 2d control
+            if isinstance(control, Control2D):
+                axis = getattr(control, split_s[1], None) # get the control that holds the value for the right axis
+                if axis is not None:
+                    axis.set_output_value(val) # set the actual value
                     return True
+        else:
+            control = self.get_control(s)
+            if isinstance(control, Control):
+                control.set_output_value(val)
+                return True
         return False
 
     def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
@@ -680,34 +701,19 @@ class Instrument(stem_controller.STEMController):
         return self.SetVal(s, self.GetVal(s) + delta)
 
     def InformControl(self, s: str, val: float) -> bool:
-        # here we need to check first for the match with aberration coefficients. Otherwise the
-        # "property_changed_event" will be fired with the wrong paramter
-        # This handles all supported aberration coefficients
-        if re.match("(C[1-3][0-4])(\.[auxbvy]|$)$", s):
+        if "." in s:
             split_s = s.split('.')
-            if len(split_s) > 1:
-                 if split_s[1] in ("aux"):
-                     control = self.__controls.get(split_s[0] + ".x")
-                     if control:
-                         control.inform_output_value(val)
-                         self.property_changed_event.fire(split_s[0])
-                         return True
-                 elif split_s[1] in ("bvy"):
-                     control = self.__controls.get(split_s[0] + ".y")
-                     if control:
-                         control.inform_output_value(val)
-                         self.property_changed_event.fire(split_s[0])
-                         return True
-            else:
-                control = self.__controls.get(s)
-                if control:
-                    control.inform_output_value(val)
-                    self.property_changed_event.fire(s)
+            control = self.get_control(split_s[0]) # get the 2d control
+            if control is not None:
+                axis = getattr(control, split_s[1], None) # get the control that holds the value for the right axis
+                if axis is not None:
+                    axis.inform_output_value(val) # inform the actual value
                     return True
-        elif s in self.__controls:
-            self.__controls[s].inform_output_value(val)
-            self.property_changed_event.fire(s)
-            return True
+        else:
+            control = self.get_control(s)
+            if control is not None:
+                control.inform_output_value(val)
+                return True
         return self.SetVal(s, val)
 
     def change_stage_position(self, *, dy: int=None, dx: int=None):
