@@ -7,11 +7,59 @@ from nion.swift import Workspace
 from nion.ui import Widgets
 from nion.utils import Binding
 from nion.utils import Converter
-from nion.utils import Geometry
 
 from . import InstrumentDevice
 
 _ = gettext.gettext
+
+
+class Control2DBinding(Binding.Binding):
+    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, attribute_name: str, converter=None, fallback=None):
+        super().__init__(None, converter=converter, fallback=fallback)
+
+        self.source_setter = lambda value: getattr(instrument.get_control(control_name), attribute_name).set_output_value(value)
+        self.source_getter = lambda: getattr(instrument.get_control(control_name), attribute_name).output_value
+
+        # thread safe
+        def property_changed(property_name_: str):
+            if property_name_ == control_name:
+                # perform on the main thread
+                value = self.source_getter()
+                if value is not None:
+                    self.update_target(value)
+                else:
+                    self.update_target_direct(self.fallback)
+
+        self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
+
+    def close(self):
+        self.__property_changed_listener.close()
+        self.__property_changed_listener = None
+        super().close()
+
+
+class ControlBinding(Binding.Binding):
+    def __init__(self, instrument, control_name: str, *, converter=None, validator=None, fallback=None):
+        super().__init__(None, converter=converter, validator=validator, fallback=fallback)
+
+        self.source_setter = lambda value: instrument.SetVal(control_name, value)
+        self.source_getter = lambda: instrument.GetVal(control_name)
+
+        # thread safe
+        def property_changed(property_name_: str) -> None:
+            if property_name_ == control_name:
+                value = self.source_getter()
+                if value is not None:
+                    self.update_target(value)
+                else:
+                    self.update_target_direct(self.fallback)
+
+        self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
+
+    def close(self):
+        self.__property_changed_listener.close()
+        self.__property_changed_listener = None
+        super().close()
 
 
 class PositionWidget(Widgets.CompositeWidgetBase):
@@ -19,16 +67,11 @@ class PositionWidget(Widgets.CompositeWidgetBase):
     def __init__(self, ui, label: str, object, xy_property):
         super().__init__(ui.create_row_widget())
 
-        def update_value(p, attribute_name, value):
-            args = {"x": p.x, "y": p.y}
-            args[attribute_name] = value
-            return Geometry.FloatPoint(**args)
-
         stage_x_field = ui.create_line_edit_widget()
-        stage_x_field.bind_text(Binding.PropertyAttributeBinding(object, xy_property, "x", Converter.PhysicalValueToStringConverter("nm", 1E9), update_attribute_fn=update_value))
+        stage_x_field.bind_text(Control2DBinding(object, xy_property, "x", Converter.PhysicalValueToStringConverter("nm", 1E9)))
 
         stage_y_field = ui.create_line_edit_widget()
-        stage_y_field.bind_text(Binding.PropertyAttributeBinding(object, xy_property, "y", Converter.PhysicalValueToStringConverter("nm", 1E9), update_attribute_fn=update_value))
+        stage_y_field.bind_text(Control2DBinding(object, xy_property, "y", Converter.PhysicalValueToStringConverter("nm", 1E9)))
 
         row = self.content_widget
 
@@ -65,7 +108,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
 
         defocus_field = ui.create_line_edit_widget()
-        defocus_field.bind_text(Binding.PropertyBinding(instrument, "C10", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        defocus_field.bind_text(ControlBinding(instrument, "C10", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
         c12_widget = PositionWidget(ui, _("C12"), instrument, "C12")
 
@@ -74,7 +117,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         c23_widget = PositionWidget(ui, _("C23"), instrument, "C23")
 
         c3_field = ui.create_line_edit_widget()
-        c3_field.bind_text(Binding.PropertyBinding(instrument, "C30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        c3_field.bind_text(ControlBinding(instrument, "C30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
         c32_widget = PositionWidget(ui, _("C32"), instrument, "C32")
 

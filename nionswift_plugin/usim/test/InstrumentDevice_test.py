@@ -23,59 +23,8 @@ def measure_thickness(d: numpy.ndarray) -> float:
     s = sum(d[left_pos:right_pos])
     return math.log(sum(d) / s)
 
-# TODO Is this class needed? Spyder IDE complains about a missing function "sum_zlp" and it does not look like the class
-# is used anywhere
-class MeasureThickness:
-    """Carry out the Thickness measurement and add an interval graphic."""
-
-    def __init__(self, computation, **kwargs):
-        """Initialize the computation."""
-        self.computation = computation
-
-    def execute(self, src):
-        """Execute the computation.
-
-        This method will run in a thread and should not make any modifications to the library.
-        """
-        self.__data = src.display_xdata.data
-        self.__left, self.__right, s = sum_zlp(self.__data)
-        self.__thickness  = math.log(sum(self.__data) / s)
-        self.__src = src
-
 
 class TestInstrumentDevice(unittest.TestCase):
-
-# Disabled this test because I don't think it is useful but it fails with the latest changes
-# to IntrumentDevice. Why do we even need "defocus_m" as an extra control that gets synched with
-# "C10"? It is not used anywhere in usim in the way is is tested here. I added new tests for making sure the correct
-# events are fired when a control is changed.
-# I left "defocus_m" in InstrumentDevice but changed it to be simply an alias for C10. This way,
-# all other tests pass and simulator works as expected. am 5-31-2019
-
-    # def test_defocus_is_observable(self):
-    #     instrument = InstrumentDevice.Instrument("usim_stem_controller")
-
-    #     defocus_m = instrument.defocus_m
-    #     property_changed_count = 0
-
-    #     def property_changed(key: str) -> None:
-    #         nonlocal defocus_m, property_changed_count
-    #         print(key)
-    #         if key == "defocus_m":
-    #             defocus_m = instrument.defocus_m
-    #             property_changed_count += 1
-    #         if key == "C10":
-    #             property_changed_count += 1
-
-    #     with contextlib.closing(instrument.property_changed_event.listen(property_changed)):
-    #         # setting defocus should set c10 which should trigger its dependent defocus_m
-    #         instrument.defocus_m += 20 / 1E9
-    #         self.assertAlmostEqual(520 / 1E9, defocus_m)
-    #         # setting c10 should trigger its dependent defocus_m
-    #         instrument.SetVal("C10", 600 / 1E9)
-    #         self.assertAlmostEqual(600 / 1E9, defocus_m)
-    #         # a total of 4 changes should happen; no more, no less
-    #         self.assertEqual(4, property_changed_count)
 
     def test_ronchigram_handles_dependencies_properly(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
@@ -84,10 +33,10 @@ class TestInstrumentDevice(unittest.TestCase):
         instrument.defocus_m += 10 / 1E9
         self.assertTrue(camera._needs_recalculation)
         camera._needs_recalculation = False
-        instrument.C30 += 1E9
+        instrument.SetValDelta("C30", 1E9)
         self.assertTrue(camera._needs_recalculation)
         camera._needs_recalculation = False
-        instrument.ZLPoffset += 1
+        instrument.SetValDelta("ZLPoffset", 1)
         self.assertFalse(camera._needs_recalculation)
         camera._needs_recalculation = False
         instrument.beam_current += 1
@@ -244,51 +193,42 @@ class TestInstrumentDevice(unittest.TestCase):
         self.assertTrue(success)
         self.assertAlmostEqual(value, -3e-5)
 
-    def test_accessing_builtin_control_as_attribute_works(self):
-        instrument = InstrumentDevice.Instrument("usim_stem_controller")
-        instrument.SetVal("C10", 3e-3)
-        value = instrument.GetVal("C10")
-        self.assertAlmostEqual(value, instrument.C10)
-        instrument.C10 = 1e-3
-        value = instrument.GetVal("C10")
-        self.assertAlmostEqual(value, instrument.C10)
-
-    def test_accessing_builtin_control_as_attribute_triggers_event(self):
+    def test_changing_control_triggers_property_changed_event(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         event_name = ""
         def listen(name):
             nonlocal event_name
             if name == "C10":
                 event_name = name
-        listener = instrument.property_changed_event.listen(listen)
-        instrument.C10 = 1e-3
-        del listener
+        with contextlib.closing(instrument.property_changed_event.listen(listen)):
+            instrument.SetVal("C10", 1e-3)
         self.assertEqual(event_name, "C10")
 
-    def test_accessing_builtin_2d_control_as_attribute_works(self):
+    def test_setting_and_getting_attribute_values_and_2D_values_works(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
-        instrument.SetVal("C12.x", -1e-5)
-        instrument.SetVal("C12.y", -3e-5)
-        value = instrument.GetVal("C12.x")
-        self.assertAlmostEqual(value, instrument.C12.x)
-        value = instrument.GetVal("C12.y")
-        self.assertAlmostEqual(value, instrument.C12.y)
-        instrument.C12 = Geometry.FloatPoint(y=-2e5, x=1e5)
-        value = instrument.GetVal("C12.x")
-        self.assertAlmostEqual(value, instrument.C12.x)
-        value = instrument.GetVal("C12.y")
-        self.assertAlmostEqual(value, instrument.C12.y)
+        C12 = Geometry.FloatPoint(x=-1e-5, y=-3e-5)
+        instrument.SetVal("C12.x", C12.x)
+        instrument.SetVal("C12.y", C12.y)
+        self.assertAlmostEqual(C12.x, instrument.GetVal("C12.x"))
+        self.assertAlmostEqual(C12.x, instrument.GetVal2D("C12").x)
+        self.assertAlmostEqual(C12.y, instrument.GetVal("C12.y"))
+        self.assertAlmostEqual(C12.y, instrument.GetVal2D("C12").y)
+        C12 = Geometry.FloatPoint(y=-2e5, x=1e5)
+        instrument.SetVal2D("C12", C12)
+        self.assertAlmostEqual(C12.x, instrument.GetVal("C12.x"))
+        self.assertAlmostEqual(C12.x, instrument.GetVal2D("C12").x)
+        self.assertAlmostEqual(C12.y, instrument.GetVal("C12.y"))
+        self.assertAlmostEqual(C12.y, instrument.GetVal2D("C12").y)
 
-    def test_accessing_builtin_2d_control_as_attribute_triggers_event(self):
+    def test_setting_2d_control_triggers_event(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         event_name = ""
         def listen(name):
             nonlocal event_name
             if name == "C12":
                 event_name = name
-        listener = instrument.property_changed_event.listen(listen)
-        instrument.C12 = Geometry.FloatPoint(y=-2e5, x=1e5)
-        del listener
+        with contextlib.closing(instrument.property_changed_event.listen(listen)):
+            instrument.SetVal2D("C12", Geometry.FloatPoint(y=-2e5, x=1e5))
         self.assertEqual(event_name, "C12")
 
     def test_can_get_and_set_val_of_added_control(self):
@@ -359,18 +299,7 @@ class TestInstrumentDevice(unittest.TestCase):
         self.assertTrue(success)
         self.assertAlmostEqual(value, -3e-5)
 
-    def test_accessing_added_control_as_attribute_works(self):
-        instrument = InstrumentDevice.Instrument("usim_stem_controller")
-        control = instrument.create_control("custom_control")
-        instrument.add_control(control)
-        instrument.SetVal("custom_control", 3e-3)
-        value = instrument.GetVal("custom_control")
-        self.assertAlmostEqual(value, instrument.custom_control)
-        instrument.custom_control = 1e-3
-        value = instrument.GetVal("custom_control")
-        self.assertAlmostEqual(value, instrument.custom_control)
-
-    def test_accessing_added_control_as_attribute_triggers_event(self):
+    def test_setting_added_control_triggers_event(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         control = instrument.create_control("custom_control")
         instrument.add_control(control)
@@ -379,28 +308,29 @@ class TestInstrumentDevice(unittest.TestCase):
             nonlocal event_name
             if name == "custom_control":
                 event_name = name
-        listener = instrument.property_changed_event.listen(listen)
-        instrument.custom_control = 1e-3
-        del listener
+        with contextlib.closing(instrument.property_changed_event.listen(listen)):
+            instrument.SetVal("custom_control", 1e-3)
         self.assertEqual(event_name, "custom_control")
 
-    def test_accessing_added_2d_control_as_attribute_works(self):
+    def test_setting_and_getting_attribute_values_and_2D_values_works_on_custom_2d_control(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         control = instrument.create_2d_control("custom_control", ("x", "y"))
         instrument.add_control(control)
-        instrument.SetVal("custom_control.x", -1e-5)
-        instrument.SetVal("custom_control.y", -3e-5)
-        value = instrument.GetVal("custom_control.x")
-        self.assertAlmostEqual(value, instrument.custom_control.x)
-        value = instrument.GetVal("custom_control.y")
-        self.assertAlmostEqual(value, instrument.custom_control.y)
-        instrument.custom_control = Geometry.FloatPoint(y=-2e5, x=1e5)
-        value = instrument.GetVal("custom_control.x")
-        self.assertAlmostEqual(value, instrument.custom_control.x)
-        value = instrument.GetVal("custom_control.y")
-        self.assertAlmostEqual(value, instrument.custom_control.y)
+        value = Geometry.FloatPoint(x=-1e-5, y=-3e-5)
+        instrument.SetVal("custom_control.x", value.x)
+        instrument.SetVal("custom_control.y", value.y)
+        self.assertAlmostEqual(value.x, instrument.GetVal("custom_control.x"))
+        self.assertAlmostEqual(value.x, instrument.GetVal2D("custom_control").x)
+        self.assertAlmostEqual(value.y, instrument.GetVal("custom_control.y"))
+        self.assertAlmostEqual(value.y, instrument.GetVal2D("custom_control").y)
+        value = Geometry.FloatPoint(y=-2e5, x=1e5)
+        instrument.SetVal2D("custom_control", value)
+        self.assertAlmostEqual(value.x, instrument.GetVal("custom_control.x"))
+        self.assertAlmostEqual(value.x, instrument.GetVal2D("custom_control").x)
+        self.assertAlmostEqual(value.y, instrument.GetVal("custom_control.y"))
+        self.assertAlmostEqual(value.y, instrument.GetVal2D("custom_control").y)
 
-    def test_accessing_added_2d_control_as_attribute_triggers_event(self):
+    def test_setting_value_on_custom_2d_control_triggers_property_changed_event(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         control = instrument.create_2d_control("custom_control", ("x", "y"))
         instrument.add_control(control)
@@ -409,9 +339,21 @@ class TestInstrumentDevice(unittest.TestCase):
             nonlocal event_name
             if name == "custom_control":
                 event_name = name
-        listener = instrument.property_changed_event.listen(listen)
-        instrument.custom_control = Geometry.FloatPoint(y=-2e5, x=1e5)
-        del listener
+        with contextlib.closing(instrument.property_changed_event.listen(listen)):
+            instrument.SetVal2D("custom_control", Geometry.FloatPoint(y=-2e5, x=1e5))
+        self.assertEqual(event_name, "custom_control")
+
+    def test_setting_attribute_value_on_custom_2d_control_triggers_property_changed_event(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        control = instrument.create_2d_control("custom_control", ("x", "y"))
+        instrument.add_control(control)
+        event_name = ""
+        def listen(name):
+            nonlocal event_name
+            if name == "custom_control":
+                event_name = name
+        with contextlib.closing(instrument.property_changed_event.listen(listen)):
+            instrument.SetVal("custom_control.x", 2e5)
         self.assertEqual(event_name, "custom_control")
 
     def test_adding_control_with_duplicate_name_raises_value_error(self):
@@ -441,7 +383,7 @@ class TestInstrumentDevice(unittest.TestCase):
         success = instrument.SetVal("C12.ne", 1e-5)
         self.assertFalse(success)
         with self.assertRaises(AttributeError):
-            instrument.get_control("C12").ne
+            getattr(instrument.get_control("C12"), "ne")
 
 
 if __name__ == '__main__':

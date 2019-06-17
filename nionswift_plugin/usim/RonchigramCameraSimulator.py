@@ -220,7 +220,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
     depends_on = ["C10", "C12", "C21", "C23", "C30", "C32", "C34", "C34", "stage_position_m", "probe_state",
                   "probe_position", "live_probe_position", "features", "beam_shift_m", "is_blanked", "beam_current"]
 
-    def __init__(self, instrument: "Instrument", ronchigram_shape: Geometry.IntSize, counts_per_electron: int, convergence_angle: float):
+    def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, convergence_angle: float):
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
         self.__cached_frame = None
         max_defocus = instrument.max_defocus
@@ -245,7 +245,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             #print("recalculating frame")
             height = readout_area.height
             width = readout_area.width
-            offset_m = self.stage_position_m
+            offset_m = self.instrument.stage_position_m
             full_fov_nm = abs(self.__max_defocus) * math.sin(self.__convergence_angle_rad) * 1E9
             fov_size_nm = Geometry.FloatSize(full_fov_nm * height / self._sensor_dimensions.height, full_fov_nm * width / self._sensor_dimensions.width)
             center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self._sensor_dimensions.height- 0.5), full_fov_nm * (readout_area.center.x / self._sensor_dimensions.width - 0.5))
@@ -254,18 +254,18 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             # features will be positive values; thickness can be simulated by subtracting the features from the
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
-            if not self.is_blanked:
+            if not self.instrument.is_blanked:
                 for feature in self.instrument.sample.features:
                     feature.plot(data, offset_m, fov_size_nm, center_nm, size)
                 data = thickness_param - data
             data = self._get_binned_data(data, binning_shape)
 
-            if not self.is_blanked:
+            if not self.instrument.is_blanked:
                 probe_position = Geometry.FloatPoint(0.5, 0.5)
-                if self.probe_state == "scanning":
-                    probe_position = self.live_probe_position
-                elif self.probe_state == "parked" and self.probe_position is not None:
-                    probe_position = self.probe_position
+                if self.instrument.probe_state == "scanning":
+                    probe_position = self.instrument.live_probe_position
+                elif self.instrument.probe_state == "parked" and self.instrument.probe_position is not None:
+                    probe_position = self.instrument.probe_position
 
                 scan_offset = Geometry.FloatPoint()
                 if last_scan_params is not None and probe_position is not None:
@@ -279,20 +279,20 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 aberrations["height"] = data.shape[0]
                 aberrations["width"] = data.shape[1]
                 aberrations["theta"] = theta
-                aberrations["c0a"] = self.beam_shift_m[1] + scan_offset[1]
-                aberrations["c0b"] = self.beam_shift_m[0] + scan_offset[0]
-                aberrations["c10"] = self.C10
-                aberrations["c12a"] = self.C12[1]
-                aberrations["c12b"] = self.C12[0]
-                aberrations["c21a"] = self.C21[1]
-                aberrations["c21b"] = self.C21[0]
-                aberrations["c23a"] = self.C23[1]
-                aberrations["c23b"] = self.C23[0]
-                aberrations["c30"] = self.C30
-                aberrations["c32a"] = self.C32[1]
-                aberrations["c32b"] = self.C32[0]
-                aberrations["c34a"] = self.C34[1]
-                aberrations["c34b"] = self.C34[0]
+                aberrations["c0a"] = self.instrument.GetVal2D("beam_shift_m").x + scan_offset[1]
+                aberrations["c0b"] = self.instrument.GetVal2D("beam_shift_m").y + scan_offset[0]
+                aberrations["c10"] = self.instrument.GetVal("C10")
+                aberrations["c12a"] = self.instrument.GetVal2D("C12").x
+                aberrations["c12b"] = self.instrument.GetVal2D("C12").y
+                aberrations["c21a"] = self.instrument.GetVal2D("C21").x
+                aberrations["c21b"] = self.instrument.GetVal2D("C21").y
+                aberrations["c23a"] = self.instrument.GetVal2D("C23").x
+                aberrations["c23b"] = self.instrument.GetVal2D("C23").y
+                aberrations["c30"] = self.instrument.GetVal("C30")
+                aberrations["c32a"] = self.instrument.GetVal2D("C32").x
+                aberrations["c32b"] = self.instrument.GetVal2D("C32").y
+                aberrations["c34a"] = self.instrument.GetVal2D("C34").x
+                aberrations["c34b"] = self.instrument.GetVal2D("C34").y
                 data = self.__aberrations_controller.apply(aberrations, data)
 
             intensity_calibration = Calibration.Calibration(units="counts")

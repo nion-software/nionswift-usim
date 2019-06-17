@@ -163,7 +163,7 @@ class ConvertedControl:
         self.__axis = axis
 
     @property
-    def __weighted_input_value_2d(self) -> float:
+    def __weighted_input_value_2d(self) -> typing.Tuple[float, float]:
         value_a = self.__control_2d.controls[0].weighted_input_value
         value_b = self.__control_2d.controls[1].weighted_input_value
         return AxisManager().convert_vector((value_a, value_b), self.__control_2d.native_axis, self.__axis)
@@ -193,9 +193,10 @@ class ConvertedControl:
         return self.__local_value_2d[self.__index]
 
     def set_local_value(self, value: float) -> None:
-        value_2d = list(self.__local_value_2d)
+        value_2d = [self.__local_value_2d[0], self.__local_value_2d[1]]
         value_2d[self.__index] = value
-        value_2d_native = AxisManager().convert_vector(tuple(value_2d), self.__axis, self.__control_2d.native_axis)
+        value_2d = (value_2d[0], value_2d[1])  # doing it this way keeps the type checker happy
+        value_2d_native = AxisManager().convert_vector(value_2d, self.__axis, self.__control_2d.native_axis)
         self.__control_2d.controls[0].set_local_value(value_2d_native[0])
         self.__control_2d.controls[1].set_local_value(value_2d_native[1])
 
@@ -205,7 +206,8 @@ class ConvertedControl:
     def inform_output_value(self, value: float) -> None:
         value_2d = list(self.__output_value_2d)
         value_2d[self.__index] = value
-        value_2d_native = AxisManager().convert_vector(tuple(value_2d), self.__axis, self.__control_2d.native_axis)
+        value_2d = (value_2d[0], value_2d[1])  # doing it this way keeps the type checker happy
+        value_2d_native = AxisManager().convert_vector(value_2d, self.__axis, self.__control_2d.native_axis)
         self.__control_2d.controls[0].inform_output_value(value_2d_native[0])
         self.__control_2d.controls[1].inform_output_value(value_2d_native[1])
 
@@ -225,7 +227,7 @@ class AxisManager(metaclass=Utility.Singleton):
     def supported_axis_names(self):
         return self.__supported_axis_names.copy()
 
-    def convert_vector(self, vector: typing.Tuple[float, float], from_axis: typing.Tuple[str, str], to_axis: typing.Tuple[str, str]):
+    def convert_vector(self, vector: typing.Tuple[float, float], from_axis: typing.Tuple[str, str], to_axis: typing.Tuple[str, str]) -> typing.Tuple[float, float]:
         return vector
 
 
@@ -321,45 +323,6 @@ class Instrument(stem_controller.STEMController):
             "eels": EELSCameraSimulator.EELSCameraSimulator(self, self.__eels_shape, self.counts_per_electron)
         }
 
-    def __getattr__(self, attr):
-        """
-        self.__getattr__ and self.__setattr__ are implemented such that the "PropertyAttributeBindings" used in
-        "InstrumentPanel" work with 1D- and 2D-controls.
-        In more detail this means that for a  1d-control "C10", `instrument.C10` returns the output value of this
-        control. Similarly, executing `instrument.C10 = 1.5` sets the output value of "C10" to 1.5.
-        For a 2d-control "C12", accessing `instrument.C12` returns a `Geometry.FloatPoint` object with the output
-        values of the two sub-controls in "C12" in their native axis.
-        Assigning to `instrument.C12` sets the output values of the two sub-controls in "C12" (in their native axis)
-        to the x-, and y-coordinate of the assigned value if this is a `Geometry.FloatPoint` object. Otherwise the
-        assignment will be ignored.
-        """
-        # we need to exclude "self.__controls" because accessing it here leads to infinite recursion when
-        # accessing it before it is set
-        if attr != "_Instrument__controls" and attr in self.__controls:
-            control = self.__controls[attr]
-            if isinstance(control, Control2D):
-                return Geometry.FloatPoint(getattr(control, control.native_axis[1]).output_value,
-                                           getattr(control, control.native_axis[0]).output_value)
-            else:
-                return control.output_value
-        raise AttributeError(f"'{self.__class__.__name__}' has not attribute '{attr}'")
-
-    def __setattr__(self, attr, value):
-        """
-        see self.__getattr__ for a detailed description.
-        """
-
-        # We need to make sure "self.__controls" exists to avoid AttributeErrors
-        if hasattr(self, "_Instrument__controls") and attr in self.__controls:
-            control = self.__controls[attr]
-            if isinstance(control, Control2D) and isinstance(value, Geometry.FloatPoint):
-                getattr(control, control.native_axis[1]).set_output_value(value.y)
-                getattr(control, control.native_axis[0]).set_output_value(value.x)
-            elif isinstance(control, Control):
-                control.set_output_value(value)
-        else:
-            super().__setattr__(attr, value)
-
     def close(self):
         for camera in self.__cameras.values():
             camera.close()
@@ -371,6 +334,7 @@ class Instrument(stem_controller.STEMController):
     def __create_built_in_controls(self):
         zlp_tare_control = Control("ZLPtare")
         zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
+        stage_position_m = Control2D("stage_position_m", ("x", "y"))
         c10 = Control("C10", 500 / 1e9)
         c12 = Control2D("C12", ("x", "y"))
         c21 = Control2D("C21", ("x", "y"))
@@ -399,7 +363,7 @@ class Instrument(stem_controller.STEMController):
         c3_range = Control("C3Range")
         # dependent controls
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
-        return [zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control, c12Control,
+        return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control, c12Control,
                 c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift,
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, order_1_patch,
                 order_2_patch, order_3_patch, c1_range, c2_range, c3_range]
@@ -470,7 +434,7 @@ class Instrument(stem_controller.STEMController):
 
     def get_scan_data(self, frame_parameters, channel) -> numpy.ndarray:
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
-        offset_m = self.stage_position_m - self.beam_shift_m
+        offset_m = self.stage_position_m - self.GetVal2D("beam_shift_m")
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
         if frame_parameters.subscan_fractional_size:
             subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
@@ -531,20 +495,19 @@ class Instrument(stem_controller.STEMController):
 
     @property
     def stage_position_m(self) -> Geometry.FloatPoint:
-        return self.__stage_position_m
+        return self.GetVal2D("stage_position_m")
 
     @stage_position_m.setter
     def stage_position_m(self, value: Geometry.FloatPoint) -> None:
-        self.__stage_position_m = value
-        self.property_changed_event.fire("stage_position_m")
+        self.SetVal2D("stage_position_m", value)
 
     @property
     def defocus_m(self) -> float:
-        return self.C10
+        return self.GetVal("C10")
 
     @defocus_m.setter
     def defocus_m(self, value: float) -> None:
-        self.C10 = value
+        self.SetVal("C10", value)
 
     @property
     def voltage(self) -> float:
@@ -600,7 +563,6 @@ class Instrument(stem_controller.STEMController):
     def energy_per_channel_eV(self, value: float) -> None:
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
-
 
     def get_autostem_properties(self):
         """Return a new autostem properties (dict) to be recorded with an acquisition.
@@ -664,7 +626,7 @@ class Instrument(stem_controller.STEMController):
         good, d = self.TryGetVal(s)
         if not good:
             if default_value is None:
-                raise Exception("No element named '{}' exists! Cannot get value.".format(s))
+                raise Exception(f"No element named '{s}' exists! Cannot get value.")
             else:
                 return default_value
         return d
@@ -715,6 +677,25 @@ class Instrument(stem_controller.STEMController):
                 control.inform_output_value(val)
                 return True
         return self.SetVal(s, val)
+
+    def GetVal2D(self, s: str, default_value: Geometry.FloatPoint=None, *, axis: typing.Tuple[str, str]=None) -> Geometry.FloatPoint:
+        control = self.__controls.get(s)
+        if isinstance(control, Control2D):
+            axis = axis if axis is not None else control.native_axis
+            return Geometry.FloatPoint(getattr(control, axis[1]).output_value, getattr(control, axis[0]).output_value)
+        if default_value is None:
+            raise Exception(f"No 2D element named '{s}' exists! Cannot get value.")
+        else:
+            return default_value
+
+    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: typing.Tuple[str, str]=None) -> bool:
+        control = self.__controls.get(s)
+        if isinstance(control, Control2D):
+            axis = axis if axis is not None else control.native_axis
+            getattr(control, axis[0]).set_output_value(value.x)
+            getattr(control, axis[1]).set_output_value(value.y)
+            return True
+        return False
 
     def change_stage_position(self, *, dy: int=None, dx: int=None):
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""

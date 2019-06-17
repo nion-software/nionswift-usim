@@ -49,7 +49,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                   "stage_position_m", "beam_shift_m", "features", "energy_offset_eV", "energy_per_channel_eV",
                   "beam_current"]
 
-    def __init__(self, instrument: "Instrument", sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
+    def __init__(self, instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)
         self.__cached_frame = None
         self.__data_scale = 1.0
@@ -101,16 +101,16 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
         if self._needs_recalculation or self.__cached_frame is None:
             data = numpy.zeros(tuple(self._sensor_dimensions), numpy.float)
-            slit_attenuation = 10 if self.is_slit_in else 1
+            slit_attenuation = 10 if self.instrument.is_slit_in else 1
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
             probe_position = Geometry.FloatPoint(0.5, 0.5)
-            if self.is_blanked:
+            if self.instrument.is_blanked:
                 probe_position = None
-            elif self.probe_state == "scanning":
-                probe_position = self.live_probe_position
-            elif self.probe_state == "parked" and self.probe_position is not None:
-                probe_position = self.probe_position
+            elif self.instrument.probe_state == "scanning":
+                probe_position = self.instrument.live_probe_position
+            elif self.instrument.probe_state == "parked" and self.instrument.probe_position is not None:
+                probe_position = self.instrument.probe_position
 
             # typical thickness over mean free path (T/l) will be 0.5
             mean_free_path_nm = 100  # nm. (lambda values from back of Edgerton)
@@ -141,7 +141,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 # build the spectrum and reference spectrum by adding the features. the data is unscaled.
                 spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), numpy.float)
                 size, fov_size_nm, center_nm = last_scan_params  # get these from last scan
-                offset_m = self.stage_position_m - self.beam_shift_m  # get this from current values
+                offset_m = self.instrument.stage_position_m - self.instrument.GetVal2D("beam_shift_m")  # get this from current values
                 feature_layer_count = 0
                 for index, feature in enumerate(self.instrument.sample.features):
                     if feature.intersects(offset_m, fov_size_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
@@ -187,10 +187,10 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         return self.noise.apply(self.__cached_frame)
 
     def get_dimensional_calibrations(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
-        energy_offset_eV = self.energy_offset_eV
+        energy_offset_eV = self.instrument.energy_offset_eV
         # energy_offset_eV += random.uniform(-1, 1) * self.__energy_per_channel_eV * 5
         dimensional_calibrations = [
             Calibration.Calibration(),
-            Calibration.Calibration(offset=energy_offset_eV, scale=self.energy_per_channel_eV, units="eV")
+            Calibration.Calibration(offset=energy_offset_eV, scale=self.instrument.energy_per_channel_eV, units="eV")
         ]
         return dimensional_calibrations

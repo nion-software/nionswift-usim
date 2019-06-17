@@ -10,7 +10,7 @@ class CameraSimulator:
 
     depends_on = list() # subclasses should define the controls and attributes they depend on here
 
-    def __init__(self, instrument: "Instrument", camera_type: str, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
+    def __init__(self, instrument, camera_type: str, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
         self.__instrument = instrument
         self._camera_type = camera_type
         self._sensor_dimensions = sensor_dimensions
@@ -42,13 +42,8 @@ class CameraSimulator:
         return self._sensor_dimensions
 
     @property
-    def instrument(self) -> "Instrument":
+    def instrument(self):
         return self.__instrument
-
-    def __getattr__(self, attr):
-        if attr in self.depends_on:
-            return getattr(self.__instrument, attr)
-        raise AttributeError(attr)
 
     def get_dimensional_calibrations(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
         """
@@ -63,7 +58,7 @@ class CameraSimulator:
         raise NotImplementedError
 
     def get_total_counts(self, exposure_s: float) -> float:
-        beam_current_pa = self.beam_current * 1E12
+        beam_current_pa = self.instrument.beam_current * 1E12
         e_per_pa = 6.242E18 / 1E12
         return beam_current_pa * e_per_pa * exposure_s * self._counts_per_electron
 
