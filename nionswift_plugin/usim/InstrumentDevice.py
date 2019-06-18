@@ -293,7 +293,8 @@ class Instrument(stem_controller.STEMController):
         self.instrument_id = instrument_id
         self.property_changed_event = Event.Event()
         self.__camera_frame_event = threading.Event()
-        self.__sample = SampleSimulator.Sample()
+        self.__samples = [SampleSimulator.RectangleFlakeSample(), SampleSimulator.AmorphousSample()]
+        self.__sample_index = 0
 
         # define the STEM geometry limits
         self.stage_size_nm = 150
@@ -370,7 +371,19 @@ class Instrument(stem_controller.STEMController):
 
     @property
     def sample(self) -> SampleSimulator.Sample:
-        return self.__sample
+        return self.__samples[self.__sample_index]
+
+    @property
+    def sample_titles(self) -> typing.List[str]:
+        return [sample.title for sample in self.__samples]
+
+    @property
+    def sample_index(self) -> int:
+        return self.__sample_index
+
+    @sample_index.setter
+    def sample_index(self, value: int) -> None:
+        self.__sample_index = value
 
     @property
     def live_probe_position(self):
@@ -449,7 +462,7 @@ class Instrument(stem_controller.STEMController):
         extra_nm = Geometry.FloatPoint(y=(extra / size.height) * fov_size_nm[0], x=(extra / size.width) * fov_size_nm[1])
         used_size = size + Geometry.IntSize(height=extra, width=extra)
         data = numpy.zeros((used_size.height, used_size.width), numpy.float32)
-        self.__sample.plot_features(data, offset_m, fov_size_nm, extra_nm, center_nm, used_size)
+        self.sample.plot_features(data, offset_m, fov_size_nm, extra_nm, center_nm, used_size)
         noise_factor = 0.3
         if frame_parameters.rotation_rad != 0:
             inner_height = size.height / used_size.height

@@ -1,8 +1,16 @@
 # standard libraries
+import abc
+import gettext
 import numpy
 import random
+import scipy.ndimage
+import typing
 
+from nion.data import Image
 from nion.utils import Geometry
+
+
+_ = gettext.gettext
 
 
 class Feature:
@@ -60,7 +68,21 @@ class Feature:
         return sum
 
 
-class Sample:
+class Sample(abc.ABC):
+
+    @property
+    @abc.abstractmethod
+    def title(self) -> str: ...
+
+    @property
+    @abc.abstractmethod
+    def features(self) -> typing.List[Feature]: ...
+
+    @abc.abstractmethod
+    def plot_features(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None: ...
+
+
+class RectangleFlakeSample:
 
     def __init__(self):
         self.__features = list()
@@ -77,9 +99,72 @@ class Sample:
         random.setstate(random_state)
 
     @property
-    def features(self):
+    def title(self) -> str:
+        return _("Flake")
+
+    @property
+    def features(self) -> typing.List[Feature]:
         return self.__features
 
-    def plot_features(self, data, offset_m, fov_size_nm, extra_nm, center_nm, used_size):
+    def plot_features(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None:
         for feature in self.__features:
             feature.plot(data, offset_m, fov_size_nm + extra_nm, center_nm, used_size)
+
+
+class AmorphousSample(Sample):
+
+    def __init__(self):
+        self.__amorphous = numpy.random.RandomState(1).randn(2048, 2048) * 2 + 1
+
+    @property
+    def title(self) -> str:
+        return "Amorphous"
+
+    @property
+    def features(self) -> typing.List[Feature]:
+        return list()
+
+    def plot_features(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None:
+
+        range_nm = 80
+
+        # print(f"{offset_m * 1E9}, {fov_size_nm} {extra_nm}")
+
+        # calculate destination bounds in nm
+        left_nm = -offset_m.x * 1E9 - (fov_size_nm.width + extra_nm.x) / 2
+        top_nm = -offset_m.y * 1E9 - (fov_size_nm.height + extra_nm.y) / 2
+        right_nm = left_nm + fov_size_nm.width + extra_nm.x
+        bottom_nm = top_nm + fov_size_nm.height + extra_nm.y
+
+        # print(f"{left_nm}, {top_nm} x {right_nm - left_nm}, {bottom_nm - top_nm}")
+
+        # map into fractional coordinates (0, 1) of source area where (-range_nm, range_nm) is the range in both axes
+        intersection_left_nm = max(left_nm, -range_nm)
+        intersection_top_nm = max(top_nm, -range_nm)
+        intersection_right_nm = min(right_nm, range_nm)
+        intersection_bottom_nm = min(bottom_nm, range_nm)
+
+        # print(f"{intersection_left_nm}, {intersection_top_nm} x {intersection_right_nm - intersection_left_nm}, {intersection_bottom_nm - intersection_top_nm}")
+
+        if intersection_left_nm < intersection_right_nm and intersection_top_nm < intersection_bottom_nm:
+            src_left = int(self.__amorphous.shape[1] * max((intersection_left_nm + range_nm) / (range_nm * 2), 0))
+            src_top = int(self.__amorphous.shape[0] * max((intersection_top_nm + range_nm) / (range_nm * 2), 0))
+            src_right = int(self.__amorphous.shape[1] * min((intersection_right_nm + range_nm) / (range_nm * 2), 1))
+            src_bottom = int(self.__amorphous.shape[0] * min((intersection_bottom_nm + range_nm) / (range_nm * 2), 1))
+            dst_left = int(data.shape[1] * max((intersection_left_nm - left_nm) / (right_nm - left_nm), 0))
+            dst_top = int(data.shape[0] * max((intersection_top_nm - top_nm) / (bottom_nm - top_nm), 0))
+            dst_right = int(data.shape[1] * min((intersection_right_nm - left_nm) / (right_nm - left_nm), 1))
+            dst_bottom = int(data.shape[0] * min((intersection_bottom_nm - top_nm) / (bottom_nm - top_nm), 1))
+
+            # print(f"{src_left}, {src_top} x {src_right - src_left}, {src_bottom - src_top} => {dst_left}, {dst_top} x {dst_right - dst_left}, {dst_bottom - dst_top}")
+
+            src = self.__amorphous[src_top:src_bottom, src_left:src_right]
+            src = scipy.ndimage.gaussian_filter(src, 3)
+            # may be faster, but doesn't work for non-square src
+            # src = numpy.fft.ifft2(scipy.ndimage.fourier_gaussian(src * 1j, 3)).real
+            src = 4 * (src - numpy.amin(src)) / numpy.ptp(src)
+            data[dst_top:dst_bottom, dst_left:dst_right] = Image.scaled(src, (dst_bottom - dst_top, dst_right - dst_left))
+
+            # print(f"src min/max {numpy.amin(src)} / {numpy.amax(src)}")
+
+        # print(f"data min/max {numpy.amin(data)} / {numpy.amax(data)}")

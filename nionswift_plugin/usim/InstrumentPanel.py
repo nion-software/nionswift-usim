@@ -97,6 +97,10 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         ui = document_controller.ui
 
+        sample_combo_box = ui.create_combo_box_widget(instrument.sample_titles)
+        sample_combo_box.current_index = instrument.sample_index
+        sample_combo_box.bind_current_index(Binding.PropertyBinding(instrument, "sample_index"))
+
         voltage_field = ui.create_line_edit_widget()
         voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
 
@@ -167,6 +171,12 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         c3_row.add(c3_field)
         c3_row.add_stretch()
 
+        sample_row = ui.create_row_widget()
+        sample_row.add_spacing(8)
+        sample_row.add_spacing(8)
+        sample_row.add(sample_combo_box)
+        sample_row.add_stretch()
+
         voltage_row = ui.create_row_widget()
         voltage_row.add_spacing(8)
         voltage_row.add_spacing(8)
@@ -183,6 +193,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         column = self.content_widget
 
+        column.add(sample_row)
         column.add(voltage_row)
         column.add(beam_current_row)
         column.add(stage_position_widget)

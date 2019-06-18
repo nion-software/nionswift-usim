@@ -222,6 +222,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
 
     def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, convergence_angle: float):
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
+        self.__last_sample = None
         self.__cached_frame = None
         max_defocus = instrument.max_defocus
         tv_pixel_angle = math.asin(instrument.stage_size_nm / (max_defocus * 1E9)) / ronchigram_shape.height
@@ -239,6 +240,8 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         new_frame_settings = [readout_area, binning_shape, exposure_s, last_scan_params]
         if new_frame_settings != self._last_frame_settings:
             self._needs_recalculation = True
+        if self.instrument.sample != self.__last_sample:
+            self._needs_recalculation = True
         self._last_frame_settings = new_frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
@@ -255,10 +258,10 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
             if not self.instrument.is_blanked:
-                for feature in self.instrument.sample.features:
-                    feature.plot(data, offset_m, fov_size_nm, center_nm, size)
+                self.instrument.sample.plot_features(data, offset_m, fov_size_nm, Geometry.FloatPoint(), center_nm, size)
                 data = thickness_param - data
             data = self._get_binned_data(data, binning_shape)
+            self.__last_sample = self.instrument.sample
 
             if not self.instrument.is_blanked:
                 probe_position = Geometry.FloatPoint(0.5, 0.5)

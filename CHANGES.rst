@@ -4,6 +4,8 @@ Changelog (nionswift-usim)
 0.1.8 (UNRELEASED)
 ------------------
 
+- Add option for flake (from previous versions) or amorphous sample.
+
 - Allow adding new controls to existing instrument instance.
 
 - Add support for 2D controls and AxisManager.

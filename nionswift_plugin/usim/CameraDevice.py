@@ -38,6 +38,7 @@ class Camera(camera_base.CameraDevice):
         self.__frame_number = 0
         self.__thread = threading.Thread(target=self.__acquisition_thread)
         self.__thread_event = threading.Event()
+        self.__acquired_one_event = threading.Event()  # initial startup
         self.__has_data_event = threading.Event()
         self.__cancel = False
         self.__is_playing = False
@@ -139,6 +140,7 @@ class Camera(camera_base.CameraDevice):
             self.__is_playing = True
             self.__has_data_event.clear()  # ensure any has_data_event is new data
             self.__thread_event.set()
+            self.__acquired_one_event.wait(30)
 
     def stop_live(self) -> None:
         """Stop live acquisition."""
@@ -233,6 +235,7 @@ class Camera(camera_base.CameraDevice):
                 readout_area = self.readout_area
                 binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
                 xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure)
+                self.__acquired_one_event.set()
                 elapsed = time.time() - start
                 wait_s = max(self.__exposure - elapsed, 0)
                 if not self.__thread_event.wait(wait_s):
