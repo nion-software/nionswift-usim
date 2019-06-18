@@ -157,7 +157,7 @@ class ConvertedControl:
     It does not allow adding inputs or dependents, because this should only be done in the native axis.
     """
 
-    def __init__(self, control_2d: "Control2D", index: int, axis: typing.Tuple[str, str]):
+    def __init__(self, control_2d: "Control2D", index: int, axis: stem_controller.AxisType):
         self.__index = index
         self.__control_2d = control_2d
         self.__axis = axis
@@ -227,7 +227,7 @@ class AxisManager(metaclass=Utility.Singleton):
     def supported_axis_names(self):
         return self.__supported_axis_names.copy()
 
-    def convert_vector(self, vector: typing.Tuple[float, float], from_axis: typing.Tuple[str, str], to_axis: typing.Tuple[str, str]) -> typing.Tuple[float, float]:
+    def convert_vector(self, vector: typing.Tuple[float, float], from_axis: stem_controller.AxisType, to_axis: stem_controller.AxisType) -> typing.Tuple[float, float]:
         return vector
 
 
@@ -242,7 +242,7 @@ class Control2D:
 
     def __init__(self,
                  name: str,
-                 native_axis: typing.Tuple[str, str],
+                 native_axis: stem_controller.AxisType,
                  local_values: typing.Tuple[float, float] = (0.0, 0.0),
                  weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", float]],
                                                                typing.List[typing.Tuple["Control", float]]]] = None):
@@ -400,7 +400,7 @@ class Instrument(stem_controller.STEMController):
     def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", float]]] = None):
         return Control(name, local_value, weighted_inputs)
 
-    def create_2d_control(self, name: str, native_axis: typing.Tuple[str, str], local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", float]], typing.List[typing.Tuple["Control", float]]]] = None):
+    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", float]], typing.List[typing.Tuple["Control", float]]]] = None):
         return Control2D(name, native_axis, local_values, weighted_inputs)
 
     def add_control(self, control: typing.Union[Control, Control2D]) -> None:
@@ -675,6 +675,9 @@ class Instrument(stem_controller.STEMController):
     def SetValDelta(self, s: str, delta: float) -> bool:
         return self.SetVal(s, self.GetVal(s) + delta)
 
+    def SetValDeltaAndConfirm(self, s: str, delta: float, tolfactor: float, timeout_ms: int) -> bool:
+        return self.SetValAndConfirm(s, self.GetVal(s) + delta, tolfactor, timeout_ms)
+
     def InformControl(self, s: str, val: float) -> bool:
         if "." in s:
             split_s = s.split('.')
@@ -691,7 +694,7 @@ class Instrument(stem_controller.STEMController):
                 return True
         return self.SetVal(s, val)
 
-    def GetVal2D(self, s: str, default_value: Geometry.FloatPoint=None, *, axis: typing.Tuple[str, str]=None) -> Geometry.FloatPoint:
+    def GetVal2D(self, s: str, default_value: Geometry.FloatPoint=None, *, axis: stem_controller.AxisType=None) -> Geometry.FloatPoint:
         control = self.__controls.get(s)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis
@@ -701,12 +704,30 @@ class Instrument(stem_controller.STEMController):
         else:
             return default_value
 
-    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: typing.Tuple[str, str]=None) -> bool:
+    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType=None) -> bool:
         control = self.__controls.get(s)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis
             getattr(control, axis[0]).set_output_value(value.x)
             getattr(control, axis[1]).set_output_value(value.y)
+            return True
+        return False
+
+    def SetVal2DAndConfirm(self, s: str, value: Geometry.FloatPoint, tolfactor: float, timeout_ms: int, *, axis: stem_controller.AxisType) -> bool:
+        return self.SetVal2D(s, value, axis=axis)
+
+    def SetVal2DDelta(self, s: str, delta: Geometry.FloatPoint, *, axis: stem_controller.AxisType) -> bool:
+        return self.SetVal2D(s, self.GetVal2D(s, axis=axis) + delta, axis=axis)
+
+    def SetVal2DDeltaAndConfirm(self, s: str, delta: Geometry.FloatPoint, tolfactor: float, timeout_ms: int, *, axis: stem_controller.AxisType) -> bool:
+        return self.SetVal2DAndConfirm(s, self.GetVal2D(s, axis=axis) + delta, tolfactor, timeout_ms, axis=axis)
+
+    def InformControl2D(self, s: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType) -> bool:
+        control = self.__controls.get(s)
+        if isinstance(control, Control2D):
+            axis = axis if axis is not None else control.native_axis
+            getattr(control, axis[0]).inform_output_value(value.x)
+            getattr(control, axis[1]).inform_output_value(value.y)
             return True
         return False
 
