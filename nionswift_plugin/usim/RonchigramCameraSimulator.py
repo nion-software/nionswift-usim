@@ -127,7 +127,7 @@ class AberrationsController:
                 elif coefficient_name == "c23a":
                     intermediate = get_i0a() * (get_i0a_squared() - 3 * get_i0b_squared()) / 3
                 elif coefficient_name == "c23b":
-                    intermediate = get_i0b() * (3 * get_idiff_sq()) / 3
+                    intermediate = get_i0b() * (3 * get_i0a_squared() - get_i0b_squared()) / 3
                 elif coefficient_name == "c30":
                     intermediate = get_intermediate("c10") ** 2
                 elif coefficient_name == "c32a":
@@ -143,9 +143,9 @@ class AberrationsController:
                 elif coefficient_name == "c41b":
                     intermediate = 4 * get_i0b() * get_intermediate("c10") ** 2 / 5
                 elif coefficient_name == "c43a":
-                    intermediate = get_iradius() * (get_i0a() * get_idiff_sq()) / 5 - 2 * get_i0a() * get_i0b() ** 2
+                    intermediate = get_iradius() * (get_i0a() * get_idiff_sq() - 2 * get_i0a() * get_i0b() ** 2) / 5
                 elif coefficient_name == "c43b":
-                    intermediate = get_iradius() * (get_i0b() * get_idiff_sq()) / 5 + 2 * get_i0b() * get_i0a() ** 2
+                    intermediate = get_iradius() * (get_i0b() * get_idiff_sq() + 2 * get_i0b() * get_i0a() ** 2) / 5
                 elif coefficient_name == "c45a":
                     intermediate = (get_i0a() * get_idiff_sq() ** 2 - 4 * get_i0a() * get_idiff_sq() * get_i0b() ** 2 - 4 * get_i0a() ** 3 * get_i0b() ** 2) / 5
                 elif coefficient_name == "c45b":
@@ -157,7 +157,7 @@ class AberrationsController:
                 elif coefficient_name == "c52b":
                     intermediate = get_iradius() ** 2 * get_intermediate("c12b") / 3
                 elif coefficient_name == "c54a":
-                    intermediate = (get_iradius() * (get_idiff_sq() ** 2) / 6 - 2 * get_intermediate("c12b")) ** 2
+                    intermediate = get_iradius() * (get_idiff_sq() ** 2 - 4 * get_intermediate("c12b") ** 2) / 6
                 elif coefficient_name == "c54b":
                     intermediate = 2 * get_iradius() * get_idiff_sq() * get_intermediate("c12b") / 3
                 elif coefficient_name == "c56a":
@@ -165,7 +165,7 @@ class AberrationsController:
                 elif coefficient_name == "c56b":
                     intermediate = get_intermediate("c12b") * get_idiff_sq() ** 2 - (4 * get_i0a() ** 3 * get_i0b() ** 3) / 3
                 elif coefficient_name == "c70":
-                    intermediate = get_intermediate("c10") ** 4
+                    intermediate = 2 * get_intermediate("c10") ** 4
             return intermediate
 
         def get_chi(coefficient_name):

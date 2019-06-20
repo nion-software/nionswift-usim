@@ -4,6 +4,8 @@ Changelog (nionswift-usim)
 0.1.8 (UNRELEASED)
 ------------------
 
+- Fix some simulated aberration calculations.
+
 - Add option for flake sample (same as previous version) or amorphous sample.
 
 - Allow adding new controls to existing instrument instance.
