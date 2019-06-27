@@ -1,7 +1,7 @@
 Changelog (nionswift-usim)
 ==========================
 
-0.1.8 (UNRELEASED)
+0.1.8 (2019-06-27)
 ------------------
 
 - Fix some simulated aberration calculations.
