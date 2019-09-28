@@ -1,4 +1,5 @@
 # standard libraries
+import copy
 import math
 import numpy
 import scipy.ndimage.interpolation
@@ -236,9 +237,9 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
         self.noise = Noise.PoissonNoise()
 
-    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, last_scan_params=None) -> DataAndMetadata.DataAndMetadata:
+    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, parked_probe_position) -> DataAndMetadata.DataAndMetadata:
         # check if one of the arguments has changed since last call
-        new_frame_settings = [readout_area, binning_shape, exposure_s, last_scan_params]
+        new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context)]
         if new_frame_settings != self._last_frame_settings:
             self._needs_recalculation = True
         if self.instrument.sample != self.__last_sample:
@@ -268,14 +269,14 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 probe_position = Geometry.FloatPoint(0.5, 0.5)
                 if self.instrument.probe_state == "scanning":
                     probe_position = self.instrument.live_probe_position
-                elif self.instrument.probe_state == "parked" and self.instrument.probe_position is not None:
-                    probe_position = self.instrument.probe_position
+                elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
+                    probe_position = parked_probe_position
 
                 scan_offset = Geometry.FloatPoint()
-                if last_scan_params is not None and probe_position is not None:
-                    scan_size, scan_fov_size_nm, scan_center_nm = last_scan_params  # get these from last scan
-                    scan_offset = Geometry.FloatPoint.make((probe_position[0]*scan_fov_size_nm[0] - scan_fov_size_nm[0]/2,
-                                                            probe_position[1]*scan_fov_size_nm[1] - scan_fov_size_nm[1]/2))
+                if scan_context.is_valid and probe_position is not None:
+                    scan_offset = Geometry.FloatPoint(
+                        y=probe_position[0] * scan_context.fov_size_nm[0] - scan_context.fov_size_nm[0] / 2,
+                        x=probe_position[1] * scan_context.fov_size_nm[1] - scan_context.fov_size_nm[1] / 2)
                     scan_offset = scan_offset*1e-9
 
                 theta = self.__tv_pixel_angle * self._sensor_dimensions.height / 2  # half angle on camera

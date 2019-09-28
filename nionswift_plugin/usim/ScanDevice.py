@@ -11,6 +11,7 @@ from . import InstrumentDevice
 
 # other plug-ins
 from nion.instrumentation import scan_base
+from nion.instrumentation import stem_controller
 from nion.utils import Geometry
 from nion.utils import Registry
 
@@ -229,6 +230,9 @@ class Device:
     def set_profile_frame_parameters(self, profile_index: int, frame_parameters: scan_base.ScanFrameParameters) -> None:
         """Set the acquisition parameters for the give profile_index (0, 1, 2)."""
         self.__profiles[profile_index] = copy.deepcopy(frame_parameters)
+
+    def set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: Geometry.FloatPoint) -> None:
+        self.__instrument._set_scan_context_probe_position(scan_context, probe_position)
 
     def set_idle_position_by_percentage(self, x: float, y: float) -> None:
         """Set the idle position as a percentage of the last used frame parameters."""
