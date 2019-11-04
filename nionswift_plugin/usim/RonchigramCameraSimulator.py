@@ -217,8 +217,9 @@ class AberrationsController:
 
 
 class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
-    depends_on = ["C10", "C12", "C21", "C23", "C30", "C32", "C34", "C34", "stage_position_m", "probe_state",
-                  "probe_position", "live_probe_position", "features", "beam_shift_m", "is_blanked", "beam_current"]
+    depends_on = ["C10Control", "C12Control", "C21Control", "C23Control", "C30Control", "C32Control", "C34Control",
+                  "C34Control", "stage_position_m", "probe_state", "probe_position", "live_probe_position", "features",
+                  "beam_shift_m", "is_blanked", "beam_current"]
 
     def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, convergence_angle: float):
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
@@ -284,18 +285,18 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 aberrations["theta"] = theta
                 aberrations["c0a"] = self.instrument.GetVal2D("beam_shift_m").x + scan_offset[1]
                 aberrations["c0b"] = self.instrument.GetVal2D("beam_shift_m").y + scan_offset[0]
-                aberrations["c10"] = self.instrument.GetVal("C10")
-                aberrations["c12a"] = self.instrument.GetVal2D("C12").x
-                aberrations["c12b"] = self.instrument.GetVal2D("C12").y
-                aberrations["c21a"] = self.instrument.GetVal2D("C21").x
-                aberrations["c21b"] = self.instrument.GetVal2D("C21").y
-                aberrations["c23a"] = self.instrument.GetVal2D("C23").x
-                aberrations["c23b"] = self.instrument.GetVal2D("C23").y
-                aberrations["c30"] = self.instrument.GetVal("C30")
-                aberrations["c32a"] = self.instrument.GetVal2D("C32").x
-                aberrations["c32b"] = self.instrument.GetVal2D("C32").y
-                aberrations["c34a"] = self.instrument.GetVal2D("C34").x
-                aberrations["c34b"] = self.instrument.GetVal2D("C34").y
+                aberrations["c10"] = self.instrument.GetVal("C10Control")
+                aberrations["c12a"] = self.instrument.GetVal2D("C12Control").x
+                aberrations["c12b"] = self.instrument.GetVal2D("C12Control").y
+                aberrations["c21a"] = self.instrument.GetVal2D("C21Control").x
+                aberrations["c21b"] = self.instrument.GetVal2D("C21Control").y
+                aberrations["c23a"] = self.instrument.GetVal2D("C23Control").x
+                aberrations["c23b"] = self.instrument.GetVal2D("C23Control").y
+                aberrations["c30"] = self.instrument.GetVal("C30Control")
+                aberrations["c32a"] = self.instrument.GetVal2D("C32Control").x
+                aberrations["c32b"] = self.instrument.GetVal2D("C32Control").y
+                aberrations["c34a"] = self.instrument.GetVal2D("C34Control").x
+                aberrations["c34b"] = self.instrument.GetVal2D("C34Control").y
                 data = self.__aberrations_controller.apply(aberrations, data)
 
             intensity_calibration = Calibration.Calibration(units="counts")
