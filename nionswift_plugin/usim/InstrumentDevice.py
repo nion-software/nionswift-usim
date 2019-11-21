@@ -336,6 +336,11 @@ class Instrument(stem_controller.STEMController):
         zlp_tare_control = Control("ZLPtare")
         zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
         stage_position_m = Control2D("stage_position_m", ("x", "y"))
+        # VOA controls
+        c_aperture_offset = Control2D("CApertureOffset", ("x", "y"))
+        c_aperture = Control2D("CAperture", ("x", "y"), weighted_inputs=([(c_aperture_offset.x, 1.0)], [(c_aperture_offset.y, 1.0)]))
+        aperture_round = Control2D("ApertureRound", ("x", "y"))
+        s_voa = Control("S_VOA")
         c10 = Control("C10", 500 / 1e9)
         c12 = Control2D("C12", ("x", "y"))
         c21 = Control2D("C21", ("x", "y"))
@@ -364,10 +369,11 @@ class Instrument(stem_controller.STEMController):
         c3_range = Control("C3Range")
         # dependent controls
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
-        return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control, c12Control,
-                c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift,
+        return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control,
+                c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift,
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, order_1_patch,
-                order_2_patch, order_3_patch, c1_range, c2_range, c3_range]
+                order_2_patch, order_3_patch, c1_range, c2_range, c3_range, c_aperture, aperture_round, s_voa,
+                c_aperture_offset]
 
     @property
     def sample(self) -> SampleSimulator.Sample:
