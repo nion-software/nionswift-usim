@@ -1,5 +1,6 @@
 # standard libraries
 import copy
+import typing
 import math
 import numpy
 import scipy.ndimage.interpolation
@@ -215,12 +216,76 @@ class AberrationsController:
             return r
 
         return numpy.zeros((height, width))
+    
+    
+def ellipse_radius(polar_angle: typing.Union[float, numpy.ndarray], a: float, b: float, rotation: float) -> typing.Union[float, numpy.ndarray]:
+    """
+    Returns the radius of a point lying on an ellipse with the given parameters. The ellipse is described in polar
+    coordinates here, which makes it easy to incorporate a rotation.
+
+    Parameters
+    -----------
+    polar_angle : float or numpy.ndarray
+                  Polar angle of a point to which the corresponding radius should be calculated (rad).
+    a : float
+        Length of the major half-axis of the ellipse.
+    b : float
+        Length of the minor half-axis of the ellipse.
+    rotation : Rotation of the ellipse with respect to the x-axis (rad). Counter-clockwise is positive.
+
+    Returns
+    --------
+    radius : float or numpy.ndarray
+             Radius of a point lying on an ellipse with the given parameters.
+    """
+
+    return a*b/numpy.sqrt((b*numpy.cos(polar_angle+rotation))**2+(a*numpy.sin(polar_angle+rotation))**2)
+
+    
+def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float, float, float], *,
+                 color: typing.Any=1.0) -> None:
+    """
+    Draws an ellipse on a 2D-array.
+
+    Parameters
+    ----------
+    image : array
+            The array on which the ellipse will be drawn. Note that the data will be modified in place.
+    ellipse : tuple
+              A tuple describing an ellipse with the same moments as the aperture. The values must be (in this order):
+              [0] The y-coordinate of the center.
+              [1] The x-coordinate of the center.
+              [2] The length of the major half-axis
+              [3] The length of the minor half-axis
+              [4] The rotation of the ellipse in rad.
+    color : optional
+            The color to which the pixels inside the given ellipse will be set. Note that `color` will be cast to the
+            type of `image` automatically. If this is not possible, an exception will be raised. The default is 1.0.
+
+    Returns
+    --------
+    None
+    """
+    shape = image.shape
+    assert len(shape) == 2, 'Can only draw an ellipse on a 2D-array.'
+    #coords = np.mgrid[-shape[0]/2:shape[0]/2:shape[0]*1j, -shape[1]/2:shape[1]/2:shape[1]*1j]
+    top = max(int(ellipse[0] - ellipse[2]), 0)
+    left = max(int(ellipse[1] - ellipse[2]), 0)
+    bottom = min(int(ellipse[0] + ellipse[2]) + 1, shape[0])
+    right = min(int(ellipse[1] + ellipse[2]) + 1, shape[1])
+    coords = numpy.mgrid[top-ellipse[0]:bottom-ellipse[0], left-ellipse[1]:right-ellipse[1]]
+    #coords[0] -= ellipse[0]
+    #coords[1] -= ellipse[1]
+    radii = numpy.sqrt(numpy.sum(coords**2, axis=0))
+    polar_angles = numpy.arctan2(coords[0], coords[1])
+    ellipse_radii = ellipse_radius(polar_angles, *ellipse[2:])
+    image[top:bottom, left:right][radii<ellipse_radii] = color
 
 
 class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
     depends_on = ["C10Control", "C12Control", "C21Control", "C23Control", "C30Control", "C32Control", "C34Control",
                   "C34Control", "stage_position_m", "probe_state", "probe_position", "live_probe_position", "features",
-                  "beam_shift_m", "is_blanked", "beam_current"]
+                  "beam_shift_m", "is_blanked", "beam_current", "CAperture", "ApertureRound", "S_VOA"]
 
     def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, convergence_angle: float):
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
@@ -232,10 +297,33 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         self.__convergence_angle_rad = convergence_angle
         self.__max_defocus = max_defocus
         self.__data_scale = 1.0
+        self.__aperture_ellipse = None
+        self.__aperture_mask = None
         theta = tv_pixel_angle * ronchigram_shape.height / 2  # half angle on camera
         defocus_m = instrument.defocus_m
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
         self.noise = Noise.PoissonNoise()
+        
+    def _draw_aperture(self, frame_data: numpy.ndarray, binning_shape: Geometry.IntSize):
+        # TODO handle asymmetric binning
+        binning = binning_shape[0]
+        position = self.instrument.GetVal2D("CAperture")
+        aperture_round = self.instrument.GetVal2D("ApertureRound")
+        shape = frame_data.shape
+        ellipse_center = 0.5*shape[0] + position.y / self.__tv_pixel_angle / binning, 0.5*shape[1] + position.x / self.__tv_pixel_angle / binning
+        excentricity = math.sqrt(aperture_round[0]**2 + aperture_round[1]**2)
+        # adapt excentricity so that control behaves linearly and is defined for all values
+        # this is the modified inverse function of the calculation of the major half-axis a
+        excentricity = math.sqrt(1-1/(1+abs(excentricity))**4)
+        direction = numpy.arctan2(aperture_round[0], aperture_round[1])
+        # Calculate a and b (the ellipse half-axes) from excentricity. Keep ellipse area constant
+        convergence_angle_pixels = 0.25* self.__convergence_angle_rad / self.__tv_pixel_angle / binning
+        a = math.sqrt(convergence_angle_pixels**2 / math.sqrt(1 - excentricity**2))
+        b = convergence_angle_pixels**2 / a
+        self.__aperture_ellipse = ellipse_center + (a, b, direction)
+        aperture_mask = numpy.zeros_like(frame_data)
+        draw_ellipse(aperture_mask, self.__aperture_ellipse)
+        frame_data *= aperture_mask
 
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, parked_probe_position) -> DataAndMetadata.DataAndMetadata:
         # check if one of the arguments has changed since last call
@@ -299,6 +387,8 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 aberrations["c34a"] = self.instrument.GetVal2D("C34Control").x
                 aberrations["c34b"] = self.instrument.GetVal2D("C34Control").y
                 data = self.__aberrations_controller.apply(aberrations, data)
+                if self.instrument.GetVal("S_VOA") > 0:
+                    self._draw_aperture(data, binning_shape)
 
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
