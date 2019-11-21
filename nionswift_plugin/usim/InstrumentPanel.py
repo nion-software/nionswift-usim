@@ -64,14 +64,14 @@ class ControlBinding(Binding.Binding):
 
 class PositionWidget(Widgets.CompositeWidgetBase):
 
-    def __init__(self, ui, label: str, object, xy_property):
+    def __init__(self, ui, label: str, object, xy_property, unit="nm", multiplier=1E9):
         super().__init__(ui.create_row_widget())
 
         stage_x_field = ui.create_line_edit_widget()
-        stage_x_field.bind_text(Control2DBinding(object, xy_property, "x", Converter.PhysicalValueToStringConverter("nm", 1E9)))
+        stage_x_field.bind_text(Control2DBinding(object, xy_property, "x", Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         stage_y_field = ui.create_line_edit_widget()
-        stage_y_field.bind_text(Control2DBinding(object, xy_property, "y", Converter.PhysicalValueToStringConverter("nm", 1E9)))
+        stage_y_field.bind_text(Control2DBinding(object, xy_property, "y", Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         row = self.content_widget
 
@@ -132,6 +132,12 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         slit_in_checkbox = ui.create_check_box_widget(_("Slit In"))
         slit_in_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_slit_in"))
+        
+        voa_in_checkbox = ui.create_check_box_widget(_("VOA In"))
+        voa_in_checkbox.bind_checked(ControlBinding(instrument, "S_VOA"))
+        
+        c_aperture_widget = PositionWidget(ui, _("CAperture"), instrument, "CAperture", unit="mrad", multiplier=1E3)
+        aperture_round_widget = PositionWidget(ui, _("ApertureRound"), instrument, "ApertureRound", unit="", multiplier=1)
 
         energy_offset_field = ui.create_line_edit_widget()
         energy_offset_field.bind_text(Binding.PropertyBinding(instrument, "energy_offset_eV", converter=Converter.FloatToStringConverter()))
@@ -142,6 +148,8 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         beam_row = ui.create_row_widget()
         beam_row.add_spacing(8)
         beam_row.add(blanked_checkbox)
+        beam_row.add_spacing(8)
+        beam_row.add(voa_in_checkbox)
         beam_row.add_stretch()
 
         eels_row = ui.create_row_widget()
@@ -206,6 +214,8 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         column.add(c32_widget)
         column.add(c34_widget)
         column.add(beam_row)
+        column.add(c_aperture_widget)
+        column.add(aperture_round_widget)
         column.add(eels_row)
         column.add_stretch()
 
