@@ -298,11 +298,10 @@ class Instrument(stem_controller.STEMController):
         self.__sample_index = 0
 
         # define the STEM geometry limits
-        self.stage_size_nm = 150
+        self.stage_size_nm = 1000
         self.max_defocus = 5000 / 1E9
 
         self.__stage_position_m = Geometry.FloatPoint()
-        self.__convergence_angle_rad = 30 / 1000
         self.__slit_in = False
         self.__energy_per_channel_eV = 0.5
         self.__voltage = 100000
@@ -322,7 +321,7 @@ class Instrument(stem_controller.STEMController):
             self.add_control(control)
 
         self.__cameras = {
-            "ronchigram": RonchigramCameraSimulator.RonchigramCameraSimulator(self, self.__ronchigram_shape, self.counts_per_electron, self.__convergence_angle_rad),
+            "ronchigram": RonchigramCameraSimulator.RonchigramCameraSimulator(self, self.__ronchigram_shape, self.counts_per_electron, self.stage_size_nm),
             "eels": EELSCameraSimulator.EELSCameraSimulator(self, self.__eels_shape, self.counts_per_electron)
         }
 
@@ -338,11 +337,23 @@ class Instrument(stem_controller.STEMController):
         zlp_tare_control = Control("ZLPtare")
         zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
         stage_position_m = Control2D("stage_position_m", ("x", "y"))
+        # monochromator controls
+        mc_exists = Control("S_MC_InsideColumn", local_value=1) # Used by tuning to check if scope has a monochromator
+        slit_tilt = Control2D("SlitTilt", ("x", "y"))
+        slit_C10 = Control("Slit_C10")
+        slit_C12 = Control2D("Slit_C12", ("x", "y"))
+        slit_C21 = Control2D("Slit_C21", ("x", "y"))
+        slit_C23 = Control2D("Slit_C23", ("x", "y"))
+        slit_C30 = Control("Slit_C30")
+        slit_C32 = Control2D("Slit_C32", ("x", "y"))
+        slit_C34 = Control2D("Slit_C34", ("x", "y"))
         # VOA controls
         c_aperture_offset = Control2D("CApertureOffset", ("x", "y"))
-        c_aperture = Control2D("CAperture", ("x", "y"), weighted_inputs=([(c_aperture_offset.x, 1.0)], [(c_aperture_offset.y, 1.0)]))
+        c_aperture = Control2D("CAperture", ("x", "y"), weighted_inputs=([(c_aperture_offset.x, 1.0), (slit_tilt.x, 1.0)],
+                                                                         [(c_aperture_offset.y, 1.0), (slit_tilt.y, 1.0)]))
         aperture_round = Control2D("ApertureRound", ("x", "y"))
         s_voa = Control("S_VOA")
+        convergence_angle = Control("ConvergenceAngle", 0.04)
         c10 = Control("C10", 500 / 1e9)
         c12 = Control2D("C12", ("x", "y"))
         c21 = Control2D("C21", ("x", "y"))
@@ -360,12 +371,9 @@ class Instrument(stem_controller.STEMController):
         csh = Control2D("CSH", ("x", "y"))
         drift = Control2D("Drift", ("x", "y"))
         # tuning parameters
-        order_1_max_angle = Control("Order1MaxAngle", 0.008)
-        order_2_max_angle = Control("Order2MaxAngle", 0.012)
-        order_3_max_angle = Control("Order3MaxAngle", 0.024)
-        order_1_patch = Control("Order1Patch", 0.006)
-        order_2_patch = Control("Order2Patch", 0.006)
-        order_3_patch = Control("Order3Patch", 0.006)
+        order_1_max_angle = Control("Order1MaxAngle", -1)
+        order_2_max_angle = Control("Order2MaxAngle", -1)
+        order_3_max_angle = Control("Order3MaxAngle", -1)
         c1_range = Control("C1Range")
         c2_range = Control("C2Range")
         c3_range = Control("C3Range")
@@ -373,9 +381,9 @@ class Instrument(stem_controller.STEMController):
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
         return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control,
                 c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift,
-                beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, order_1_patch,
-                order_2_patch, order_3_patch, c1_range, c2_range, c3_range, c_aperture, aperture_round, s_voa,
-                c_aperture_offset]
+                beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
+                c3_range, c_aperture, aperture_round, s_voa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
+                slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle]
 
     @property
     def sample(self) -> SampleSimulator.Sample:

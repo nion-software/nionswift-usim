@@ -216,8 +216,8 @@ class AberrationsController:
             return r
 
         return numpy.zeros((height, width))
-    
-    
+
+
 def ellipse_radius(polar_angle: typing.Union[float, numpy.ndarray], a: float, b: float, rotation: float) -> typing.Union[float, numpy.ndarray]:
     """
     Returns the radius of a point lying on an ellipse with the given parameters. The ellipse is described in polar
@@ -241,7 +241,7 @@ def ellipse_radius(polar_angle: typing.Union[float, numpy.ndarray], a: float, b:
 
     return a*b/numpy.sqrt((b*numpy.cos(polar_angle+rotation))**2+(a*numpy.sin(polar_angle+rotation))**2)
 
-    
+
 def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float, float, float], *,
                  color: typing.Any=1.0) -> None:
     """
@@ -285,16 +285,16 @@ def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float
 class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
     depends_on = ["C10Control", "C12Control", "C21Control", "C23Control", "C30Control", "C32Control", "C34Control",
                   "C34Control", "stage_position_m", "probe_state", "probe_position", "live_probe_position", "features",
-                  "beam_shift_m", "is_blanked", "beam_current", "CAperture", "ApertureRound", "S_VOA"]
+                  "beam_shift_m", "is_blanked", "beam_current", "CAperture", "ApertureRound", "S_VOA", "ConvergenceAngle"]
 
-    def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, convergence_angle: float):
+    def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float):
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
         self.__last_sample = None
         self.__cached_frame = None
         max_defocus = instrument.max_defocus
         tv_pixel_angle = math.asin(instrument.stage_size_nm / (max_defocus * 1E9)) / ronchigram_shape.height
         self.__tv_pixel_angle = tv_pixel_angle
-        self.__convergence_angle_rad = convergence_angle
+        self.__stage_size_nm = stage_size_nm
         self.__max_defocus = max_defocus
         self.__data_scale = 1.0
         self.__aperture_ellipse = None
@@ -303,7 +303,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         defocus_m = instrument.defocus_m
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
         self.noise = Noise.PoissonNoise()
-        
+
     def _draw_aperture(self, frame_data: numpy.ndarray, binning_shape: Geometry.IntSize):
         # TODO handle asymmetric binning
         binning = binning_shape[0]
@@ -317,7 +317,8 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         excentricity = math.sqrt(1-1/(1+abs(excentricity))**4)
         direction = numpy.arctan2(aperture_round[0], aperture_round[1])
         # Calculate a and b (the ellipse half-axes) from excentricity. Keep ellipse area constant
-        convergence_angle_pixels = 0.25* self.__convergence_angle_rad / self.__tv_pixel_angle / binning
+        convergence_angle = self.instrument.GetVal("ConvergenceAngle")
+        convergence_angle_pixels = convergence_angle / self.__tv_pixel_angle / binning
         a = math.sqrt(convergence_angle_pixels**2 / math.sqrt(1 - excentricity**2))
         b = convergence_angle_pixels**2 / a
         self.__aperture_ellipse = ellipse_center + (a, b, direction)
@@ -339,7 +340,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             height = readout_area.height
             width = readout_area.width
             offset_m = self.instrument.stage_position_m
-            full_fov_nm = abs(self.__max_defocus) * math.sin(self.__convergence_angle_rad) * 1E9
+            full_fov_nm = self.__stage_size_nm
             fov_size_nm = Geometry.FloatSize(full_fov_nm * height / self._sensor_dimensions.height, full_fov_nm * width / self._sensor_dimensions.width)
             center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self._sensor_dimensions.height- 0.5), full_fov_nm * (readout_area.center.x / self._sensor_dimensions.width - 0.5))
             size = Geometry.IntSize(height, width)
