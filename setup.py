@@ -10,7 +10,7 @@ import os
 
 setuptools.setup(
     name="nionswift-usim",
-    version="0.2.0",
+    version="0.2.1",
     author="Nion Software",
     author_email="swift@nion.com",
     description="A Nion Swift package to simulate a STEM microscope, scanner, and cameras",
