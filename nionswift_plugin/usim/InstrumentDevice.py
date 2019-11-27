@@ -442,6 +442,22 @@ class Instrument(stem_controller.STEMController):
         else:
             control = self.__controls.get(control_name)
         return control
+    
+    def add_control_inputs(self, control_name: str, weighted_inputs: typing.List[typing.Tuple["Control", float]]) -> None:
+        control = self.get_control(control_name)
+        assert isinstance(control, Control)
+        for input, weight in weighted_inputs:
+            control.add_input(input, weight)
+        
+    def set_input_weight(self, control_name: str, input_name: str, new_weight: float) -> None:
+        control = self.get_control(control_name)
+        assert isinstance(control, Control)
+        input_control = self.get_control(input_name)
+        assert isinstance(input_control, Control)
+        inputs = [control_ for control_, _ in control.weighted_inputs]
+        if input_control not in inputs:
+            raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to change its strength.")
+        control.add_input(input_control, new_weight)
 
     @property
     def sequence_progress(self):
