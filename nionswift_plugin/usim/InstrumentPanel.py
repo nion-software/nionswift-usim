@@ -136,6 +136,9 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         voa_in_checkbox = ui.create_check_box_widget(_("VOA In"))
         voa_in_checkbox.bind_checked(ControlBinding(instrument, "S_VOA"))
         
+        convergenve_angle_field = ui.create_line_edit_widget()
+        convergenve_angle_field.bind_text(ControlBinding(instrument, "ConvergenceAngle", converter=Converter.PhysicalValueToStringConverter(units="mrad", multiplier=1E3)))
+        
         c_aperture_widget = PositionWidget(ui, _("CAperture"), instrument, "CAperture", unit="mrad", multiplier=1E3)
         aperture_round_widget = PositionWidget(ui, _("ApertureRound"), instrument, "ApertureRound", unit="", multiplier=1)
 
@@ -198,6 +201,13 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         beam_current_row.add(ui.create_label_widget("Beam Current"))
         beam_current_row.add(beam_current_field)
         beam_current_row.add_stretch()
+        
+        convergence_angle_row = ui.create_row_widget()
+        convergence_angle_row.add_spacing(8)
+        convergence_angle_row.add_spacing(8)
+        convergence_angle_row.add(ui.create_label_widget("Convergence Angle"))
+        convergence_angle_row.add(convergenve_angle_field)
+        convergence_angle_row.add_stretch()
 
         column = self.content_widget
 
@@ -214,6 +224,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         column.add(c32_widget)
         column.add(c34_widget)
         column.add(beam_row)
+        column.add(convergence_angle_row)
         column.add(c_aperture_widget)
         column.add(aperture_round_widget)
         column.add(eels_row)
