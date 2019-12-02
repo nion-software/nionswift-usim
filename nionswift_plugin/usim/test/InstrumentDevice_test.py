@@ -393,6 +393,27 @@ class TestInstrumentDevice(unittest.TestCase):
         with self.assertRaises(AttributeError):
             getattr(instrument.get_control("C12"), "ne")
 
+    def test_get_drive_strength_with_arrow_syntax(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        success, value = instrument.TryGetVal("CApertureOffset.x->CAperture.x")
+        self.assertTrue(success)
+        self.assertAlmostEqual(value, 1.0)
+
+    def test_set_drive_strength_with_arrow_syntax(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        success = instrument.SetVal("CApertureOffset.x->CAperture.x", 0.5)
+        self.assertTrue(success)
+        success = instrument.SetVal("CApertureOffset.y->CAperture.y", 0.2)
+        self.assertTrue(success)
+        value = instrument.GetVal("CApertureOffset.x->CAperture.x")
+        self.assertAlmostEqual(value, 0.5)
+        value = instrument.GetVal("CApertureOffset.y->CAperture.y")
+        self.assertAlmostEqual(value, 0.2)
+
+    def test_get_drive_strength_fails_for_non_existing_drive(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        success, value = instrument.TryGetVal("CApertureOffset.y->CAperture.x")
+        self.assertFalse(success)
 
 if __name__ == '__main__':
     unittest.main()
