@@ -304,7 +304,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
         self.noise = Noise.PoissonNoise()
 
-    def _draw_aperture(self, frame_data: numpy.ndarray, binning_shape: Geometry.IntSize):
+    def _draw_aperture(self, frame_data: numpy.ndarray, binning_shape: Geometry.IntSize, enlarge_by: float=0.0):
         # TODO handle asymmetric binning
         binning = binning_shape[0]
         position = self.instrument.GetVal2D("CAperture")
@@ -317,7 +317,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         excentricity = math.sqrt(1-1/(1+abs(excentricity))**4)
         direction = numpy.arctan2(aperture_round[0], aperture_round[1])
         # Calculate a and b (the ellipse half-axes) from excentricity. Keep ellipse area constant
-        convergence_angle = self.instrument.GetVal("ConvergenceAngle")
+        convergence_angle = self.instrument.GetVal("ConvergenceAngle") * (1 + enlarge_by)
         convergence_angle_pixels = convergence_angle / self.__tv_pixel_angle / binning
         a = math.sqrt(convergence_angle_pixels**2 / math.sqrt(1 - excentricity**2))
         b = convergence_angle_pixels**2 / a
@@ -390,6 +390,8 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 data = self.__aberrations_controller.apply(aberrations, data)
                 if self.instrument.GetVal("S_VOA") > 0:
                     self._draw_aperture(data, binning_shape)
+                elif self.instrument.GetVal("S_MOA") > 0:
+                    self._draw_aperture(data, binning_shape, enlarge_by=0.1)
 
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
