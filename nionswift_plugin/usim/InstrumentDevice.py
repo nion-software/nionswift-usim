@@ -436,13 +436,13 @@ class Instrument(stem_controller.STEMController):
         else:
             control = self.__controls.get(control_name)
         return control
-    
+
     def add_control_inputs(self, control_name: str, weighted_inputs: typing.List[typing.Tuple["Control", float]]) -> None:
         control = self.get_control(control_name)
         assert isinstance(control, Control)
         for input, weight in weighted_inputs:
             control.add_input(input, weight)
-        
+
     def set_input_weight(self, control_name: str, input_name: str, new_weight: float) -> None:
         control = self.get_control(control_name)
         assert isinstance(control, Control)
@@ -452,7 +452,7 @@ class Instrument(stem_controller.STEMController):
         if input_control not in inputs:
             raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to change its strength.")
         control.add_input(input_control, new_weight)
-        
+
     def get_input_weight(self, control_name: str, input_name: str):
         control = self.get_control(control_name)
         assert isinstance(control, Control)
@@ -462,7 +462,7 @@ class Instrument(stem_controller.STEMController):
         if input_control not in inputs:
             raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to get its strength.")
         return control.weighted_inputs[inputs.index(input_control)][1]
-        
+
     @property
     def sequence_progress(self):
         with self.__lock:
@@ -635,8 +635,8 @@ class Instrument(stem_controller.STEMController):
         }
 
     # these are required functions to implement the standard stem controller interface.
-    
-    def __resolve_control_name(self, s: str, set_val: typing.Optional[float]=None) -> typing.Tuple[bool, typing.Optional[float]]:            
+
+    def __resolve_control_name(self, s: str, set_val: typing.Optional[float]=None) -> typing.Tuple[bool, typing.Optional[float]]:
         if "->" in s:
             input_name, control_name = s.split("->")
             if set_val is not None:
@@ -655,13 +655,13 @@ class Instrument(stem_controller.STEMController):
                     return True, value
         else:
             control = self.get_control(s)
-            if isinstance(control, Control):
+            if isinstance(control, (Control, ConvertedControl)):
                 if set_val is not None:
                     control.set_output_value(set_val)
                     return True, None
                 else:
                     return True, control.output_value
-            return False, None            
+            return False, None
 
     def TryGetVal(self, s: str) -> (bool, float):
 
@@ -707,7 +707,7 @@ class Instrument(stem_controller.STEMController):
             self.is_blanked = val != 0.0
             return True
         else:
-            return self.__resolve_control_name(s, set_val=val)
+            return self.__resolve_control_name(s, set_val=val)[0]
 
     def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
         return self.SetVal(s, val)
