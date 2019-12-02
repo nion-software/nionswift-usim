@@ -85,7 +85,8 @@ class Control:
     TODO: add hysteresis
     """
 
-    def __init__(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", float]]] = None):
+    def __init__(self, name: str, local_value: float = 0.0,
+                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", typing.Union[float, "Control"]]]] = None):
         self.name = name
         self.weighted_inputs = weighted_inputs if weighted_inputs else list()
         self.dependents = list()
@@ -100,22 +101,28 @@ class Control:
 
     @property
     def weighted_input_value(self) -> float:
-        return sum([weight * input.output_value for input, weight in self.weighted_inputs])
+        return sum([(weight.output_value if isinstance(weight, Control) else weight) * input.output_value
+                    for input, weight in self.weighted_inputs])
 
     @property
     def output_value(self) -> float:
         return self.weighted_input_value + self.local_value
 
-    def add_input(self, input: "Control", weight: float) -> None:
+    def add_input(self, input: "Control", weight: typing.Union[float, "Control"]) -> None:
         # if input is already in the list of weighted inputs, overwrite it
         inputs = [control for control, _ in self.weighted_inputs]
         if input in inputs:
             input_index = inputs.index(input)
-            self.weighted_inputs[input_index] = (input, weight)
+            if isinstance(self.weighted_inputs[input_index][1], Control):
+                self.weighted_inputs[input_index][1].set_output_value(weight)
+            else:
+                self.weighted_inputs[input_index] = (input, weight)
         else:
             self.weighted_inputs.append((input, weight))
         # we can always call add dependent because it checks if self is already in input's dependents
         input.add_dependent(self)
+        if isinstance(weight, Control):
+            weight.add_dependent(self)
         self._notify_change()
 
     def add_dependent(self, dependent: "Control") -> None:
@@ -294,7 +301,7 @@ class Instrument(stem_controller.STEMController):
         self.property_changed_event = Event.Event()
         self.__camera_frame_event = threading.Event()
         self.__samples = [SampleSimulator.RectangleFlakeSample(), SampleSimulator.AmorphousSample()]
-        self.__sample_index = 0
+        self.__sample_index = 1
 
         # define the STEM geometry limits
         self.stage_size_nm = 1000
@@ -351,6 +358,7 @@ class Instrument(stem_controller.STEMController):
                                                                          [(c_aperture_offset.y, 1.0), (slit_tilt.y, 1.0)]))
         aperture_round = Control2D("ApertureRound", ("x", "y"))
         s_voa = Control("S_VOA")
+        s_moa = Control("S_MOA")
         convergence_angle = Control("ConvergenceAngle", 0.04)
         c10 = Control("C10", 500 / 1e9)
         c12 = Control2D("C12", ("x", "y"))
@@ -377,11 +385,13 @@ class Instrument(stem_controller.STEMController):
         c3_range = Control("C3Range")
         # dependent controls
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
+        # AxisConverter is commonly used to convert between axis without affecting any hardware
+        axis_converter = Control2D("AxisConverter", ("x", "y"))
         return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control,
                 c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift,
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
-                c3_range, c_aperture, aperture_round, s_voa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
-                slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle]
+                c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
+                slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter]
 
     @property
     def sample(self) -> SampleSimulator.Sample:
@@ -411,10 +421,10 @@ class Instrument(stem_controller.STEMController):
     def control_changed(self, control: Control) -> None:
         self.property_changed_event.fire(control.name)
 
-    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", float]]] = None):
+    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None):
         return Control(name, local_value, weighted_inputs)
 
-    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", float]], typing.List[typing.Tuple["Control", float]]]] = None):
+    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple[Control, typing.Union[float, Control]]], typing.List[typing.Tuple[Control, typing.Union[float, Control]]]]] = None):
         return Control2D(name, native_axis, local_values, weighted_inputs)
 
     def add_control(self, control: typing.Union[Control, Control2D]) -> None:
@@ -437,7 +447,8 @@ class Instrument(stem_controller.STEMController):
             control = self.__controls.get(control_name)
         return control
 
-    def add_control_inputs(self, control_name: str, weighted_inputs: typing.List[typing.Tuple["Control", float]]) -> None:
+    def add_control_inputs(self, control_name: str,
+                           weighted_inputs: typing.List[typing.Tuple[Control, typing.Union[float, Control]]]) -> None:
         control = self.get_control(control_name)
         assert isinstance(control, Control)
         for input, weight in weighted_inputs:
@@ -457,11 +468,14 @@ class Instrument(stem_controller.STEMController):
         control = self.get_control(control_name)
         assert isinstance(control, Control)
         input_control = self.get_control(input_name)
-        assert isinstance(input_control, Control)
+        assert isinstance(input_control, Control), f"{input_name} is not of type 'Control' but {type(input_control)}."
         inputs = [control_ for control_, _ in control.weighted_inputs]
         if input_control not in inputs:
             raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to get its strength.")
-        return control.weighted_inputs[inputs.index(input_control)][1]
+        weight = control.weighted_inputs[inputs.index(input_control)][1]
+        if isinstance(weight, Control):
+            return weight.output_value
+        return weight
 
     @property
     def sequence_progress(self):

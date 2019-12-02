@@ -407,5 +407,20 @@ class TestInstrumentDevice(unittest.TestCase):
         success, value = instrument.TryGetVal("CApertureOffset.y->CAperture.x")
         self.assertFalse(success)
 
+    def test_use_control_as_input_weight_works(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        weight_control = instrument.create_control("weight_control")
+        instrument.add_control(weight_control)
+        input_control = instrument.create_control("input_control")
+        instrument.add_control(input_control)
+        test_control = instrument.create_control("test_control", weighted_inputs=[(input_control, weight_control)])
+        instrument.add_control(test_control)
+        self.assertAlmostEqual(instrument.GetVal("test_control"), 0)
+        self.assertTrue(instrument.SetVal("input_control", 1.0))
+        self.assertAlmostEqual(instrument.GetVal("test_control"), 0)
+        self.assertTrue(instrument.SetVal("weight_control", 1.0))
+        self.assertAlmostEqual(instrument.GetVal("test_control"), 1.0)
+
+
 if __name__ == '__main__':
     unittest.main()
