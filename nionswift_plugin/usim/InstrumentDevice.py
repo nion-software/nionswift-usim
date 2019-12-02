@@ -452,7 +452,17 @@ class Instrument(stem_controller.STEMController):
         if input_control not in inputs:
             raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to change its strength.")
         control.add_input(input_control, new_weight)
-
+        
+    def get_input_weight(self, control_name: str, input_name: str):
+        control = self.get_control(control_name)
+        assert isinstance(control, Control)
+        input_control = self.get_control(input_name)
+        assert isinstance(input_control, Control)
+        inputs = [control_ for control_, _ in control.weighted_inputs]
+        if input_control not in inputs:
+            raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to get its strength.")
+        return control.weighted_inputs[inputs.index(input_control)][1]
+        
     @property
     def sequence_progress(self):
         with self.__lock:
@@ -625,6 +635,33 @@ class Instrument(stem_controller.STEMController):
         }
 
     # these are required functions to implement the standard stem controller interface.
+    
+    def __resolve_control_name(self, s: str, set_val: typing.Optional[float]=None) -> typing.Tuple[bool, typing.Optional[float]]:            
+        if "->" in s:
+            input_name, control_name = s.split("->")
+            if set_val is not None:
+                try:
+                    self.set_input_weight(control_name, input_name, set_val)
+                except ValueError:
+                    return False, None
+                else:
+                    return True, None
+            else:
+                try:
+                    value = self.get_input_weight(control_name, input_name)
+                except ValueError:
+                    return False, None
+                else:
+                    return True, value
+        else:
+            control = self.get_control(s)
+            if isinstance(control, Control):
+                if set_val is not None:
+                    control.set_output_value(set_val)
+                    return True, None
+                else:
+                    return True, control.output_value
+            return False, None            
 
     def TryGetVal(self, s: str) -> (bool, float):
 
@@ -650,20 +687,8 @@ class Instrument(stem_controller.STEMController):
             return parse_camera_values("ronchigram", s[len("ronchigram_"):])
         elif s.startswith("eels_"):
             return parse_camera_values("eels", s[len("eels_"):])
-        elif "." in s:
-            split_s = s.split('.')
-            control = self.get_control(split_s[0]) # get the 2d control
-            if isinstance(control, Control2D):
-                axis = getattr(control, split_s[1], None) # get the control that holds the value for the right axis
-                if axis is not None:
-                    value = axis.output_value # get the actual value
-                    if value is not None:
-                        return True, value
         else:
-            control = self.get_control(s)
-            if isinstance(control, Control):
-                return True, control.output_value
-        return False, None
+            return self.__resolve_control_name(s)
 
     def GetVal(self, s: str, default_value: float=None) -> float:
         good, d = self.TryGetVal(s)
@@ -681,20 +706,8 @@ class Instrument(stem_controller.STEMController):
         elif s == "C_Blank":
             self.is_blanked = val != 0.0
             return True
-        elif "." in s:
-            split_s = s.split('.')
-            control = self.get_control(split_s[0]) # get the 2d control
-            if isinstance(control, Control2D):
-                axis = getattr(control, split_s[1], None) # get the control that holds the value for the right axis
-                if axis is not None:
-                    axis.set_output_value(val) # set the actual value
-                    return True
         else:
-            control = self.get_control(s)
-            if isinstance(control, Control):
-                control.set_output_value(val)
-                return True
-        return False
+            return self.__resolve_control_name(s, set_val=val)
 
     def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
         return self.SetVal(s, val)
