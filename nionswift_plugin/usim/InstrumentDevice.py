@@ -87,9 +87,11 @@ class Control:
     """
 
     def __init__(self, name: str, local_value: float = 0.0,
-                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", typing.Union[float, "Control"]]]] = None):
+                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]]] = None):
         self.name = name
         self.weighted_inputs = weighted_inputs if weighted_inputs else list()
+        self.__variables = dict()
+        self.__expression = None
         self.dependents = list()
         self.local_value = float(local_value)
         for input, _ in self.weighted_inputs:
@@ -102,14 +104,64 @@ class Control:
 
     @property
     def weighted_input_value(self) -> float:
-        return sum([(weight.output_value if isinstance(weight, Control) else weight) * input.output_value
-                    for input, weight in self.weighted_inputs])
+        weighted_input = 0
+        for input_, weight in self.weighted_inputs:
+            if isinstance(weight, Control):
+                weighted_input += weight.output_value * input_.output_value
+            else:
+                weighted_input += weight * input_.output_value
+        if self.__expression is not None:
+            weighted_input += self.__evaluate_expression()
+        return weighted_input
 
     @property
     def output_value(self) -> float:
         return self.weighted_input_value + self.local_value
 
-    def add_input(self, input: "Control", weight: typing.Union[float, "Control"]) -> None:
+    @property
+    def variables(self) -> dict:
+        return self.__variables
+
+    def get_expression(self) -> str:
+        return self.__expression
+
+    def set_expression(self, expression: str, variables: typing.Optional[dict]=None, instrument: typing.Optional["Instrument"]=None) -> None:
+        if variables is not None:
+            resolved_variables = dict()
+            for key, value in variables.items():
+                if isinstance(value, str):
+                    if instrument is None:
+                        raise TypeError("An instrument controller instance is required when using string names as control identifiers.")
+                    value = instrument.get_control(value)
+                    if value is None:
+                        raise ValueError(f"Cannot get value for name {key}.")
+                if isinstance(value, Control2D):
+                    raise TypeError("2D controls cannot be used in expressions")
+                if isinstance(value, Control):
+                    if value  == self:
+                        raise ValueError("An expression cannot include the control it is attached to.")
+                    value.add_dependent(self)
+                resolved_variables[key] = value
+            self.__variables = resolved_variables
+        self.__expression = expression
+        self._notify_change()
+
+    def __evaluate_expression(self):
+        variables = dict()
+        for key, value in self.__variables.items():
+            if isinstance(value, Control):
+                value = value.output_value
+            variables[key] = value
+        try:
+            res = eval(self.__expression, globals(), variables)
+        except:
+            import traceback
+            traceback.print_exc()
+            return 0
+        else:
+            return res
+
+    def add_input(self, input: "Control", weight: typing.Union[float, typing.Callable]) -> None:
         # if input is already in the list of weighted inputs, overwrite it
         inputs = [control for control, _ in self.weighted_inputs]
         if input in inputs:
@@ -252,8 +304,8 @@ class Control2D:
                  name: str,
                  native_axis: stem_controller.AxisType,
                  local_values: typing.Tuple[float, float] = (0.0, 0.0),
-                 weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", float]],
-                                                               typing.List[typing.Tuple["Control", float]]]] = None):
+                 weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]],
+                                                               typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]]]] = None):
         self.name = name
         self.native_axis = native_axis
         if weighted_inputs is None:
@@ -344,6 +396,7 @@ class Instrument(stem_controller.STEMController):
         zlp_tare_control = Control("ZLPtare")
         zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
         stage_position_m = Control2D("stage_position_m", ("x", "y"))
+        beam_current = Control("BeamCurrent", 200e-12)
         # monochromator controls
         mc_exists = Control("S_MC_InsideColumn", local_value=1) # Used by tuning to check if scope has a monochromator
         slit_tilt = Control2D("SlitTilt", ("x", "y"))
@@ -390,7 +443,7 @@ class Instrument(stem_controller.STEMController):
         # AxisConverter is commonly used to convert between axis without affecting any hardware
         axis_converter = Control2D("AxisConverter", ("x", "y"))
         return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control,
-                c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift,
+                c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift, beam_current,
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
                 c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
                 slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter]
@@ -454,7 +507,7 @@ class Instrument(stem_controller.STEMController):
         return control
 
     def add_control_inputs(self, control_name: str,
-                           weighted_inputs: typing.List[typing.Tuple[Control, typing.Union[float, Control]]]) -> None:
+                           weighted_inputs: typing.List[typing.Tuple[Control, typing.Union[float, typing.Callable]]]) -> None:
         control = self.get_control(control_name)
         assert isinstance(control, Control)
         for input, weight in weighted_inputs:
@@ -470,7 +523,7 @@ class Instrument(stem_controller.STEMController):
             raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to change its strength.")
         control.add_input(input_control, new_weight)
 
-    def get_input_weight(self, control_name: str, input_name: str):
+    def get_input_weight(self, control_name: str, input_name: str) -> float:
         control = self.get_control(control_name)
         assert isinstance(control, Control)
         input_control = self.get_control(input_name)
@@ -552,7 +605,7 @@ class Instrument(stem_controller.STEMController):
         return 40
 
     def get_electrons_per_pixel(self, pixel_count: int, exposure_s: float) -> float:
-        beam_current_pa = self.__beam_current * 1E12
+        beam_current_pa = self.GetVal("BeamCurrent") * 1E12
         e_per_pa = 6.242E18 / 1E12
         beam_e = beam_current_pa * e_per_pa
         e_per_pixel_per_second = beam_e / pixel_count
@@ -588,15 +641,6 @@ class Instrument(stem_controller.STEMController):
     def voltage(self, value: float) -> None:
         self.__voltage = value
         self.property_changed_event.fire("voltage")
-
-    @property
-    def beam_current(self) -> float:
-        return self.__beam_current
-
-    @beam_current.setter
-    def beam_current(self, value: float) -> None:
-        self.__beam_current = value
-        self.property_changed_event.fire("beam_current")
 
     @property
     def is_blanked(self) -> bool:
@@ -660,14 +704,14 @@ class Instrument(stem_controller.STEMController):
             if set_val is not None:
                 try:
                     self.set_input_weight(control_name, input_name, set_val)
-                except ValueError:
+                except (ValueError, AssertionError):
                     return False, None
                 else:
                     return True, None
             else:
                 try:
                     value = self.get_input_weight(control_name, input_name)
-                except ValueError:
+                except (ValueError, AssertionError):
                     return False, None
                 else:
                     return True, value

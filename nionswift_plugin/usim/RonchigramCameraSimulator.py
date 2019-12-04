@@ -285,7 +285,7 @@ def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float
 class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
     depends_on = ["C10Control", "C12Control", "C21Control", "C23Control", "C30Control", "C32Control", "C34Control",
                   "C34Control", "stage_position_m", "probe_state", "probe_position", "live_probe_position", "features",
-                  "beam_shift_m", "is_blanked", "beam_current", "CAperture", "ApertureRound", "S_VOA", "ConvergenceAngle"]
+                  "beam_shift_m", "is_blanked", "BeamCurrent", "CAperture", "ApertureRound", "S_VOA", "ConvergenceAngle"]
 
     def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float):
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)

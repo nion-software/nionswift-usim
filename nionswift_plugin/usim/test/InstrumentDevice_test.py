@@ -39,7 +39,7 @@ class TestInstrumentDevice(unittest.TestCase):
         instrument.SetValDelta("ZLPoffset", 1)
         self.assertFalse(camera._needs_recalculation)
         camera._needs_recalculation = False
-        instrument.beam_current += 1
+        instrument.SetValDelta("BeamCurrent", 1)
         self.assertTrue(camera._needs_recalculation)
 
     def test_powerlaw(self):
@@ -104,6 +104,8 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_eels_data_thickness_is_consistent(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        # use the flake sample
+        instrument.sample_index = 0
         # set up the scan context; these are here temporarily until the scan context architecture is fully implemented
         instrument._update_scan_context(Geometry.FloatPoint(), Geometry.FloatSize.make((256, 256)), 0.0)
         instrument._set_scan_context_probe_position(instrument.scan_context, Geometry.FloatPoint(0.5, 0.5))
@@ -428,6 +430,35 @@ class TestInstrumentDevice(unittest.TestCase):
         self.assertAlmostEqual(instrument.GetVal("test_control"), 0)
         self.assertTrue(instrument.SetVal("weight_control", 1.0))
         self.assertAlmostEqual(instrument.GetVal("test_control"), 1.0)
+
+    def test_expression(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        weight_control = instrument.create_control("weight_control")
+        instrument.add_control(weight_control)
+        input_control = instrument.create_control("input_control")
+        instrument.add_control(input_control)
+        other_control = instrument.create_control("other_control")
+        instrument.add_control(other_control)
+        test_control = instrument.create_control("test_control")
+        instrument.add_control(test_control)
+        test_control.set_expression("input_control*weight_control/2 + x",
+                                    variables={"input_control": "input_control",
+                                               "weight_control": weight_control,
+                                               "x": "other_control"},
+                                    instrument=instrument)
+        self.assertAlmostEqual(instrument.GetVal("test_control"), 0)
+        self.assertTrue(instrument.SetVal("input_control", 1.0))
+        self.assertAlmostEqual(instrument.GetVal("test_control"), 0)
+        self.assertTrue(instrument.SetVal("weight_control", 2.0))
+        self.assertAlmostEqual(instrument.GetVal("test_control"), 1.0)
+
+    def test_using_control_in_its_own_expression_raises_value_error(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        test_control = instrument.create_control("test_control")
+        instrument.add_control(test_control)
+        test_control.add_dependent(test_control)
+        with self.assertRaises(ValueError):
+            test_control.set_expression('test_control', variables={'test_control': test_control})
 
 
 if __name__ == '__main__':
