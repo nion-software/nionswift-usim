@@ -47,7 +47,7 @@ def plot_spectrum(feature, data: numpy.ndarray, multiplier: float, energy_calibr
 class EELSCameraSimulator(CameraSimulator.CameraSimulator):
     depends_on = ["is_slit_in", "probe_state", "probe_position", "live_probe_position", "is_blanked", "ZLPoffset",
                   "stage_position_m", "beam_shift_m", "features", "energy_offset_eV", "energy_per_channel_eV",
-                  "beam_current"]
+                  "BeamCurrent"]
 
     def __init__(self, instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)

@@ -58,7 +58,7 @@ class CameraSimulator:
         raise NotImplementedError
 
     def get_total_counts(self, exposure_s: float) -> float:
-        beam_current_pa = self.instrument.beam_current * 1E12
+        beam_current_pa = self.instrument.GetVal("BeamCurrent") * 1E12
         e_per_pa = 6.242E18 / 1E12
         return beam_current_pa * e_per_pa * exposure_s * self._counts_per_electron
 

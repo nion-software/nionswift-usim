@@ -105,7 +105,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
 
         beam_current_field = ui.create_line_edit_widget()
-        beam_current_field.bind_text(Binding.PropertyBinding(instrument, "beam_current", converter=Converter.PhysicalValueToStringConverter(units="pA", multiplier=1E12)))
+        beam_current_field.bind_text(ControlBinding(instrument, "BeamCurrent", converter=Converter.PhysicalValueToStringConverter(units="pA", multiplier=1E12)))
 
         stage_position_widget = PositionWidget(ui, _("Stage"), instrument, "stage_position_m")
 
@@ -132,13 +132,13 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
         slit_in_checkbox = ui.create_check_box_widget(_("Slit In"))
         slit_in_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_slit_in"))
-        
+
         voa_in_checkbox = ui.create_check_box_widget(_("VOA In"))
         voa_in_checkbox.bind_checked(ControlBinding(instrument, "S_VOA"))
-        
+
         convergenve_angle_field = ui.create_line_edit_widget()
         convergenve_angle_field.bind_text(ControlBinding(instrument, "ConvergenceAngle", converter=Converter.PhysicalValueToStringConverter(units="mrad", multiplier=1E3)))
-        
+
         c_aperture_widget = PositionWidget(ui, _("CAperture"), instrument, "CAperture", unit="mrad", multiplier=1E3)
         aperture_round_widget = PositionWidget(ui, _("ApertureRound"), instrument, "ApertureRound", unit="", multiplier=1)
 
@@ -201,7 +201,7 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         beam_current_row.add(ui.create_label_widget("Beam Current"))
         beam_current_row.add(beam_current_field)
         beam_current_row.add_stretch()
-        
+
         convergence_angle_row = ui.create_row_widget()
         convergence_angle_row.add_spacing(8)
         convergence_angle_row.add_spacing(8)
