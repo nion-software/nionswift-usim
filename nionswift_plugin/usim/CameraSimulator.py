@@ -51,7 +51,7 @@ class CameraSimulator:
         """
         return [{}, {}]
 
-    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, last_scan_params=None) -> DataAndMetadata.DataAndMetadata:
+    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, probe_position) -> DataAndMetadata.DataAndMetadata:
         """
         Subclasses must override this method
         """

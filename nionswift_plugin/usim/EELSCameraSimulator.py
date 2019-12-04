@@ -1,4 +1,5 @@
 # standard libraries
+import copy
 import math
 import numpy
 import scipy.ndimage.interpolation
@@ -55,7 +56,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         self.__data_scale = 1.0
         self.noise = Noise.PoissonNoise()
 
-    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, last_scan_params=None):
+    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, parked_probe_position):
         """
         Features at the probe position will add plasmons and edges in addition to a ZLP.
 
@@ -94,7 +95,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         """
 
         # check if one of the arguments has changed since last call
-        new_frame_settings = [readout_area, binning_shape, exposure_s, last_scan_params]
+        new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context)]
         if new_frame_settings != self._last_frame_settings:
             self._needs_recalculation = True
         self._last_frame_settings = new_frame_settings
@@ -109,8 +110,8 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 probe_position = None
             elif self.instrument.probe_state == "scanning":
                 probe_position = self.instrument.live_probe_position
-            elif self.instrument.probe_state == "parked" and self.instrument.probe_position is not None:
-                probe_position = self.instrument.probe_position
+            elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
+                probe_position = parked_probe_position
 
             # typical thickness over mean free path (T/l) will be 0.5
             mean_free_path_nm = 100  # nm. (lambda values from back of Edgerton)
@@ -124,7 +125,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             used_calibration = dimensional_calibrations[1]
             used_calibration.offset = self.instrument.get_control("ZLPoffset").local_value
 
-            if last_scan_params is not None and probe_position is not None:
+            if scan_context.is_valid and probe_position is not None:
 
                 # make a buffer for the spectrum
                 spectrum = numpy.zeros((data.shape[1], ), numpy.float)
@@ -140,11 +141,10 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
                 # build the spectrum and reference spectrum by adding the features. the data is unscaled.
                 spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), numpy.float)
-                size, fov_size_nm, center_nm = last_scan_params  # get these from last scan
                 offset_m = self.instrument.stage_position_m - self.instrument.GetVal2D("beam_shift_m")  # get this from current values
                 feature_layer_count = 0
                 for index, feature in enumerate(self.instrument.sample.features):
-                    if feature.intersects(offset_m, fov_size_nm, center_nm, Geometry.FloatPoint.make(probe_position)):
+                    if feature.intersects(offset_m, scan_context.fov_size_nm, scan_context.center_nm, Geometry.FloatPoint.make(probe_position)):
                         plot_spectrum(feature, spectrum, 1.0, used_calibration)
                         plot_spectrum(feature, spectrum_ref, 1.0, zlp0_calibration)
                         feature_layer_count += 1

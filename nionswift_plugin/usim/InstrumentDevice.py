@@ -5,6 +5,7 @@ Useful references:
 """
 
 # standard libraries
+import copy
 import math
 import numpy
 import threading
@@ -367,7 +368,8 @@ class Instrument(stem_controller.STEMController):
         self.__blanked = False
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
         self.__eels_shape = Geometry.IntSize(256, 1024)
-        self.__last_scan_params = None
+        self.__scan_context = stem_controller.ScanContext()
+        self.__probe_position = None
         self.__live_probe_position = None
         self.__sequence_progress = 0
         self.__lock = threading.Lock()
@@ -470,6 +472,10 @@ class Instrument(stem_controller.STEMController):
     def live_probe_position(self, position):
         self.__live_probe_position = position
         self.property_changed_event.fire("live_probe_position")
+
+    def _set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: Geometry.FloatPoint) -> None:
+        self.__scan_context = copy.deepcopy(scan_context)
+        self.__probe_position = probe_position
 
     def control_changed(self, control: Control) -> None:
         self.property_changed_event.fire(control.name)
@@ -579,9 +585,7 @@ class Instrument(stem_controller.STEMController):
             # TODO: data is not always the correct size
         else:
             data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
-        data = (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us
-        self.__last_scan_params = size, fov_size_nm, center_nm
-        return data
+        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us
 
     def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
         if camera_type == "ronchigram":
@@ -608,7 +612,7 @@ class Instrument(stem_controller.STEMController):
         return e_per_pixel_per_second * exposure_s
 
     def get_camera_data(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float) -> DataAndMetadata.DataAndMetadata:
-        return self.__cameras[camera_type].get_frame_data(readout_area, binning_shape, exposure_s, self.__last_scan_params)
+        return self.__cameras[camera_type].get_frame_data(readout_area, binning_shape, exposure_s, self.__scan_context, self.__probe_position)
 
     def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect = None, binning_shape: Geometry.IntSize = None):
         return self.__cameras[camera_type].get_dimensional_calibrations(readout_area, binning_shape)
