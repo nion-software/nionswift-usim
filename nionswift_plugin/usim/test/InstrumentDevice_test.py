@@ -459,6 +459,18 @@ class TestInstrumentDevice(unittest.TestCase):
         with self.assertRaises(ValueError):
             test_control.set_expression('test_control', variables={'test_control': test_control})
 
+    def test_add_input_for_existing_control(self):
+        instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        test_control = instrument.create_control("test_control")
+        other_control = instrument.create_control("other_control")
+        weight_control = instrument.create_control("weight_control")
+        instrument.add_control(test_control)
+        instrument.add_control(other_control)
+        instrument.add_control(weight_control)
+        instrument.add_control_inputs('test_control', [(other_control, weight_control)])
+        # Add it a second time to test add existing control
+        instrument.add_control_inputs('test_control', [(other_control, weight_control)])
+
 
 if __name__ == '__main__':
     unittest.main()
