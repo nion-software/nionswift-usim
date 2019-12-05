@@ -161,15 +161,12 @@ class Control:
         else:
             return res
 
-    def add_input(self, input: "Control", weight: typing.Union[float, typing.Callable]) -> None:
+    def add_input(self, input: "Control", weight: typing.Union[float, "Control"]) -> None:
         # if input is already in the list of weighted inputs, overwrite it
         inputs = [control for control, _ in self.weighted_inputs]
         if input in inputs:
             input_index = inputs.index(input)
-            if isinstance(self.weighted_inputs[input_index][1], Control):
-                self.weighted_inputs[input_index][1].set_output_value(weight)
-            else:
-                self.weighted_inputs[input_index] = (input, weight)
+            self.weighted_inputs[input_index] = (input, weight)
         else:
             self.weighted_inputs.append((input, weight))
         # we can always call add dependent because it checks if self is already in input's dependents
@@ -513,7 +510,7 @@ class Instrument(stem_controller.STEMController):
         for input, weight in weighted_inputs:
             control.add_input(input, weight)
 
-    def set_input_weight(self, control_name: str, input_name: str, new_weight: float) -> None:
+    def set_input_weight(self, control_name: str, input_name: str, new_weight: typing.Union[float, Control]) -> None:
         control = self.get_control(control_name)
         assert isinstance(control, Control)
         input_control = self.get_control(input_name)
