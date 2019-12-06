@@ -1,6 +1,16 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.2.2 (unreleased)
+------------------
+- Add aperture that can be moved and "distorted" (i.e. dipole and quadropole effect simulation)
+- Add functions to 'Instrument' that facilitate adding new inputs to existing controls
+- Allow input weights for controls to be controls in addition to float
+- Add option to attach a python expression as control input (only one expression per control can be set,
+but it can be arbitrarily complex, as long as it can be evaluated by 'eval')
+- Changed meaning of convergence angle to reflect its real meaning (in the simulator it only controls the size of
+the aperture on the ronchigram camera, the effect on the scan is not simulated yet)
+
 0.2.1 (2019-11-27)
 ------------------
 - Minor changes to be compatible with nionswift-instrumentation.
