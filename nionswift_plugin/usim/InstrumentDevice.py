@@ -350,12 +350,14 @@ class Instrument(stem_controller.STEMController):
         self.instrument_id = instrument_id
         self.property_changed_event = Event.Event()
         self.__camera_frame_event = threading.Event()
-        self.__samples = [SampleSimulator.RectangleFlakeSample(), SampleSimulator.AmorphousSample()]
-        self.__sample_index = 1
 
         # define the STEM geometry limits
         self.stage_size_nm = 1000
         self.max_defocus = 5000 / 1E9
+
+        # define the samples
+        self.__samples = [SampleSimulator.RectangleFlakeSample(self.stage_size_nm), SampleSimulator.AmorphousSample()]
+        self.__sample_index = 0
 
         self.__stage_position_m = Geometry.FloatPoint()
         self.__slit_in = False

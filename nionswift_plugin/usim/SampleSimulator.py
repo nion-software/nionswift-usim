@@ -84,9 +84,9 @@ class Sample(abc.ABC):
 
 class RectangleFlakeSample:
 
-    def __init__(self):
+    def __init__(self, stage_size_nm: float):
         self.__features = list()
-        sample_size_m = Geometry.FloatSize(height=20, width=20) / 1E9
+        sample_size_m = Geometry.FloatSize(height=20 * stage_size_nm / 100, width=20 * stage_size_nm / 100) / 1E9
         feature_percentage = 0.3
         random_state = random.getstate()
         random.seed(1)
