@@ -10,6 +10,7 @@ Changelog (nionswift-usim)
 but it can be arbitrarily complex, as long as it can be evaluated by 'eval')
 - Changed meaning of convergence angle to reflect its real meaning (in the simulator it only controls the size of
 the aperture on the ronchigram camera, the effect on the scan is not simulated yet)
+- Add 'Variable' class to InstrumentDevice. 'Variables' differ from 'Controls' in that they do not have a local value.
 
 0.2.1 (2019-11-27)
 ------------------

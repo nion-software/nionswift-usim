@@ -76,47 +76,43 @@ show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])) * scip
 # show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])))
 """
 
-
-class Control:
+class Variable:
     """
-    Controls keep an output value equal to the weight sum of input values plus a local value.
+    Variables evalute an expression plus a sum of input values.
 
-    TODO: add optional noise (continuous and periodic)
-    TODO: add response time to changes
-    TODO: add hysteresis
     """
 
-    def __init__(self, name: str, local_value: float = 0.0,
-                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]]] = None):
+    def __init__(self, name: str,
+                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Variable", typing.Union[float, typing.Callable]]]] = None):
         self.name = name
         self.weighted_inputs = weighted_inputs if weighted_inputs else list()
         self.__variables = dict()
         self.__expression = None
         self.dependents = list()
-        self.local_value = float(local_value)
         for input, _ in self.weighted_inputs:
             input.add_dependent(self)
         self.__last_output_value = None
         self.on_changed = None
 
     def __str__(self):
-        return "{}: {} + {} = {}".format(self.name, self.weighted_input_value, self.local_value, self.output_value)
+        return "{}: {}".format(self.name, self.output_value)
 
     @property
     def weighted_input_value(self) -> float:
         weighted_input = 0
         for input_, weight in self.weighted_inputs:
-            if isinstance(weight, Control):
+            if isinstance(weight, Variable):
                 weighted_input += weight.output_value * input_.output_value
             else:
                 weighted_input += weight * input_.output_value
         if self.__expression is not None:
-            weighted_input += self.__evaluate_expression()
+            expr = self.__evaluate_expression()
+            weighted_input += expr
         return weighted_input
 
     @property
     def output_value(self) -> float:
-        return self.weighted_input_value + self.local_value
+        return self.weighted_input_value
 
     @property
     def variables(self) -> dict:
@@ -137,7 +133,7 @@ class Control:
                         raise ValueError(f"Cannot get value for name {key}.")
                 if isinstance(value, Control2D):
                     raise TypeError("2D controls cannot be used in expressions")
-                if isinstance(value, Control):
+                if isinstance(value, Variable):
                     if value  == self:
                         raise ValueError("An expression cannot include the control it is attached to.")
                     value.add_dependent(self)
@@ -149,7 +145,7 @@ class Control:
     def __evaluate_expression(self):
         variables = dict()
         for key, value in self.__variables.items():
-            if isinstance(value, Control):
+            if isinstance(value, Variable):
                 value = value.output_value
             variables[key] = value
         try:
@@ -161,7 +157,7 @@ class Control:
         else:
             return res
 
-    def add_input(self, input: "Control", weight: typing.Union[float, "Control"]) -> None:
+    def add_input(self, input: "Variable", weight: typing.Union[float, "Variable"]) -> None:
         # if input is already in the list of weighted inputs, overwrite it
         inputs = [control for control, _ in self.weighted_inputs]
         if input in inputs:
@@ -171,13 +167,43 @@ class Control:
             self.weighted_inputs.append((input, weight))
         # we can always call add dependent because it checks if self is already in input's dependents
         input.add_dependent(self)
-        if isinstance(weight, Control):
+        if isinstance(weight, Variable):
             weight.add_dependent(self)
         self._notify_change()
 
-    def add_dependent(self, dependent: "Control") -> None:
+    def add_dependent(self, dependent: "Variable") -> None:
         if dependent not in self.dependents:
             self.dependents.append(dependent)
+
+    def _notify_change(self) -> None:
+        output_value = self.output_value
+        if output_value != self.__last_output_value:
+            self.__last_output_value = output_value
+            if callable(self.on_changed):
+                self.on_changed(self)
+            for dependent in self.dependents:
+                dependent._notify_change()
+
+class Control(Variable):
+    """
+    Controls keep an output value equal to the weight sum of input values plus a local value.
+
+    TODO: add optional noise (continuous and periodic)
+    TODO: add response time to changes
+    TODO: add hysteresis
+    """
+
+    def __init__(self, name: str, local_value: float = 0.0,
+                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]]] = None):
+        super().__init__(name, weighted_inputs)
+        self.local_value = float(local_value)
+
+    def __str__(self):
+        return "{}: {} + {} = {}".format(self.name, self.weighted_input_value, self.local_value, self.output_value)
+
+    @property
+    def output_value(self) -> float:
+        return self.weighted_input_value + self.local_value
 
     def set_local_value(self, value: float) -> None:
         self.local_value = value
@@ -193,16 +219,8 @@ class Control:
         self.set_output_value(value)
         # update dependent output values to old values
         for dependent, dependent_output in zip(self.dependents, old_dependent_outputs):
-            dependent.set_output_value(dependent_output)
-
-    def _notify_change(self) -> None:
-        output_value = self.output_value
-        if output_value != self.__last_output_value:
-            self.__last_output_value = output_value
-            if callable(self.on_changed):
-                self.on_changed(self)
-            for dependent in self.dependents:
-                dependent._notify_change()
+            if isinstance(dependent, (Control, ConvertedControl)):
+                dependent.set_output_value(dependent_output)
 
 
 class ConvertedControl:
@@ -377,6 +395,8 @@ class Instrument(stem_controller.STEMController):
         built_in_controls = self.__create_built_in_controls()
         for control in built_in_controls:
             self.add_control(control)
+        # We need to set the expressions after adding the controls to InstrumentDevice
+        self.__set_expressions()
 
         self.__cameras = {
             "ronchigram": RonchigramCameraSimulator.RonchigramCameraSimulator(self, self.__ronchigram_shape, self.counts_per_electron, self.stage_size_nm),
@@ -391,7 +411,7 @@ class Instrument(stem_controller.STEMController):
     def _get_camera_simulator(self, camera_id: str) -> CameraSimulator:
         return self.__cameras[camera_id]
 
-    def __create_built_in_controls(self):
+    def __create_built_in_controls(self) -> typing.List[typing.Union[Variable, Control2D]]:
         zlp_tare_control = Control("ZLPtare")
         zlp_offset_control = Control("ZLPoffset", -20, [(zlp_tare_control, 1.0)])
         stage_position_m = Control2D("stage_position_m", ("x", "y"))
@@ -431,12 +451,15 @@ class Instrument(stem_controller.STEMController):
         csh = Control2D("CSH", ("x", "y"))
         drift = Control2D("Drift", ("x", "y"))
         # tuning parameters
-        order_1_max_angle = Control("Order1MaxAngle", -1)
-        order_2_max_angle = Control("Order2MaxAngle", -1)
-        order_3_max_angle = Control("Order3MaxAngle", -1)
-        c1_range = Control("C1Range")
-        c2_range = Control("C2Range")
-        c3_range = Control("C3Range")
+        order_1_max_angle = Variable("Order1MaxAngle")
+        order_2_max_angle = Variable("Order2MaxAngle")
+        order_3_max_angle = Variable("Order3MaxAngle")
+        c1_range = Variable("C1Range")
+        c2_range = Variable("C2Range")
+        c3_range = Variable("C3Range")
+        rsq_seconds = Variable("RSquareC2s")
+        rsq_thirds = Variable("RSquareC3s")
+        
         # dependent controls
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
         # AxisConverter is commonly used to convert between axis without affecting any hardware
@@ -445,7 +468,24 @@ class Instrument(stem_controller.STEMController):
                 c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift, beam_current,
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
                 c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
-                slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter]
+                slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
+                rsq_seconds, rsq_thirds]
+    
+    def __set_expressions(self):
+        self.get_control("RSquareC2s").set_expression("(((C21_a**2+C21_b**2)/1296+(C23_a**2+C23_b**2)/144)/lamb**2)*6.283**2*MaxApertureAngle**6",
+                                                      variables={"C21_a": "C21.x", "C21_b": "C21.y",
+                                                                 "C23_a": "C23.x", "C23_b": "C23.y",
+                                                                 "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
+                                                      instrument=self)
+        self.get_control("RSquareC3s").set_expression("((C30**2/5760+(C32_a**2+C32_b**2)/5120+(C34_a**2+C34_b**2)/320)/lamb**2)*6.283**2*MaxApertureAngle**8",
+                                                      variables={"C30": "C30",
+                                                                 "C32_a": "C32.x", "C32_b": "C32.y",
+                                                                 "C34_a": "C34.x", "C34_b": "C34.y",
+                                                                 "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
+                                                      instrument=self)
+        self.get_control("Order1MaxAngle").set_expression("-1")
+        self.get_control("Order2MaxAngle").set_expression("-1")
+        self.get_control("Order3MaxAngle").set_expression("-1")
 
     @property
     def sample(self) -> SampleSimulator.Sample:
@@ -476,16 +516,19 @@ class Instrument(stem_controller.STEMController):
         self.__scan_context = copy.deepcopy(scan_context)
         self.__probe_position = probe_position
 
-    def control_changed(self, control: Control) -> None:
+    def control_changed(self, control: Variable) -> None:
         self.property_changed_event.fire(control.name)
+        
+    def create_variable(self, name: str, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None) -> Variable:
+        return Variable(name, weighted_inputs)
 
-    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None):
+    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None) -> Control:
         return Control(name, local_value, weighted_inputs)
 
     def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple[Control, typing.Union[float, Control]]], typing.List[typing.Tuple[Control, typing.Union[float, Control]]]]] = None):
         return Control2D(name, native_axis, local_values, weighted_inputs)
 
-    def add_control(self, control: typing.Union[Control, Control2D]) -> None:
+    def add_control(self, control: typing.Union[Variable, Control2D]) -> None:
         if control.name in self.__controls:
             raise ValueError(f"A control with name {control.name} already exists.")
         if isinstance(control, Control2D):
@@ -495,7 +538,7 @@ class Instrument(stem_controller.STEMController):
             control.on_changed = self.control_changed
         self.__controls[control.name] = control
 
-    def get_control(self, control_name: str) -> typing.Union[Control, Control2D, None]:
+    def get_control(self, control_name: str) -> typing.Union[Variable, Control2D, None]:
         if "." in control_name:
             split_name = control_name.split(".")
             control = self.__controls.get(split_name[0])
@@ -506,17 +549,17 @@ class Instrument(stem_controller.STEMController):
         return control
 
     def add_control_inputs(self, control_name: str,
-                           weighted_inputs: typing.List[typing.Tuple[Control, typing.Union[float, typing.Callable]]]) -> None:
+                           weighted_inputs: typing.List[typing.Tuple[Variable, typing.Union[float, typing.Callable]]]) -> None:
         control = self.get_control(control_name)
-        assert isinstance(control, Control)
+        assert isinstance(control, Variable)
         for input, weight in weighted_inputs:
             control.add_input(input, weight)
 
-    def set_input_weight(self, control_name: str, input_name: str, new_weight: typing.Union[float, Control]) -> None:
+    def set_input_weight(self, control_name: str, input_name: str, new_weight: typing.Union[float, Variable]) -> None:
         control = self.get_control(control_name)
-        assert isinstance(control, Control)
+        assert isinstance(control, Variable)
         input_control = self.get_control(input_name)
-        assert isinstance(input_control, Control)
+        assert isinstance(input_control, Variable)
         inputs = [control_ for control_, _ in control.weighted_inputs]
         if input_control not in inputs:
             raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to change its strength.")
@@ -524,14 +567,14 @@ class Instrument(stem_controller.STEMController):
 
     def get_input_weight(self, control_name: str, input_name: str) -> float:
         control = self.get_control(control_name)
-        assert isinstance(control, Control)
+        assert isinstance(control, Variable)
         input_control = self.get_control(input_name)
-        assert isinstance(input_control, Control), f"{input_name} is not of type 'Control' but {type(input_control)}."
+        assert isinstance(input_control, Variable), f"{input_name} is not of type 'Variable' but {type(input_control)}."
         inputs = [control_ for control_, _ in control.weighted_inputs]
         if input_control not in inputs:
             raise ValueError(f"{input_name} is not an input for {control_name}. Please add it first before attempting to get its strength.")
         weight = control.weighted_inputs[inputs.index(input_control)][1]
-        if isinstance(weight, Control):
+        if isinstance(weight, Variable):
             return weight.output_value
         return weight
 
@@ -716,7 +759,7 @@ class Instrument(stem_controller.STEMController):
                     return True, value
         else:
             control = self.get_control(s)
-            if isinstance(control, (Control, ConvertedControl)):
+            if isinstance(control, (Variable, ConvertedControl)):
                 if set_val is not None:
                     control.set_output_value(set_val)
                     return True, None
