@@ -137,8 +137,6 @@ class Device:
         target_count = 0
         while self.__is_scanning and target_count <= current_frame.data_count:
             if frame_parameters.external_clock_mode != 0:
-                h, w = current_frame.scan_data[0].shape
-                y, x = current_frame.data_count // w, current_frame.data_count % w
                 if current_frame.data_count % size.width == 0:
                     # throw away two flyback images at beginning of line
                     if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
@@ -147,10 +145,24 @@ class Device:
                     if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
                         current_frame.bad = True
                         current_frame.complete = True
+                # NOTE: there is a race condition here - wait for camera; then set live probe position; camera may start next acquisition
+                # before live probe position is set. not fixing until I think of a good solution. results in inaccurate probe position during
+                # synchronized acquisition.
                 if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
                     current_frame.bad = True
                     current_frame.complete = True
-                self.__instrument.live_probe_position = Geometry.FloatPoint(y=y / h, x=x / w)
+                h, w = current_frame.scan_data[0].shape
+                # calculate relative position within sub-area
+                ry, rx = current_frame.data_count // w / h, current_frame.data_count % w / w
+                # now translate to context
+                # TODO: rotation
+                ss = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size) if frame_parameters.subscan_fractional_size else Geometry.FloatSize(h=1.0, w=1.0)
+                oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint(y=0.5, x=0.5)
+                y = (ry - 0.5) * ss.height + oo.y
+                x = (rx - 0.5) * ss.width + oo.x
+                # print(f"{x}, {y} = ({ry} - 0.5) * {ss.height} + {oo.y} / (ry - 0.5) * ss.height + oo.y")
+                # >>> def f(s, c, x): return (x - 0.5) * s + c # |------<---c--->------------|
+                self.__instrument.live_probe_position = Geometry.FloatPoint(y=y, x=x)
                 sequence_progress = self.__instrument.sequence_progress
                 # target count is the max of the sequence progress calculation vs the data count.
                 # they will generally be the same; but might be out of sync slightly.

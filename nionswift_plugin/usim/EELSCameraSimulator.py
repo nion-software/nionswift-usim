@@ -94,8 +94,18 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             B = (P - Az) / f
         """
 
+        # grab the probe position
+        probe_position = Geometry.FloatPoint(0.5, 0.5)
+        if self.instrument.is_blanked:
+            probe_position = None
+        elif self.instrument.probe_state == "scanning":
+            probe_position = self.instrument.live_probe_position
+        elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
+            probe_position = parked_probe_position
+        probe_position = Geometry.FloatPoint.make(probe_position) if probe_position is not None else None
+
         # check if one of the arguments has changed since last call
-        new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context)]
+        new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position]
         if new_frame_settings != self._last_frame_settings:
             self._needs_recalculation = True
         self._last_frame_settings = new_frame_settings
@@ -105,13 +115,6 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             slit_attenuation = 10 if self.instrument.is_slit_in else 1
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
-            probe_position = Geometry.FloatPoint(0.5, 0.5)
-            if self.instrument.is_blanked:
-                probe_position = None
-            elif self.instrument.probe_state == "scanning":
-                probe_position = self.instrument.live_probe_position
-            elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
-                probe_position = parked_probe_position
 
             # typical thickness over mean free path (T/l) will be 0.5
             mean_free_path_nm = 100  # nm. (lambda values from back of Edgerton)
@@ -144,7 +147,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 offset_m = self.instrument.stage_position_m - self.instrument.GetVal2D("beam_shift_m")  # get this from current values
                 feature_layer_count = 0
                 for index, feature in enumerate(self.instrument.sample.features):
-                    if feature.intersects(offset_m, scan_context.fov_size_nm, scan_context.center_nm, Geometry.FloatPoint.make(probe_position)):
+                    if feature.intersects(offset_m, scan_context.fov_size_nm, scan_context.center_nm, probe_position):
                         plot_spectrum(feature, spectrum, 1.0, used_calibration)
                         plot_spectrum(feature, spectrum_ref, 1.0, zlp0_calibration)
                         feature_layer_count += 1

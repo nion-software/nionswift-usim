@@ -606,18 +606,20 @@ class Instrument(stem_controller.STEMController):
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
         if frame_parameters.subscan_fractional_size:
             subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
-            fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height,
-                                             width=fov_size_nm.width * subscan_fractional_size.width)
+            used_fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height,
+                                                  width=fov_size_nm.width * subscan_fractional_size.width)
+        else:
+            used_fov_size_nm = fov_size_nm
         center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
         if frame_parameters.subscan_fractional_center:
             subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center)
             center_nm += Geometry.FloatPoint(y=(subscan_fractional_center.y - 0.5) * fov_size_nm.height,
                                              x=(subscan_fractional_center.x - 0.5) * fov_size_nm.width)
         extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
-        extra_nm = Geometry.FloatPoint(y=(extra / size.height) * fov_size_nm[0], x=(extra / size.width) * fov_size_nm[1])
+        extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])
         used_size = size + Geometry.IntSize(height=extra, width=extra)
         data = numpy.zeros((used_size.height, used_size.width), numpy.float32)
-        self.sample.plot_features(data, offset_m, fov_size_nm, extra_nm, center_nm, used_size)
+        self.sample.plot_features(data, offset_m, used_fov_size_nm, extra_nm, center_nm, used_size)
         noise_factor = 0.3
         if frame_parameters.rotation_rad != 0:
             inner_height = size.height / used_size.height
