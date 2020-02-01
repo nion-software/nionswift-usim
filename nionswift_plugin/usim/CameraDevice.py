@@ -43,7 +43,7 @@ class Camera(camera_base.CameraDevice):
         self.__cancel = False
         self.__is_playing = False
         self.__is_acquiring = False
-        self.__cancel_sequence = False
+        self.__cancel_sequence_event = threading.Event()
         self.__exposure = 1.0
         self.__binning = 1
         self.__processing = None
@@ -149,13 +149,22 @@ class Camera(camera_base.CameraDevice):
         # has_data_event is cleared in the acquisition loop after stopping
 
     def acquire_image(self) -> dict:
+        return self.__acquire_image(direct=False)
+
+    def __acquire_image(self, *, direct: bool) -> dict:
         """Acquire the most recent data."""
         xdata_buffer = None
         integration_count = self.__integration_count or 1
         for frame_number in range(integration_count):
-            if not self.__has_data_event.wait(self.__exposure * 200) and not self.__thread.is_alive():
-                raise Exception("No simulator thread.")
-            self.__has_data_event.clear()
+            if direct:
+                self.__instrument.wait_for_camera_ack(self.__cancel_sequence_event)
+                if self.__direct_acquire(self.__cancel_sequence_event):
+                    self.__instrument.trigger_camera_frame()
+                self.__has_data_event.clear()
+            else:
+                if not self.__has_data_event.wait(self.__exposure * 200) and not self.__thread.is_alive():
+                    raise Exception("No simulator thread.")
+                self.__has_data_event.clear()
             if xdata_buffer is None:
                 xdata_buffer = copy.deepcopy(self.__xdata_buffer)
             else:
@@ -180,27 +189,31 @@ class Camera(camera_base.CameraDevice):
         return data_element
 
     def acquire_sequence_prepare(self, n: int) -> None:
-        self.__cancel_sequence = False
+        self.__cancel_sequence_event.clear()
 
     def acquire_sequence(self, n: int) -> typing.Optional[typing.Dict]:
         # if the device does not implement acquire_sequence, fall back to looping acquisition.
         self.__is_acquiring = True
         self.__has_data_event.clear()  # ensure any has_data_event is new data
-        self.__thread_event.set()
         self.__instrument.sequence_progress = 0
         try:
             properties = None
             data = None
             for index in range(n):
-                if self.__cancel_sequence:
+                if self.__cancel_sequence_event.is_set():
                     return None
-                frame_data_element = self.acquire_image()
+                frame_data_element = self.__acquire_image(direct=True)
                 frame_data = frame_data_element["data"]
+                if self.__processing == "sum_project" and len(frame_data.shape) > 1:
+                    data_shape = (n,) + frame_data.shape[1:]
+                    data_dtype = frame_data.dtype
+                else:
+                    data_shape = (n,) + frame_data.shape
+                    data_dtype = frame_data.dtype
                 if data is None:
-                    if self.__processing == "sum_project" and len(frame_data.shape) > 1:
-                        data = numpy.empty((n,) + frame_data.shape[1:], frame_data.dtype)
-                    else:
-                        data = numpy.empty((n,) + frame_data.shape, frame_data.dtype)
+                    data = numpy.zeros(data_shape, data_dtype)
+                assert data.shape == data_shape
+                assert data.dtype == data_dtype
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
                     data[index] = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data), 0).data
                 else:
@@ -220,7 +233,22 @@ class Camera(camera_base.CameraDevice):
         return data_element
 
     def acquire_sequence_cancel(self) -> None:
-        self.__cancel_sequence = True
+        self.__cancel_sequence_event.set()
+
+    def __direct_acquire(self, cancel_event):
+        start = time.time()
+        readout_area = self.readout_area
+        binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
+        xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure)
+        self.__acquired_one_event.set()
+        elapsed = time.time() - start
+        wait_s = max(self.__exposure - elapsed, 0)
+        if not cancel_event.wait(wait_s):
+            # thread event was not triggered during wait; signal that we have data
+            xdata._set_timestamp(datetime.datetime.utcnow())
+            self.__xdata_buffer = xdata
+            return True
+        return False
 
     def __acquisition_thread(self):
         while True:
@@ -231,19 +259,8 @@ class Camera(camera_base.CameraDevice):
             if self.__cancel:
                 break
             while (self.__is_playing or self.__is_acquiring) and not self.__cancel:
-                start = time.time()
-                readout_area = self.readout_area
-                binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
-                xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure)
-                self.__acquired_one_event.set()
-                elapsed = time.time() - start
-                wait_s = max(self.__exposure - elapsed, 0)
-                if not self.__thread_event.wait(wait_s):
-                    # thread event was not triggered during wait; signal that we have data
-                    xdata._set_timestamp(datetime.datetime.utcnow())
-                    self.__xdata_buffer = xdata
+                if self.__direct_acquire(self.__thread_event):
                     self.__has_data_event.set()
-                    self.__instrument.trigger_camera_frame()
                 else:
                     # thread event was triggered during wait; continue loop
                     self.__has_data_event.clear()

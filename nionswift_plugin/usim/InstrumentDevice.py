@@ -14,12 +14,10 @@ import re
 
 from nion.data import Core
 from nion.data import DataAndMetadata
-
 from nion.utils import Event
 from nion.utils import Geometry
-
+from nion.swift.model import HardwareSource
 from nion.swift.model import Utility
-
 from nion.instrumentation import stem_controller
 
 from . import CameraSimulator
@@ -368,6 +366,7 @@ class Instrument(stem_controller.STEMController):
         self.instrument_id = instrument_id
         self.property_changed_event = Event.Event()
         self.__camera_frame_event = threading.Event()
+        self.__camera_frame_event_ack = threading.Event()
 
         # define the STEM geometry limits
         self.stage_size_nm = 1000
@@ -389,6 +388,7 @@ class Instrument(stem_controller.STEMController):
         self.__probe_position = None
         self.__live_probe_position = None
         self.__sequence_progress = 0
+        self._is_synchronized = False
         self.__lock = threading.Lock()
         self.__controls = dict()
 
@@ -592,10 +592,26 @@ class Instrument(stem_controller.STEMController):
         with self.__lock:
             self.__sequence_progress += 1
 
+    def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource=None) -> None:
+        self._is_synchronized = True
+
+    def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource=None) -> None:
+        self._is_synchronized = False
+
+    def wait_for_camera_ack(self, cancel_event: threading.Event) -> None:
+        if self._is_synchronized:
+            for _ in range(100):
+                if self.__camera_frame_event_ack.wait(5.0 / 100) or cancel_event.is_set():
+                    self.__camera_frame_event_ack.clear()
+                    return
+            print("ACK TIMEOUT")
+        self.__camera_frame_event_ack.clear()
+
     def trigger_camera_frame(self) -> None:
         self.__camera_frame_event.set()
 
     def wait_for_camera_frame(self, timeout: float) -> bool:
+        self.__camera_frame_event_ack.set()
         result = self.__camera_frame_event.wait(timeout)
         self.__camera_frame_event.clear()
         return result

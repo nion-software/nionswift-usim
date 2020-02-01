@@ -131,26 +131,14 @@ class Device:
                 scan_data.append(self.__instrument.get_scan_data(current_frame.frame_parameters, channel))
             current_frame.scan_data = scan_data
 
-        if current_frame.data_count == 0 and frame_parameters.external_clock_mode != 0:
+        is_synchronized_scan = frame_parameters.external_clock_mode != 0
+        if current_frame.data_count == 0 and is_synchronized_scan:
             self.__instrument.live_probe_position = Geometry.FloatPoint()
 
         target_count = 0
         while self.__is_scanning and target_count <= current_frame.data_count:
-            if frame_parameters.external_clock_mode != 0:
-                if current_frame.data_count % size.width == 0:
-                    # throw away two flyback images at beginning of line
-                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
-                        current_frame.bad = True
-                        current_frame.complete = True
-                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
-                        current_frame.bad = True
-                        current_frame.complete = True
-                # NOTE: there is a race condition here - wait for camera; then set live probe position; camera may start next acquisition
-                # before live probe position is set. not fixing until I think of a good solution. results in inaccurate probe position during
-                # synchronized acquisition.
-                if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
-                    current_frame.bad = True
-                    current_frame.complete = True
+            if is_synchronized_scan:
+                # set the probe position
                 h, w = current_frame.scan_data[0].shape
                 # calculate relative position within sub-area
                 ry, rx = current_frame.data_count // w / h, current_frame.data_count % w / w
@@ -163,11 +151,19 @@ class Device:
                 # print(f"{x}, {y} = ({ry} - 0.5) * {ss.height} + {oo.y} / (ry - 0.5) * ss.height + oo.y")
                 # >>> def f(s, c, x): return (x - 0.5) * s + c # |------<---c--->------------|
                 self.__instrument.live_probe_position = Geometry.FloatPoint(y=y, x=x)
-                sequence_progress = self.__instrument.sequence_progress
-                # target count is the max of the sequence progress calculation vs the data count.
-                # they will generally be the same; but might be out of sync slightly.
-                # keeping both as a safety measure.
-                target_count = max(sequence_progress - 2 * (sequence_progress // (size.width + 2) + 1) + 1, current_frame.data_count + 1)
+                # do a synchronized readout
+                if current_frame.data_count % size.width == 0:
+                    # throw away two flyback images at beginning of line
+                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
+                        current_frame.bad = True
+                        current_frame.complete = True
+                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
+                        current_frame.bad = True
+                        current_frame.complete = True
+                if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
+                    current_frame.bad = True
+                    current_frame.complete = True
+                target_count = current_frame.data_count + 1
             else:
                 pixels_remaining = total_pixels - current_frame.data_count
                 pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)
