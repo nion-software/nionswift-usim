@@ -214,6 +214,7 @@ class Device:
             self.__buffer.append(data_elements)
             while len(self.__buffer) > 100:
                 del self.__buffer[0]
+            self.__is_scanning = False
 
         return data_elements, complete, bad_frame, sub_area, frame_number, pixels_to_skip
 
@@ -263,6 +264,7 @@ class Device:
             channel.data = numpy.zeros(tuple(size), numpy.float32)
         self.__frame_number += 1
         self.__frame = Frame(self.__frame_number, channels, frame_parameters)
+        self.__is_scanning = True
 
     def cancel(self) -> None:
         """Cancel acquisition (immediate)."""
