@@ -146,6 +146,7 @@ class Device:
                 # TODO: rotation
                 ss = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size) if frame_parameters.subscan_fractional_size else Geometry.FloatSize(h=1.0, w=1.0)
                 oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint(y=0.5, x=0.5)
+                oo += Geometry.FloatSize(h=frame_parameters.center_nm[0] / frame_parameters.fov_nm, w=frame_parameters.center_nm[1] / frame_parameters.fov_nm)
                 y = (ry - 0.5) * ss.height + oo.y
                 x = (rx - 0.5) * ss.width + oo.x
                 # print(f"{x}, {y} = ({ry} - 0.5) * {ss.height} + {oo.y} / (ry - 0.5) * ss.height + oo.y")
