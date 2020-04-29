@@ -7,6 +7,8 @@ Useful references:
 # standard libraries
 import copy
 import math
+import time
+
 import numpy
 import threading
 import typing
@@ -355,6 +357,24 @@ class Control2D:
         raise AttributeError(f"'{self.__class__.__name__}' has not attribute '{attr}'")
 
 
+class DriftController:
+
+    def __init__(self):
+        self.__start_time = time.time()
+
+    @property
+    def offset_m(self) -> Geometry.FloatPoint:
+        # note: positive values will move data down/right
+        max_drift_y_m = 15 * 1E-9 * 0
+        max_drift_x_m = 10 * 1E-9 * 0
+        period_y_s = 60 * 4
+        period_x_s = 90 * 4
+        phase_y_rad = 7
+        phase_x_rad = 10
+        return Geometry.FloatPoint(y=max_drift_y_m * math.cos((time.time() - self.__start_time - phase_y_rad) * 2 * math.pi / period_y_s),
+                                   x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
+
+
 class Instrument(stem_controller.STEMController):
     """
     TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
@@ -377,6 +397,7 @@ class Instrument(stem_controller.STEMController):
         self.__sample_index = 0
 
         self.__stage_position_m = Geometry.FloatPoint()
+        self.__drift_controller = DriftController()
         self.__slit_in = False
         self.__energy_per_channel_eV = 0.5
         self.__voltage = 100000
@@ -512,6 +533,10 @@ class Instrument(stem_controller.STEMController):
         self.__live_probe_position = position
         self.property_changed_event.fire("live_probe_position")
 
+    @property
+    def drift_offset_m(self) -> Geometry.FloatPoint:
+        return self.__drift_controller.offset_m
+
     def _set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: Geometry.FloatPoint) -> None:
         self.__scan_context = copy.deepcopy(scan_context)
         self.__probe_position = probe_position
@@ -618,7 +643,7 @@ class Instrument(stem_controller.STEMController):
 
     def get_scan_data(self, frame_parameters, channel) -> numpy.ndarray:
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
-        offset_m = self.stage_position_m - self.GetVal2D("beam_shift_m")
+        offset_m = self.stage_position_m - self.GetVal2D("beam_shift_m") + self.__drift_controller.offset_m
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
         if frame_parameters.subscan_fractional_size:
             subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
