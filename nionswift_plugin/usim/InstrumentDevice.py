@@ -643,7 +643,7 @@ class Instrument(stem_controller.STEMController):
 
     def get_scan_data(self, frame_parameters, channel) -> numpy.ndarray:
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
-        offset_m = self.stage_position_m - self.GetVal2D("beam_shift_m") + self.__drift_controller.offset_m
+        offset_m = self.actual_offset_m  # stage position - beam shift + drift
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
         if frame_parameters.subscan_fractional_size:
             subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
@@ -701,6 +701,10 @@ class Instrument(stem_controller.STEMController):
 
     def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect = None, binning_shape: Geometry.IntSize = None):
         return self.__cameras[camera_type].get_dimensional_calibrations(readout_area, binning_shape)
+
+    @property
+    def actual_offset_m(self) -> Geometry.FloatPoint:
+        return self.stage_position_m - self.GetVal2D("beam_shift_m") + self.__drift_controller.offset_m
 
     @property
     def stage_position_m(self) -> Geometry.FloatPoint:

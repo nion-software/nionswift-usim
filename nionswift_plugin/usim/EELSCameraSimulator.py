@@ -144,7 +144,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
                 # build the spectrum and reference spectrum by adding the features. the data is unscaled.
                 spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), numpy.float)
-                offset_m = self.instrument.stage_position_m - self.instrument.GetVal2D("beam_shift_m")  # get this from current values
+                offset_m = self.instrument.actual_offset_m  # stage position - beam shift + drift
                 feature_layer_count = 0
                 for index, feature in enumerate(self.instrument.sample.features):
                     if feature.intersects(offset_m, scan_context.fov_size_nm, scan_context.center_nm, probe_position):
