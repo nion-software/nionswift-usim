@@ -480,7 +480,7 @@ class Instrument(stem_controller.STEMController):
         c3_range = Variable("C3Range")
         rsq_seconds = Variable("RSquareC2s")
         rsq_thirds = Variable("RSquareC3s")
-        
+
         # dependent controls
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
         # AxisConverter is commonly used to convert between axis without affecting any hardware
@@ -491,7 +491,7 @@ class Instrument(stem_controller.STEMController):
                 c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
                 slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
                 rsq_seconds, rsq_thirds]
-    
+
     def __set_expressions(self):
         self.get_control("RSquareC2s").set_expression("(((C21_a**2+C21_b**2)/1296+(C23_a**2+C23_b**2)/144)/lamb**2)*6.283**2*MaxApertureAngle**6",
                                                       variables={"C21_a": "C21.x", "C21_b": "C21.y",
@@ -543,7 +543,7 @@ class Instrument(stem_controller.STEMController):
 
     def control_changed(self, control: Variable) -> None:
         self.property_changed_event.fire(control.name)
-        
+
     def create_variable(self, name: str, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None) -> Variable:
         return Variable(name, weighted_inputs)
 
@@ -932,3 +932,19 @@ class Instrument(stem_controller.STEMController):
     def change_pmt_gain(self, pmt_type: stem_controller.PMTType, *, factor: float) -> None:
         """Change specified PMT by factor. Do not wait for confirmation."""
         pass
+
+    # This is to test that the display shows messages of failed tilt
+    def handle_tilt_click(self, **kwargs):
+        if hasattr(self, "tilt_failing") and self.tilt_failing:
+            self.tilt_failing = False
+            return stem_controller.ControlState.ERROR
+        self.tilt_failing = True
+        return stem_controller.ControlState.UNKNOWN
+
+    # This is to test that the display shows messages of failed shift
+    def handle_shift_click(self, **kwargs):
+        if hasattr(self, "shift_failing") and self.shift_failing:
+            self.shift_failing = False
+            return stem_controller.ControlState.ERROR
+        self.shift_failing = True
+        return stem_controller.ControlState.UNKNOWN
