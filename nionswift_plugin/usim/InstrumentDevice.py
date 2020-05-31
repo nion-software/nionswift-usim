@@ -925,6 +925,9 @@ class Instrument(stem_controller.STEMController):
             return True
         return False
 
+    def HasValError(self, s: str) -> bool:
+        return False
+
     def change_stage_position(self, *, dy: int=None, dx: int=None):
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
         self.stage_position_m += Geometry.FloatPoint(y=-dy, x=-dx)
