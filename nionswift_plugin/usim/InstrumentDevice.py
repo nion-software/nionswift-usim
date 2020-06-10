@@ -400,7 +400,6 @@ class Instrument(stem_controller.STEMController):
         self.__drift_controller = DriftController()
         self.__slit_in = False
         self.__energy_per_channel_eV = 0.5
-        self.__voltage = 100000
         self.__beam_current = 200E-12  # 200 pA
         self.__blanked = False
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
@@ -455,6 +454,7 @@ class Instrument(stem_controller.STEMController):
         s_voa = Control("S_VOA")
         s_moa = Control("S_MOA")
         convergence_angle = Control("ConvergenceAngle", 0.04)
+        voltage = Control("EHT", 100000)
         c10 = Control("C10", 500 / 1e9)
         c12 = Control2D("C12", ("x", "y"))
         c21 = Control2D("C21", ("x", "y"))
@@ -490,7 +490,7 @@ class Instrument(stem_controller.STEMController):
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
                 c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
                 slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
-                rsq_seconds, rsq_thirds]
+                rsq_seconds, rsq_thirds, voltage]
     
     def __set_expressions(self):
         self.get_control("RSquareC2s").set_expression("(((C21_a**2+C21_b**2)/1296+(C23_a**2+C23_b**2)/144)/lamb**2)*6.283**2*MaxApertureAngle**6",
@@ -724,11 +724,11 @@ class Instrument(stem_controller.STEMController):
 
     @property
     def voltage(self) -> float:
-        return self.__voltage
+        return self.GetVal("EHT")
 
     @voltage.setter
     def voltage(self, value: float) -> None:
-        self.__voltage = value
+        self.SetVal("EHT", value)
         self.property_changed_event.fire("voltage")
 
     @property
@@ -781,8 +781,8 @@ class Instrument(stem_controller.STEMController):
            discuss/review with team members.
         """
         return {
-            "high_tension_v": self.voltage,
-            "defocus_m": self.defocus_m,
+            "high_tension": self.voltage,
+            "defocus": self.defocus_m,
         }
 
     # these are required functions to implement the standard stem controller interface.
