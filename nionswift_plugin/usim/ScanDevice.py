@@ -141,17 +141,18 @@ class Device:
                 # set the probe position
                 h, w = current_frame.scan_data[0].shape
                 # calculate relative position within sub-area
-                ry, rx = current_frame.data_count // w / h, current_frame.data_count % w / w
+                ry, rx = current_frame.data_count // w / h - 0.5, current_frame.data_count % w / w - 0.5
                 # now translate to context
-                # TODO: rotation
                 ss = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size) if frame_parameters.subscan_fractional_size else Geometry.FloatSize(h=1.0, w=1.0)
-                oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint(y=0.5, x=0.5)
+                oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint()
                 oo += Geometry.FloatSize(h=frame_parameters.center_nm[0] / frame_parameters.fov_nm, w=frame_parameters.center_nm[1] / frame_parameters.fov_nm)
-                y = (ry - 0.5) * ss.height + oo.y
-                x = (rx - 0.5) * ss.width + oo.x
+                pt = Geometry.FloatPoint(y=ry * ss.height + oo.y, x=rx * ss.width + oo.x)
+                pt = InstrumentDevice.rotate_point(pt, -frame_parameters.rotation_rad, Geometry.FloatPoint())
+                if frame_parameters.subscan_rotation:
+                    pt = InstrumentDevice.rotate_point(pt, frame_parameters.subscan_rotation, oo)
                 # print(f"{x}, {y} = ({ry} - 0.5) * {ss.height} + {oo.y} / (ry - 0.5) * ss.height + oo.y")
                 # >>> def f(s, c, x): return (x - 0.5) * s + c # |------<---c--->------------|
-                self.__instrument.live_probe_position = Geometry.FloatPoint(y=y, x=x)
+                self.__instrument.live_probe_position = pt + Geometry.FloatPoint(y=0.5, x=0.5)
                 # do a synchronized readout
                 if current_frame.data_count % size.width == 0:
                     # throw away two flyback images at beginning of line

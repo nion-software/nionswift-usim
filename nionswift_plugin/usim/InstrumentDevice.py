@@ -375,6 +375,17 @@ class DriftController:
                                    x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
 
 
+def rotate_point(p: Geometry.FloatPoint, radians: float, origin: Geometry.FloatPoint) -> Geometry.FloatPoint:
+    # note: p and origin are x, y, not normal y, x
+    dx = p.x - origin.x
+    dy = p.y - origin.y
+    cos_rad = math.cos(radians)
+    sin_rad = math.sin(radians)
+    x = origin.x + cos_rad * dx + sin_rad * dy
+    y = origin.y + cos_rad * dy - sin_rad * dx
+    return Geometry.FloatPoint(x=x, y=y)
+
+
 class Instrument(stem_controller.STEMController):
     """
     TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
@@ -654,19 +665,23 @@ class Instrument(stem_controller.STEMController):
         center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
         if frame_parameters.subscan_fractional_center:
             subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center)
-            center_nm += Geometry.FloatPoint(y=(subscan_fractional_center.y - 0.5) * fov_size_nm.height,
-                                             x=(subscan_fractional_center.x - 0.5) * fov_size_nm.width)
+            fc = Geometry.FloatPoint(y=subscan_fractional_center.y - 0.5, x=subscan_fractional_center.x - 0.5)
+            fc = rotate_point(fc, -frame_parameters.rotation_rad, Geometry.FloatPoint())
+            center_nm += Geometry.FloatPoint(y=fc.y * fov_size_nm.height, x=fc.x * fov_size_nm.width)
         extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
         extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])
         used_size = size + Geometry.IntSize(height=extra, width=extra)
         data = numpy.zeros((used_size.height, used_size.width), numpy.float32)
         self.sample.plot_features(data, offset_m, used_fov_size_nm, extra_nm, center_nm, used_size)
         noise_factor = 0.3
-        if frame_parameters.rotation_rad != 0:
+        total_rotation = frame_parameters.rotation_rad
+        if frame_parameters.subscan_rotation:
+            total_rotation -= frame_parameters.subscan_rotation
+        if total_rotation != 0:
             inner_height = size.height / used_size.height
             inner_width = size.width / used_size.width
             inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
-            data = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -frame_parameters.rotation_rad).data
+            data = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -total_rotation).data
             # TODO: data is not always the correct size
         else:
             data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
