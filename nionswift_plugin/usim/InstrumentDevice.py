@@ -375,17 +375,6 @@ class DriftController:
                                    x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
 
 
-def rotate_point(p: Geometry.FloatPoint, radians: float, origin: Geometry.FloatPoint) -> Geometry.FloatPoint:
-    # note: p and origin are x, y, not normal y, x
-    dx = p.x - origin.x
-    dy = p.y - origin.y
-    cos_rad = math.cos(radians)
-    sin_rad = math.sin(radians)
-    x = origin.x + cos_rad * dx + sin_rad * dy
-    y = origin.y + cos_rad * dy - sin_rad * dx
-    return Geometry.FloatPoint(x=x, y=y)
-
-
 class Instrument(stem_controller.STEMController):
     """
     TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
@@ -664,9 +653,8 @@ class Instrument(stem_controller.STEMController):
             used_fov_size_nm = fov_size_nm
         center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
         if frame_parameters.subscan_fractional_center:
-            subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center)
-            fc = Geometry.FloatPoint(y=subscan_fractional_center.y - 0.5, x=subscan_fractional_center.x - 0.5)
-            fc = rotate_point(fc, -frame_parameters.rotation_rad, Geometry.FloatPoint())
+            subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5)
+            fc = subscan_fractional_center.rotate(frame_parameters.rotation_rad)
             center_nm += Geometry.FloatPoint(y=fc.y * fov_size_nm.height, x=fc.x * fov_size_nm.width)
         extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
         extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])

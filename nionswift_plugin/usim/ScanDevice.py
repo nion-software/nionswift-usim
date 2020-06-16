@@ -147,9 +147,9 @@ class Device:
                 oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint()
                 oo += Geometry.FloatSize(h=frame_parameters.center_nm[0] / frame_parameters.fov_nm, w=frame_parameters.center_nm[1] / frame_parameters.fov_nm)
                 pt = Geometry.FloatPoint(y=ry * ss.height + oo.y, x=rx * ss.width + oo.x)
-                pt = InstrumentDevice.rotate_point(pt, -frame_parameters.rotation_rad, Geometry.FloatPoint())
+                pt = pt.rotate(frame_parameters.rotation_rad)
                 if frame_parameters.subscan_rotation:
-                    pt = InstrumentDevice.rotate_point(pt, frame_parameters.subscan_rotation, oo)
+                    pt = pt.rotate(-frame_parameters.subscan_rotation, oo)
                 # print(f"{x}, {y} = ({ry} - 0.5) * {ss.height} + {oo.y} / (ry - 0.5) * ss.height + oo.y")
                 # >>> def f(s, c, x): return (x - 0.5) * s + c # |------<---c--->------------|
                 self.__instrument.live_probe_position = pt + Geometry.FloatPoint(y=0.5, x=0.5)
