@@ -107,7 +107,7 @@ class TestInstrumentDevice(unittest.TestCase):
         # use the flake sample
         instrument.sample_index = 0
         # set up the scan context; these are here temporarily until the scan context architecture is fully implemented
-        instrument._update_scan_context(Geometry.FloatPoint(), Geometry.FloatSize.make((256, 256)), 0.0)
+        instrument._update_scan_context(Geometry.IntSize(256, 256), Geometry.FloatPoint(), 10, 0.0)
         instrument._set_scan_context_probe_position(instrument.scan_context, Geometry.FloatPoint(0.5, 0.5))
         # grab scan data
         instrument.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
@@ -127,7 +127,7 @@ class TestInstrumentDevice(unittest.TestCase):
     def test_eels_data_camera_current_is_consistent(self):
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         # set up the scan context; these are here temporarily until the scan context architecture is fully implemented
-        instrument._update_scan_context(Geometry.FloatPoint(), Geometry.FloatSize.make((256, 256)), 0.0)
+        instrument._update_scan_context(Geometry.IntSize(256, 256), Geometry.FloatPoint(), 10, 0.0)
         instrument._set_scan_context_probe_position(instrument.scan_context, Geometry.FloatPoint(0.5, 0.5))
         # grab scan data
         instrument.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
