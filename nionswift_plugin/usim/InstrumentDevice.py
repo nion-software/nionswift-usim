@@ -670,7 +670,6 @@ class Instrument(stem_controller.STEMController):
             inner_width = size.width / used_size.width
             inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
             data = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -total_rotation).data
-            # TODO: data is not always the correct size
         else:
             data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
         return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us
