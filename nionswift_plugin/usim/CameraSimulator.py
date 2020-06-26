@@ -55,7 +55,7 @@ class CameraSimulator:
         """
         Subclasses must override this method
         """
-        raise NotImplementedError
+        raise NotImplementedError()
 
     def get_total_counts(self, exposure_s: float) -> float:
         beam_current_pa = self.instrument.GetVal("BeamCurrent") * 1E12
