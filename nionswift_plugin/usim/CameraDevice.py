@@ -322,12 +322,12 @@ class Camera(camera_base.CameraDevice):
             self.__start = 0
             return True, True, 0
 
-    def acquire_synchronized_begin(self, camera_frame_parameters: typing.Mapping, scan_shape: typing.Tuple[int, ...]) -> PartialData:
+    def acquire_synchronized_begin(self, camera_frame_parameters: typing.Mapping, scan_shape: typing.Tuple[int, ...], **kwargs) -> PartialData:
         self.__camera_task = Camera.CameraTask(self, camera_frame_parameters, scan_shape)
         self.__camera_task.start()
         return Camera.PartialData(self.__camera_task.xdata, False, False, 0)
 
-    def acquire_synchronized_continue(self, *, update_period: float = 1.0) -> PartialData:
+    def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs) -> PartialData:
         is_complete, is_canceled, valid_rows = self.__camera_task.grab_partial(update_period=update_period)
         return Camera.PartialData(self.__camera_task.xdata, is_complete, is_canceled, valid_rows)
 
