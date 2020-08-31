@@ -1,7 +1,7 @@
 Changelog (nionswift-usim)
 ==========================
 
-0.2.2 (UNRELEASED)
+0.3.0 (2020-08-31)
 ------------------
 - Add support for partial synchronized acquisition.
 - Fix handling of probe position in sub-scans.
