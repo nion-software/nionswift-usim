@@ -475,12 +475,15 @@ class Instrument(stem_controller.STEMController):
         order_1_max_angle = Variable("Order1MaxAngle")
         order_2_max_angle = Variable("Order2MaxAngle")
         order_3_max_angle = Variable("Order3MaxAngle")
+        order_1_patch = Variable("Order1Patch")
+        order_2_patch = Variable("Order2Patch")
+        order_3_patch = Variable("Order3Patch")
         c1_range = Variable("C1Range")
         c2_range = Variable("C2Range")
         c3_range = Variable("C3Range")
         rsq_seconds = Variable("RSquareC2s")
         rsq_thirds = Variable("RSquareC3s")
-        
+
         # dependent controls
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
         # AxisConverter is commonly used to convert between axis without affecting any hardware
@@ -490,8 +493,8 @@ class Instrument(stem_controller.STEMController):
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
                 c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
                 slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
-                rsq_seconds, rsq_thirds, voltage]
-    
+                rsq_seconds, rsq_thirds, voltage, order_1_patch, order_2_patch, order_3_patch]
+
     def __set_expressions(self):
         self.get_control("RSquareC2s").set_expression("(((C21_a**2+C21_b**2)/1296+(C23_a**2+C23_b**2)/144)/lamb**2)*6.283**2*MaxApertureAngle**6",
                                                       variables={"C21_a": "C21.x", "C21_b": "C21.y",
@@ -543,7 +546,7 @@ class Instrument(stem_controller.STEMController):
 
     def control_changed(self, control: Variable) -> None:
         self.property_changed_event.fire(control.name)
-        
+
     def create_variable(self, name: str, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None) -> Variable:
         return Variable(name, weighted_inputs)
 
