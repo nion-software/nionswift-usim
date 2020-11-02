@@ -8,28 +8,14 @@ matrix:
     - python: 3.8
       dist: xenial
       sudo: true
+    - python: 3.9
+      dist: xenial
+      sudo: true
     - python: nightly
       dist: xenial
       sudo: true
-    - name: Python (homebrew)
-      os: osx
-      osx_image: xcode11.3
-      language: shell       # 'language: python' is an error on Travis CI macOS
-      addons:
-        homebrew:
-          update: true
-          packages: python@3.8
-      before_install:
-        - pip3 install virtualenv
-        - virtualenv -p $(brew --prefix)/opt/python@3.8/bin/python3 ~/venv
-        - source ~/venv/bin/activate
-    - name: Python (choco)
-      os: windows
-      language: shell       # 'language: python' is an error on Travis CI Windows
-      before_install:
-        - choco install python3
-      env: PATH=/c/Python38:/c/Python38/Scripts:$PATH
   allow_failures:
+    - python: 3.9
     - python: nightly
 
 branches:
