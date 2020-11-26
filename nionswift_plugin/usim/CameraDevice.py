@@ -108,6 +108,10 @@ class Camera(camera_base.CameraDevice):
         """Return possible binning values."""
         return [1, 2, 4, 8]
 
+    @property
+    def mask_array(self) -> typing.Optional[numpy.ndarray]:
+        return self.__mask_array
+
     def get_expected_dimensions(self, binning: int) -> (int, int):
         """Return expected dimensions for the given binning value."""
         readout_area = self.__readout_area
@@ -118,6 +122,9 @@ class Camera(camera_base.CameraDevice):
         self.__binning = frame_parameters.binning
         self.__processing = frame_parameters.processing
         self.__integration_count = frame_parameters.integration_count
+        if hasattr(frame_parameters, "active_masks"):
+            mask_array = [mask.get_mask_array(self.get_expected_dimensions(self.__binning)) for mask in frame_parameters.active_masks]
+            self.__mask_array = numpy.array(mask_array) if mask_array else None
 
     @property
     def calibration_controls(self) -> dict:
@@ -209,6 +216,9 @@ class Camera(camera_base.CameraDevice):
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
                     data_shape = (n,) + frame_data.shape[1:]
                     data_dtype = frame_data.dtype
+                elif self.__processing == "sum_masked":
+                    data_shape = (n, len(self.__mask_array) if self.__mask_array is not None else 1)
+                    data_dtype = frame_data.dtype
                 else:
                     data_shape = (n,) + frame_data.shape
                     data_dtype = frame_data.dtype
@@ -218,6 +228,11 @@ class Camera(camera_base.CameraDevice):
                 assert data.dtype == data_dtype
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
                     data[index] = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data), 0).data
+                elif self.__processing == "sum_masked":
+                    if self.__mask_array is not None:
+                        data[index] = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data * self.__mask_array), (1, 2)).data
+                    else:
+                        data[index] = numpy.sum(frame_data)
                 else:
                     data[index] = frame_data
                 properties = copy.deepcopy(frame_data_element["properties"])
@@ -290,6 +305,8 @@ class Camera(camera_base.CameraDevice):
             camera_readout_shape = self.__camera_device.get_expected_dimensions(self.__camera_frame_parameters.get("binning", 1))
             if self.__camera_frame_parameters.get("processing") == "sum_project":
                 camera_readout_shape = camera_readout_shape[1:]
+            elif self.__camera_frame_parameters.get("processing") == "sum_masked":
+                camera_readout_shape = (len(self.__camera_device.mask_array) if self.__camera_device.mask_array is not None else 1,)
             self.__data = numpy.zeros(self.__scan_shape + camera_readout_shape, numpy.float32)
             data_descriptor = DataAndMetadata.DataDescriptor(False, len(self.__scan_shape), len(camera_readout_shape))
             self.__xdata = DataAndMetadata.new_data_and_metadata(self.__data, data_descriptor=data_descriptor)
