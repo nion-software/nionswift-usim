@@ -111,7 +111,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         self._last_frame_settings = new_frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
-            data = numpy.zeros(tuple(self._sensor_dimensions), numpy.float)
+            data = numpy.zeros(tuple(self._sensor_dimensions), float)
             slit_attenuation = 10 if self.instrument.is_slit_in else 1
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
@@ -131,19 +131,19 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             if scan_context.is_valid and probe_position is not None:
 
                 # make a buffer for the spectrum
-                spectrum = numpy.zeros((data.shape[1], ), numpy.float)
+                spectrum = numpy.zeros((data.shape[1], ), float)
 
                 # configure a calibration for the reference spectrum. then plot the ZLP on the reference data. sum it to
                 # get the zlp_pixel_count and the zlp_scale. this is the value to multiple zlp data by to scale it so
                 # that it will produce the target pixel count. since we will be storing the spectra in a 2d array,
                 # divide by the height of that array so that when it is summed, the value comes out correctly.
                 zlp0_calibration = Calibration.Calibration(scale=used_calibration.scale, offset=-20)
-                spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), numpy.float)
+                spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), float)
                 plot_norm(spectrum_ref, 1.0, Calibration.Calibration(scale=used_calibration.scale, offset=-20), 0, 0.5 / slit_attenuation)
                 zlp_ref_pixel_count = float(numpy.sum(spectrum_ref))
 
                 # build the spectrum and reference spectrum by adding the features. the data is unscaled.
-                spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), numpy.float)
+                spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), float)
                 offset_m = self.instrument.actual_offset_m  # stage position - beam shift + drift
                 feature_layer_count = 0
                 for index, feature in enumerate(self.instrument.sample.features):

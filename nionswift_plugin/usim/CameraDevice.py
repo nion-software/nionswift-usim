@@ -333,6 +333,7 @@ class Camera(camera_base.CameraDevice):
                 self.__xdata._set_intensity_calibration(xdata.intensity_calibration)
                 self.__xdata._set_dimensional_calibrations(dimensional_calibrations)
                 self.__xdata._set_metadata(metadata)
+                # convert from a sequence to a collection.
                 self.__data[start_row:start_row + rows, ...] = xdata.data.reshape((rows, row_size) + xdata.data.shape[1:])
                 self.__start = start + n
                 return is_complete, False, start_row + rows
