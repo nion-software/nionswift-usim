@@ -15,6 +15,7 @@ build:
 requirements:
   host:
     - python
+    - pip
     - setuptools
   run:
     - python >=3.7
