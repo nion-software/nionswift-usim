@@ -352,6 +352,10 @@ class Camera(camera_base.CameraDevice):
     def acquire_synchronized_end(self) -> None:
         self.__camera_task = None
 
+    @property
+    def _is_acquire_synchronized_running(self) -> bool:
+        return self.__camera_task is not None
+
 
 class CameraFrameParameters(dict):
 
