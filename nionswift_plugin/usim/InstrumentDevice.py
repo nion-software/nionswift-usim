@@ -622,6 +622,8 @@ class Instrument(stem_controller.STEMController):
 
     def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource=None) -> None:
         self._is_synchronized = True
+        self.__camera_frame_event.clear()
+        self.__camera_frame_event_ack.clear()
 
     def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource=None) -> None:
         self._is_synchronized = False
