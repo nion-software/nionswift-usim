@@ -1,15 +1,6 @@
-import contextlib
 import unittest
 
-from nion.swift.model import DocumentModel
-from nion.swift.model import HardwareSource
-from nion.swift import DocumentController
-from nion.instrumentation import camera_base
 from nion.instrumentation.test import CameraControl_test
-from nion.utils import Registry
-from nionswift_plugin.nion_instrumentation_ui import CameraControlPanel
-from nionswift_plugin.usim import CameraDevice
-from nionswift_plugin.usim import InstrumentDevice
 
 
 class TestCamera(CameraControl_test.TestCameraControlClass):
