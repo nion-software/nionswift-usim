@@ -7,7 +7,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
 
     def test_camera_integrate_frames_updates_frame_count_by_integration_count(self):
         with self._test_context() as test_context:
-            hardware_source = test_context.hardware_source
+            hardware_source = test_context.camera_hardware_source
             frame_parameters = hardware_source.get_frame_parameters(0)
             frame_parameters.integration_count = 4
             hardware_source.set_current_frame_parameters(frame_parameters)
@@ -24,7 +24,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
         with self._test_context(is_eels=True) as test_context:
             document_controller = test_context.document_controller
             document_model = test_context.document_model
-            hardware_source = test_context.hardware_source
+            hardware_source = test_context.camera_hardware_source
             frame_parameters = hardware_source.get_frame_parameters(0)
             frame_parameters.binning = 256  # binning to 1d
             hardware_source.set_current_frame_parameters(frame_parameters)

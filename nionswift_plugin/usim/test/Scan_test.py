@@ -8,9 +8,9 @@ class TestSimulatorScan(ScanControl_test.TestScanControlClass):
 
     def test_facade_record_data_with_immediate_close(self):
         with self._test_context() as test_context:
-            hardware_source = test_context.hardware_source
+            scan_hardware_source = test_context.scan_hardware_source
             api = Facade.get_api("~1.0", "~1.0")
-            hardware_source_facade = api.get_hardware_source_by_id(hardware_source.hardware_source_id, "~1.0")
+            hardware_source_facade = api.get_hardware_source_by_id(scan_hardware_source.hardware_source_id, "~1.0")
             scan_frame_parameters = hardware_source_facade.get_frame_parameters_for_profile_by_index(2)
             scan_frame_parameters["external_clock_wait_time_ms"] = 20000 # int(camera_frame_parameters["exposure_ms"] * 1.5)
             scan_frame_parameters["external_clock_mode"] = 1
