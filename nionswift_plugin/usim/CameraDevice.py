@@ -415,7 +415,7 @@ class CameraSettings:
         ]
 
         self.__current_settings_index = 0
-
+        self.__masks = []
         self.__frame_parameters = copy.deepcopy(self.__settings[self.__current_settings_index])
         self.__record_parameters = copy.deepcopy(self.__settings[-1])
 
@@ -424,6 +424,10 @@ class CameraSettings:
 
     def initialize(self, **kwargs):
         pass
+
+    @property
+    def masks(self):
+        return self.__masks
 
     def apply_settings(self, settings_dict: typing.Dict) -> None:
         """Initialize the settings with the settings_dict."""
