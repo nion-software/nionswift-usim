@@ -296,10 +296,12 @@ class AxisManager(metaclass=Utility.Singleton):
     """
 
     def __init__(self):
-        self.__supported_axis_names = [('a', 'b'), ('x', 'y'), ('u', 'v'), ('mx', 'my'), ('px', 'py'), ('sx', 'sy'), ('sa', 'sb')]
+        self.__supported_axis_names: typing.List[stem_controller.AxisType] = [('a', 'b'), ('x', 'y'), ('u', 'v'),
+                                                                              ('mx', 'my'), ('px', 'py'), ('sx', 'sy'),
+                                                                              ('sa', 'sb')]
 
     @property
-    def supported_axis_names(self):
+    def supported_axis_names(self) -> typing.Sequence[stem_controller.AxisType]:
         return self.__supported_axis_names.copy()
 
     def convert_vector(self, vector: typing.Tuple[float, float], from_axis: stem_controller.AxisType, to_axis: stem_controller.AxisType) -> typing.Tuple[float, float]:
@@ -934,6 +936,12 @@ class Instrument(stem_controller.STEMController):
 
     def HasValError(self, s: str) -> bool:
         return False
+
+    @property
+    def axis_descriptions(self) -> typing.Sequence[stem_controller.AxisDescription]:
+        return list(stem_controller.AxisDescription("_".join(axis_type).lower(), axis_type[0], axis_type[1],
+                                                    ", ".join(axis_type)) for axis_type in
+                    AxisManager().supported_axis_names)
 
     def change_stage_position(self, *, dy: int=None, dx: int=None):
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
