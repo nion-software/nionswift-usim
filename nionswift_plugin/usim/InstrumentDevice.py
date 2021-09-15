@@ -16,11 +16,11 @@ import re
 
 from nion.data import Core
 from nion.data import DataAndMetadata
+from nion.instrumentation import HardwareSource
+from nion.instrumentation import stem_controller
+from nion.swift.model import Utility
 from nion.utils import Event
 from nion.utils import Geometry
-from nion.swift.model import HardwareSource
-from nion.swift.model import Utility
-from nion.instrumentation import stem_controller
 
 from . import CameraSimulator
 from . import EELSCameraSimulator
