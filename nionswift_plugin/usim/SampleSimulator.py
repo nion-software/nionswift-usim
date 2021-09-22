@@ -82,7 +82,7 @@ class Sample(abc.ABC):
     def plot_features(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None: ...
 
 
-class RectangleFlakeSample:
+class RectangleFlakeSample(Sample):
 
     def __init__(self, stage_size_nm: float):
         self.__features = list()

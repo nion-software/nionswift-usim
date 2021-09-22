@@ -1,14 +1,14 @@
-# standard libraries
 import numpy
+import typing
 
+from nion.data import Calibration
 from nion.data import DataAndMetadata
-
 from nion.utils import Geometry
 
 
 class CameraSimulator:
 
-    depends_on = list() # subclasses should define the controls and attributes they depend on here
+    depends_on: typing.List[str] = list() # subclasses should define the controls and attributes they depend on here
 
     def __init__(self, instrument, camera_type: str, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
         self.__instrument = instrument
@@ -45,11 +45,11 @@ class CameraSimulator:
     def instrument(self):
         return self.__instrument
 
-    def get_dimensional_calibrations(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
+    def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
         """
         Subclasses should override this method
         """
-        return [{}, {}]
+        return [Calibration.Calibration(), Calibration.Calibration()]
 
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, probe_position) -> DataAndMetadata.DataAndMetadata:
         """

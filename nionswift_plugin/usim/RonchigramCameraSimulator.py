@@ -24,7 +24,7 @@ class AberrationsController:
     """
     coefficient_names = (
         "c0a", "c0b", "c10", "c12a", "c12b", "c21a", "c21b", "c23a", "c23b", "c30", "c32a", "c32b", "c34a", "c34b",
-        "c41a", "c41b", "c43a", "c43b" , "c45a", "c45b", "c50", "c52a", "c52b", "c54a", "c54b", "c56a", "c56b", "c70"
+        "c41a", "c41b", "c43a", "c43b", "c45a", "c45b", "c50", "c52a", "c52b", "c54a", "c54b", "c56a", "c56b", "c70"
     )
 
     def __init__(self, height, width, theta, max_defocus, defocus):
@@ -40,9 +40,6 @@ class AberrationsController:
         self.__c = None
 
     def apply(self, aberrations, data):
-        import time
-        t0 = time.perf_counter()
-
         height = aberrations["height"]
         width = aberrations["width"]
         theta = aberrations["theta"]
@@ -198,7 +195,7 @@ class AberrationsController:
         if self.__c is None and self.__chi is not None:
             # print("recalculating grad chi")
             grad_chi = numpy.gradient(self.__chi)
-            max_chi0 = self.__max_defocus * theta  * theta
+            max_chi0 = self.__max_defocus * theta * theta
             max_chi1 = self.__max_defocus * theta * theta * ((1 - 1 / width) * (1 - 1 / width) + (1 - 1 / height) * (1 - 1 / height)) / 2
             max_chi = max_chi0 - max_chi1
             scale_y = height / 2 / max_chi
@@ -209,11 +206,7 @@ class AberrationsController:
 
         if self.__c is not None:
             # scale the offsets so that at max defocus, the coordinates cover the entire area of data.
-            t1 = time.perf_counter()
-            r = scipy.ndimage.interpolation.map_coordinates(data, self.__c)
-            t2 = time.perf_counter()
-            # print(f"elapsed {t1 - t0} {t2 - t1}")
-            return r
+            return scipy.ndimage.interpolation.map_coordinates(data, self.__c)
 
         return numpy.zeros((height, width))
 
@@ -242,8 +235,7 @@ def ellipse_radius(polar_angle: typing.Union[float, numpy.ndarray], a: float, b:
     return a*b/numpy.sqrt((b*numpy.cos(polar_angle+rotation))**2+(a*numpy.sin(polar_angle+rotation))**2)
 
 
-def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float, float, float], *,
-                 color: typing.Any=1.0) -> None:
+def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float, float, float], *, color: typing.Any = 1.0) -> None:
     """
     Draws an ellipse on a 2D-array.
 
@@ -268,18 +260,18 @@ def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float
     """
     shape = image.shape
     assert len(shape) == 2, 'Can only draw an ellipse on a 2D-array.'
-    #coords = np.mgrid[-shape[0]/2:shape[0]/2:shape[0]*1j, -shape[1]/2:shape[1]/2:shape[1]*1j]
+    # coords = np.mgrid[-shape[0]/2:shape[0]/2:shape[0]*1j, -shape[1]/2:shape[1]/2:shape[1]*1j]
     top = max(int(ellipse[0] - ellipse[2]), 0)
     left = max(int(ellipse[1] - ellipse[2]), 0)
     bottom = min(int(ellipse[0] + ellipse[2]) + 1, shape[0])
     right = min(int(ellipse[1] + ellipse[2]) + 1, shape[1])
-    coords = numpy.mgrid[top-ellipse[0]:bottom-ellipse[0], left-ellipse[1]:right-ellipse[1]]
-    #coords[0] -= ellipse[0]
-    #coords[1] -= ellipse[1]
+    coords = numpy.mgrid[top - int(ellipse[0]):bottom - int(ellipse[0]), left - int(ellipse[1]):right - int(ellipse[1])]
+    # coords[0] -= ellipse[0]
+    # coords[1] -= ellipse[1]
     radii = numpy.sqrt(numpy.sum(coords**2, axis=0))
     polar_angles = numpy.arctan2(coords[0], coords[1])
     ellipse_radii = ellipse_radius(polar_angles, *ellipse[2:])
-    image[top:bottom, left:right][radii<ellipse_radii] = color
+    image[top:bottom, left:right][radii < ellipse_radii] = color
 
 
 class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
@@ -290,27 +282,27 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
     def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float):
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
         self.__last_sample = None
-        self.__cached_frame = None
+        self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         max_defocus = instrument.max_defocus
         tv_pixel_angle = math.asin(instrument.stage_size_nm / (max_defocus * 1E9)) / ronchigram_shape.height
         self.__tv_pixel_angle = tv_pixel_angle
         self.__stage_size_nm = stage_size_nm
         self.__max_defocus = max_defocus
         self.__data_scale = 1.0
-        self.__aperture_ellipse = None
+        self.__aperture_ellipse: typing.Optional[typing.Tuple[float, float, float, float, float]] = None
         self.__aperture_mask = None
         theta = tv_pixel_angle * ronchigram_shape.height / 2  # half angle on camera
         defocus_m = instrument.defocus_m
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
         self.noise = Noise.PoissonNoise()
 
-    def _draw_aperture(self, frame_data: numpy.ndarray, binning_shape: Geometry.IntSize, enlarge_by: float=0.0):
+    def _draw_aperture(self, frame_data: numpy.ndarray, binning_shape: Geometry.IntSize, enlarge_by: float = 0.0) -> None:
         # TODO handle asymmetric binning
         binning = binning_shape[0]
         position = self.instrument.GetVal2D("CAperture")
         aperture_round = self.instrument.GetVal2D("ApertureRound")
         shape = frame_data.shape
-        ellipse_center = 0.5*shape[0] + position.y / self.__tv_pixel_angle / binning, 0.5*shape[1] + position.x / self.__tv_pixel_angle / binning
+        ellipse_center = 0.5 * shape[0] + position.y / self.__tv_pixel_angle / binning, 0.5 * shape[1] + position.x / self.__tv_pixel_angle / binning
         excentricity = math.sqrt(aperture_round[0]**2 + aperture_round[1]**2)
         # adapt excentricity so that control behaves linearly and is defined for all values
         # this is the modified inverse function of the calculation of the major half-axis a
@@ -336,13 +328,15 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         self._last_frame_settings = new_frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
-            #print("recalculating frame")
+            # print("recalculating frame")
             height = readout_area.height
             width = readout_area.width
             offset_m = self.instrument.stage_position_m
             full_fov_nm = self.__stage_size_nm
             fov_size_nm = Geometry.FloatSize(full_fov_nm * height / self._sensor_dimensions.height, full_fov_nm * width / self._sensor_dimensions.width)
-            center_nm = Geometry.FloatPoint(full_fov_nm * (readout_area.center.y / self._sensor_dimensions.height- 0.5), full_fov_nm * (readout_area.center.x / self._sensor_dimensions.width - 0.5))
+            center_nm = Geometry.FloatPoint(
+                full_fov_nm * (readout_area.center.y / self._sensor_dimensions.height - 0.5),
+                full_fov_nm * (readout_area.center.x / self._sensor_dimensions.width - 0.5))
             size = Geometry.IntSize(height, width)
             data = numpy.zeros((height, width), numpy.float32)
             # features will be positive values; thickness can be simulated by subtracting the features from the
@@ -401,9 +395,10 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             self._needs_recalculation = False
 
         self.noise.poisson_level = self.__data_scale
+        assert self.__cached_frame
         return self.noise.apply(self.__cached_frame * self.__data_scale)
 
-    def get_dimensional_calibrations(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
+    def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
         height = readout_area.height if readout_area else self._sensor_dimensions[0]
         width = readout_area.width if readout_area else self._sensor_dimensions[1]
         scale_y = self.__tv_pixel_angle

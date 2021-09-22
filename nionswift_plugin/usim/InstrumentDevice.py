@@ -76,30 +76,32 @@ show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])) * scip
 # show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])))
 """
 
+WeightedInput = typing.Tuple["Variable", typing.Union[float, "Variable"]]
+
+
 class Variable:
     """
     Variables evalute an expression plus a sum of input values.
 
     """
 
-    def __init__(self, name: str,
-                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Variable", typing.Union[float, typing.Callable]]]] = None):
+    def __init__(self, name: str, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None):
         self.name = name
         self.weighted_inputs = weighted_inputs if weighted_inputs else list()
-        self.__variables = dict()
-        self.__expression = None
-        self.dependents = list()
+        self.__variables: typing.Dict[str, typing.Any] = dict()
+        self.__expression: typing.Optional[str] = None
+        self.dependents: typing.List[Variable] = list()
         for input, _ in self.weighted_inputs:
             input.add_dependent(self)
-        self.__last_output_value = None
-        self.on_changed = None
+        self.__last_output_value: typing.Optional[float] = None
+        self.on_changed: typing.Optional[typing.Callable[[Variable], None]] = None
 
     def __str__(self):
         return "{}: {}".format(self.name, self.output_value)
 
     @property
     def weighted_input_value(self) -> float:
-        weighted_input = 0
+        weighted_input = 0.0
         for input_, weight in self.weighted_inputs:
             if isinstance(weight, Variable):
                 weighted_input += weight.output_value * input_.output_value
@@ -115,13 +117,14 @@ class Variable:
         return self.weighted_input_value
 
     @property
-    def variables(self) -> dict:
+    def variables(self) -> typing.Mapping[str, typing.Any]:
         return self.__variables
 
-    def get_expression(self) -> str:
+    def get_expression(self) -> typing.Optional[str]:
         return self.__expression
 
-    def set_expression(self, expression: str, variables: typing.Optional[dict]=None, instrument: typing.Optional["Instrument"]=None) -> None:
+    def set_expression(self, expression: str, variables: typing.Optional[typing.Mapping[str, typing.Any]] = None,
+                       instrument: typing.Optional["Instrument"] = None) -> None:
         if variables is not None:
             resolved_variables = dict()
             for key, value in variables.items():
@@ -134,7 +137,7 @@ class Variable:
                 if isinstance(value, Control2D):
                     raise TypeError("2D controls cannot be used in expressions")
                 if isinstance(value, Variable):
-                    if value  == self:
+                    if value == self:
                         raise ValueError("An expression cannot include the control it is attached to.")
                     value.add_dependent(self)
                 resolved_variables[key] = value
@@ -150,7 +153,7 @@ class Variable:
             variables[key] = value
         try:
             res = eval(self.__expression, globals(), variables)
-        except:
+        except Exception:
             import traceback
             traceback.print_exc()
             return 0
@@ -184,6 +187,13 @@ class Variable:
             for dependent in self.dependents:
                 dependent._notify_change()
 
+    def set_output_value(self, value: float) -> None:
+        raise NotImplementedError()
+
+    def inform_output_value(self, value: float) -> None:
+        raise NotImplementedError()
+
+
 class Control(Variable):
     """
     Controls keep an output value equal to the weight sum of input values plus a local value.
@@ -193,8 +203,7 @@ class Control(Variable):
     TODO: add hysteresis
     """
 
-    def __init__(self, name: str, local_value: float = 0.0,
-                 weighted_inputs: typing.Optional[typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]]] = None):
+    def __init__(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None):
         super().__init__(name, weighted_inputs)
         self.local_value = float(local_value)
 
@@ -270,8 +279,8 @@ class ConvertedControl:
     def set_local_value(self, value: float) -> None:
         value_2d = [self.__local_value_2d[0], self.__local_value_2d[1]]
         value_2d[self.__index] = value
-        value_2d = (value_2d[0], value_2d[1])  # doing it this way keeps the type checker happy
-        value_2d_native = AxisManager().convert_vector(value_2d, self.__axis, self.__control_2d.native_axis)
+        value_2d_tuple = (value_2d[0], value_2d[1])
+        value_2d_native = AxisManager().convert_vector(value_2d_tuple, self.__axis, self.__control_2d.native_axis)
         self.__control_2d.controls[0].set_local_value(value_2d_native[0])
         self.__control_2d.controls[1].set_local_value(value_2d_native[1])
 
@@ -281,8 +290,8 @@ class ConvertedControl:
     def inform_output_value(self, value: float) -> None:
         value_2d = list(self.__output_value_2d)
         value_2d[self.__index] = value
-        value_2d = (value_2d[0], value_2d[1])  # doing it this way keeps the type checker happy
-        value_2d_native = AxisManager().convert_vector(value_2d, self.__axis, self.__control_2d.native_axis)
+        value_2d_tuple = (value_2d[0], value_2d[1])  # doing it this way keeps the type checker happy
+        value_2d_native = AxisManager().convert_vector(value_2d_tuple, self.__axis, self.__control_2d.native_axis)
         self.__control_2d.controls[0].inform_output_value(value_2d_native[0])
         self.__control_2d.controls[1].inform_output_value(value_2d_native[1])
 
@@ -321,16 +330,13 @@ class Control2D:
                  name: str,
                  native_axis: stem_controller.AxisType,
                  local_values: typing.Tuple[float, float] = (0.0, 0.0),
-                 weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]],
-                                                               typing.List[typing.Tuple["Control", typing.Union[float, typing.Callable]]]]] = None):
+                 weighted_inputs: typing.Optional[typing.Tuple[typing.List[WeightedInput], typing.List[WeightedInput]]] = None):
         self.name = name
         self.native_axis = native_axis
-        if weighted_inputs is None:
-            weighted_inputs = (None, None)
         # give both 'sub-controls' the same name so that the 'property_changed_event' will be fired with the name of
         # the 'parent' 2d-control
-        control_b = Control(name, local_value=local_values[1], weighted_inputs=weighted_inputs[1])
-        control_a = Control(name, local_value=local_values[0], weighted_inputs=weighted_inputs[0])
+        control_b = Control(name, local_value=local_values[1], weighted_inputs=weighted_inputs[1] if weighted_inputs else None)
+        control_a = Control(name, local_value=local_values[0], weighted_inputs=weighted_inputs[0] if weighted_inputs else None)
 
         self.__controls = (control_a, control_b)
 
@@ -407,12 +413,12 @@ class Instrument(stem_controller.STEMController):
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
         self.__eels_shape = Geometry.IntSize(256, 1024)
         self.__scan_context = stem_controller.ScanContext()
-        self.__probe_position = None
-        self.__live_probe_position = None
+        self.__probe_position: typing.Optional[Geometry.FloatPoint] = None
+        self.__live_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__sequence_progress = 0
         self._is_synchronized = False
         self.__lock = threading.Lock()
-        self.__controls = dict()
+        self.__controls: typing.Dict[str, typing.Union[Control2D, Variable]] = dict()
 
         built_in_controls = self.__create_built_in_controls()
         for control in built_in_controls:
@@ -430,7 +436,7 @@ class Instrument(stem_controller.STEMController):
             camera.close()
         self.__cameras = dict()
 
-    def _get_camera_simulator(self, camera_id: str) -> CameraSimulator:
+    def _get_camera_simulator(self, camera_id: str) -> CameraSimulator.CameraSimulator:
         return self.__cameras[camera_id]
 
     def __create_built_in_controls(self) -> typing.List[typing.Union[Variable, Control2D]]:
@@ -439,7 +445,7 @@ class Instrument(stem_controller.STEMController):
         stage_position_m = Control2D("stage_position_m", ("x", "y"))
         beam_current = Control("BeamCurrent", 200e-12)
         # monochromator controls
-        mc_exists = Control("S_MC_InsideColumn", local_value=1) # Used by tuning to check if scope has a monochromator
+        mc_exists = Control("S_MC_InsideColumn", local_value=1)  # Used by tuning to check if scope has a monochromator
         slit_tilt = Control2D("SlitTilt", ("x", "y"))
         slit_C10 = Control("Slit_C10")
         slit_C12 = Control2D("Slit_C12", ("x", "y"))
@@ -530,11 +536,11 @@ class Instrument(stem_controller.STEMController):
         self.__sample_index = value
 
     @property
-    def live_probe_position(self):
+    def live_probe_position(self) -> typing.Optional[Geometry.FloatPoint]:
         return self.__live_probe_position
 
     @live_probe_position.setter
-    def live_probe_position(self, position):
+    def live_probe_position(self, position: typing.Optional[Geometry.FloatPoint]) -> None:
         self.__live_probe_position = position
         self.property_changed_event.fire("live_probe_position")
 
@@ -549,13 +555,13 @@ class Instrument(stem_controller.STEMController):
     def control_changed(self, control: Variable) -> None:
         self.property_changed_event.fire(control.name)
 
-    def create_variable(self, name: str, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None) -> Variable:
+    def create_variable(self, name: str, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None) -> Variable:
         return Variable(name, weighted_inputs)
 
-    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[typing.Tuple[Control, typing.Union[float, Control]]]] = None) -> Control:
+    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None) -> Control:
         return Control(name, local_value, weighted_inputs)
 
-    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[typing.Tuple[Control, typing.Union[float, Control]]], typing.List[typing.Tuple[Control, typing.Union[float, Control]]]]] = None):
+    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[WeightedInput], typing.List[WeightedInput]]] = None):
         return Control2D(name, native_axis, local_values, weighted_inputs)
 
     def add_control(self, control: typing.Union[Variable, Control2D]) -> None:
@@ -578,8 +584,7 @@ class Instrument(stem_controller.STEMController):
             control = self.__controls.get(control_name)
         return control
 
-    def add_control_inputs(self, control_name: str,
-                           weighted_inputs: typing.List[typing.Tuple[Variable, typing.Union[float, typing.Callable]]]) -> None:
+    def add_control_inputs(self, control_name: str, weighted_inputs: typing.List[WeightedInput]) -> None:
         control = self.get_control(control_name)
         assert isinstance(control, Variable)
         for input, weight in weighted_inputs:
@@ -622,12 +627,12 @@ class Instrument(stem_controller.STEMController):
         with self.__lock:
             self.__sequence_progress += 1
 
-    def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource=None) -> None:
+    def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource = None) -> None:
         self._is_synchronized = True
         self.__camera_frame_event.clear()
         self.__camera_frame_event_ack.clear()
 
-    def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource=None) -> None:
+    def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource = None) -> None:
         self._is_synchronized = False
 
     def wait_for_camera_ack(self, cancel_event: threading.Event) -> None:
@@ -676,7 +681,11 @@ class Instrument(stem_controller.STEMController):
             inner_height = size.height / used_size.height
             inner_width = size.width / used_size.width
             inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
-            data = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -total_rotation).data
+            rotated_xdata = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -total_rotation)
+            assert rotated_xdata
+            rotated_data = rotated_xdata.data
+            assert rotated_data is not None
+            data = rotated_data
         else:
             data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
         return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us
@@ -764,7 +773,9 @@ class Instrument(stem_controller.STEMController):
 
     @energy_offset_eV.setter
     def energy_offset_eV(self, value: float) -> None:
-        self.__controls["ZLPoffset"].set_output_value(value)
+        control = self.__controls["ZLPoffset"]
+        assert isinstance(control, Control)
+        control.set_output_value(value)
         # TODO: this should be fired whenever ZLPoffset changes; not just when this method is called.
         self.property_changed_event.fire("energy_offset_eV")
 
@@ -796,7 +807,7 @@ class Instrument(stem_controller.STEMController):
 
     # these are required functions to implement the standard stem controller interface.
 
-    def __resolve_control_name(self, s: str, set_val: typing.Optional[float]=None) -> typing.Tuple[bool, typing.Optional[float]]:
+    def __resolve_control_name(self, s: str, set_val: typing.Optional[float] = None) -> typing.Tuple[bool, typing.Optional[float]]:
         if "->" in s:
             input_name, control_name = s.split("->")
             if set_val is not None:
@@ -823,9 +834,9 @@ class Instrument(stem_controller.STEMController):
                     return True, control.output_value
             return False, None
 
-    def TryGetVal(self, s: str) -> (bool, float):
+    def TryGetVal(self, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
 
-        def parse_camera_values(p: str, s: str) -> (bool, float):
+        def parse_camera_values(p: str, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
             if s == "y_offset":
                 return True, self.get_camera_dimensional_calibrations(p)[0].offset
             elif s == "x_offset":
@@ -841,7 +852,7 @@ class Instrument(stem_controller.STEMController):
         elif s == "C_Blank":
             return True, 1.0 if self.is_blanked else 0.0
         # This handles the target values for all aberration coefficients up to 5th order (needed for tuning)
-        elif re.match("(\^C[1-5][0-6])(\.[auxbvy]|$)$", s):
+        elif re.match("(\\^C[1-5][0-6])(\\.[auxbvy]|$)$", s):
             return True, 0.0
         elif s.startswith("ronchigram_"):
             return parse_camera_values("ronchigram", s[len("ronchigram_"):])
@@ -850,9 +861,9 @@ class Instrument(stem_controller.STEMController):
         else:
             return self.__resolve_control_name(s)
 
-    def GetVal(self, s: str, default_value: float=None) -> float:
+    def GetVal(self, s: str, default_value: float = None) -> float:
         good, d = self.TryGetVal(s)
-        if not good:
+        if not good or d is None:
             if default_value is None:
                 raise Exception(f"No element named '{s}' exists! Cannot get value.")
             else:
@@ -884,11 +895,11 @@ class Instrument(stem_controller.STEMController):
     def InformControl(self, s: str, val: float) -> bool:
         if "." in s:
             split_s = s.split('.')
-            control = self.get_control(split_s[0]) # get the 2d control
+            control = self.get_control(split_s[0])  # get the 2d control
             if control is not None:
-                axis = getattr(control, split_s[1], None) # get the control that holds the value for the right axis
+                axis = getattr(control, split_s[1], None)  # get the control that holds the value for the right axis
                 if axis is not None:
-                    axis.inform_output_value(val) # inform the actual value
+                    axis.inform_output_value(val)  # inform the actual value
                     return True
         else:
             control = self.get_control(s)
@@ -897,7 +908,7 @@ class Instrument(stem_controller.STEMController):
                 return True
         return self.SetVal(s, val)
 
-    def GetVal2D(self, s: str, default_value: Geometry.FloatPoint=None, *, axis: stem_controller.AxisType=None) -> Geometry.FloatPoint:
+    def GetVal2D(self, s: str, default_value: Geometry.FloatPoint = None, *, axis: stem_controller.AxisType = None) -> Geometry.FloatPoint:
         control = self.__controls.get(s)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis
@@ -907,7 +918,7 @@ class Instrument(stem_controller.STEMController):
         else:
             return default_value
 
-    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType=None) -> bool:
+    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType = None) -> bool:
         control = self.__controls.get(s)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis
@@ -951,8 +962,10 @@ class Instrument(stem_controller.STEMController):
             raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
         return 0
 
-    def change_stage_position(self, *, dy: int=None, dx: int=None):
+    def change_stage_position(self, *, dy: int = None, dx: int = None) -> None:
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
+        dx = dx or 0
+        dy = dy or 0
         self.stage_position_m += Geometry.FloatPoint(y=-dy, x=-dx)
 
     def change_pmt_gain(self, pmt_type: stem_controller.PMTType, *, factor: float) -> None:

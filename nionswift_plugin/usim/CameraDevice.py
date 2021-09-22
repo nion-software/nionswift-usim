@@ -31,6 +31,7 @@ class Camera(camera_base.CameraDevice):
         self.camera_id = camera_id
         self.camera_type = camera_type
         self.camera_name = camera_name
+        self.__camera_task: typing.Optional[Camera.CameraTask] = None
         self.__instrument = instrument
         self.__sensor_dimensions = instrument.camera_sensor_dimensions(camera_type)
         self.__readout_area = instrument.camera_readout_area(camera_type)
@@ -79,27 +80,27 @@ class Camera(camera_base.CameraDevice):
         threading.Thread(target=t).start()
 
     @property
-    def sensor_dimensions(self) -> (int, int):
+    def sensor_dimensions(self) -> typing.Tuple[int, int]:
         """Return the maximum sensor dimensions."""
         return self.__sensor_dimensions
 
     @property
-    def readout_area(self) -> (int, int, int, int):
+    def readout_area(self) -> typing.Tuple[int, int, int, int]:
         """Return the readout area TLBR, returned in sensor coordinates (unbinned)."""
         return self.__readout_area
 
     @readout_area.setter
-    def readout_area(self, readout_area_TLBR: (int, int, int, int)) -> None:
+    def readout_area(self, readout_area_TLBR: typing.Tuple[int, int, int, int]) -> None:
         """Set the readout area, specified in sensor coordinates (unbinned). Affects all modes."""
         self.__readout_area = readout_area_TLBR
 
     @property
-    def flip(self):
+    def flip(self) -> bool:
         """Return whether data is flipped left-right (last dimension)."""
         return False
 
     @flip.setter
-    def flip(self, do_flip):
+    def flip(self, do_flip: bool) -> None:
         """Set whether data is flipped left-right (last dimension). Affects all modes."""
         pass
 
@@ -112,12 +113,12 @@ class Camera(camera_base.CameraDevice):
     def mask_array(self) -> typing.Optional[numpy.ndarray]:
         return self.__mask_array
 
-    def get_expected_dimensions(self, binning: int) -> (int, int):
+    def get_expected_dimensions(self, binning: int) -> typing.Tuple[int, int]:
         """Return expected dimensions for the given binning value."""
         readout_area = self.__readout_area
         return (readout_area[2] - readout_area[0]) // binning, (readout_area[3] - readout_area[1]) // binning
 
-    def set_frame_parameters(self, frame_parameters) -> None:
+    def set_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
         self.__exposure = frame_parameters.exposure_ms / 1000
         self.__binning = frame_parameters.binning
         self.__processing = frame_parameters.processing
@@ -182,6 +183,7 @@ class Camera(camera_base.CameraDevice):
         # note: the data element will include spatial calibrations; but the camera adapter won't use them
         # right now (future fix); it uses a call to 'calibrations' instead.
         # whatever is in "hardware_source" will go into "properties" of data element
+        assert xdata_buffer
         assert len(xdata_buffer.dimensional_shape) == 2
         data_element = dict()
         data_element["version"] = 1
@@ -227,10 +229,18 @@ class Camera(camera_base.CameraDevice):
                 assert data.shape == data_shape
                 assert data.dtype == data_dtype
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
-                    data[index] = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data), 0).data
+                    summed_xdata = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data), 0)
+                    assert summed_xdata
+                    summed_data = summed_xdata.data
+                    assert summed_data is not None
+                    data[index] = summed_data
                 elif self.__processing == "sum_masked":
                     if self.__mask_array is not None:
-                        data[index] = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data * self.__mask_array), (1, 2)).data
+                        summed_xdata = Core.function_sum(DataAndMetadata.new_data_and_metadata(frame_data * self.__mask_array), (1, 2))
+                        assert summed_xdata
+                        summed_data = summed_xdata.data
+                        assert summed_data is not None
+                        data[index] = summed_data
                     else:
                         data[index] = numpy.sum(frame_data)
                 else:
@@ -283,8 +293,6 @@ class Camera(camera_base.CameraDevice):
                     self.__has_data_event.clear()
                     self.__thread_event.clear()
 
-    PartialData = camera_base.CameraHardwareSource.PartialData
-
     class CameraTask:
         def __init__(self, camera_device: "Camera", camera_frame_parameters, scan_shape: typing.Tuple[int, ...]):
             self.__camera_device = camera_device
@@ -292,8 +300,8 @@ class Camera(camera_base.CameraDevice):
             self.__scan_shape = scan_shape
             self.__scan_count = int(numpy.product(self.__scan_shape))
             self.__aborted = False
-            self.__data = None
-            self.__xdata = None
+            self.__data: typing.Optional[numpy.ndarray] = None
+            self.__xdata: typing.Optional[DataAndMetadata.DataAndMetadata] = None
             self.__start = 0
 
         @property
@@ -302,7 +310,7 @@ class Camera(camera_base.CameraDevice):
 
         def start(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
             # returns the full scan readout, including flyback pixels
-            camera_readout_shape = self.__camera_device.get_expected_dimensions(self.__camera_frame_parameters.get("binning", 1))
+            camera_readout_shape: typing.Tuple[int, ...] = self.__camera_device.get_expected_dimensions(self.__camera_frame_parameters.get("binning", 1))
             if self.__camera_frame_parameters.get("processing") == "sum_project":
                 camera_readout_shape = camera_readout_shape[1:]
             elif self.__camera_frame_parameters.get("processing") == "sum_masked":
@@ -328,26 +336,29 @@ class Camera(camera_base.CameraDevice):
                 start_row = start // row_size
                 rows = n // row_size
                 dimensional_calibrations = tuple(Calibration.Calibration() for _ in range(len(self.__scan_shape))) + tuple(xdata.dimensional_calibrations[1:])
-                metadata = xdata.metadata
+                metadata = dict(xdata.metadata)
                 metadata.setdefault("hardware_source", dict())["valid_rows"] = start_row + rows
+                assert self.__xdata
                 self.__xdata._set_intensity_calibration(xdata.intensity_calibration)
                 self.__xdata._set_dimensional_calibrations(dimensional_calibrations)
                 self.__xdata._set_metadata(metadata)
                 # convert from a sequence to a collection.
+                assert self.__data is not None
                 self.__data[start_row:start_row + rows, ...] = xdata.data.reshape((rows, row_size) + xdata.data.shape[1:])
                 self.__start = start + n
                 return is_complete, False, start_row + rows
             self.__start = 0
             return True, True, 0
 
-    def acquire_synchronized_begin(self, camera_frame_parameters: typing.Mapping, scan_shape: typing.Tuple[int, ...], **kwargs) -> PartialData:
+    def acquire_synchronized_begin(self, camera_frame_parameters: typing.Mapping, scan_shape: typing.Tuple[int, ...], **kwargs) -> camera_base.CameraHardwareSource.PartialData:
         self.__camera_task = Camera.CameraTask(self, camera_frame_parameters, scan_shape)
         self.__camera_task.start()
-        return Camera.PartialData(self.__camera_task.xdata, False, False, 0)
+        return camera_base.CameraHardwareSource.PartialData(self.__camera_task.xdata, False, False, 0)
 
-    def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs) -> PartialData:
+    def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs) -> camera_base.CameraHardwareSource.PartialData:
+        assert self.__camera_task
         is_complete, is_canceled, valid_rows = self.__camera_task.grab_partial(update_period=update_period)
-        return Camera.PartialData(self.__camera_task.xdata, is_complete, is_canceled, valid_rows)
+        return camera_base.CameraHardwareSource.PartialData(self.__camera_task.xdata, is_complete, is_canceled, valid_rows)
 
     def acquire_synchronized_end(self) -> None:
         self.__camera_task = None
@@ -415,7 +426,7 @@ class CameraSettings:
         ]
 
         self.__current_settings_index = 0
-        self.__masks = []
+        self.__masks: typing.List = []
         self.__frame_parameters = copy.deepcopy(self.__settings[self.__current_settings_index])
         self.__record_parameters = copy.deepcopy(self.__settings[-1])
 
@@ -426,7 +437,7 @@ class CameraSettings:
         pass
 
     @property
-    def masks(self):
+    def masks(self) -> typing.List:
         return self.__masks
 
     def apply_settings(self, settings_dict: typing.Dict) -> None:
