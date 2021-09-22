@@ -425,6 +425,7 @@ class Instrument(stem_controller.STEMController):
             "eels": EELSCameraSimulator.EELSCameraSimulator(self, self.__eels_shape, self.counts_per_electron)
         }
 
+
     def close(self):
         for camera in self.__cameras.values():
             camera.close()
@@ -942,6 +943,14 @@ class Instrument(stem_controller.STEMController):
         return list(stem_controller.AxisDescription("_".join(axis_type).lower(), axis_type[0], axis_type[1],
                                                     ", ".join(axis_type)) for axis_type in
                     AxisManager().supported_axis_names)
+
+    def get_reference_setting_index(self, settings_control: str) -> typing.Optional[int]:
+        # For testing purposes, always make 0 the reference setting index but still raise ValueError if the control
+        # does not exist
+        success, _ = self.TryGetVal(settings_control)
+        if not success:
+            raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
+        return 0
 
     def change_stage_position(self, *, dy: int=None, dx: int=None):
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
