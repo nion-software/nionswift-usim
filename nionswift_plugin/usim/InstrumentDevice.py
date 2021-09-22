@@ -943,6 +943,14 @@ class Instrument(stem_controller.STEMController):
                                                     ", ".join(axis_type)) for axis_type in
                     AxisManager().supported_axis_names)
 
+    def get_reference_setting_index(self, settings_control: str) -> int:
+        # For testing purposes, always make 0 the reference setting index but still raise ValueError if the control
+        # does not exist
+        success, _ = self.TryGetVal(settings_control)
+        if not success:
+            raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
+        return 0
+
     def change_stage_position(self, *, dy: int=None, dx: int=None):
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
         self.stage_position_m += Geometry.FloatPoint(y=-dy, x=-dx)
