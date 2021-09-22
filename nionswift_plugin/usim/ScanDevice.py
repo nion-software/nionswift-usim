@@ -55,7 +55,7 @@ class Device:
         self.__profiles = self.__get_initial_profiles()
         self.__frame_parameters = copy.deepcopy(self.__profiles[0])
         self.flyback_pixels = 2
-        self.__buffer = list()
+        self.__buffer: typing.List[typing.List[typing.Dict[str, typing.Any]]] = list()
 
     def close(self):
         pass
@@ -95,7 +95,7 @@ class Device:
     def get_channel_name(self, channel_index: int) -> str:
         return self.__channels[channel_index].name
 
-    def read_partial(self, frame_number, pixels_to_skip) -> (typing.Sequence[dict], bool, bool, tuple, int, int):
+    def read_partial(self, frame_number: int, pixels_to_skip: int) -> typing.Tuple[typing.Sequence[typing.Dict[str, typing.Any]], bool, bool, tuple, int, int]:
         """Read or continue reading a frame.
 
         The `frame_number` may be None, in which case a new frame should be read.
@@ -296,5 +296,5 @@ class Device:
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
     scan_device = Device(instrument)
-    scan_device.priority = 20
+    setattr(scan_device, "priority", 20)
     Registry.register_component(scan_device, {"scan_device"})

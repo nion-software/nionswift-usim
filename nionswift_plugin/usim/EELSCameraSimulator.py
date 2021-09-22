@@ -1,6 +1,8 @@
 # standard libraries
 import copy
 import math
+import typing
+
 import numpy
 import scipy.ndimage.interpolation
 import scipy.stats
@@ -14,26 +16,28 @@ from . import CameraSimulator
 from . import Noise
 
 
-def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, offset_eV: float, onset_eV: float) -> None:
+def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, offset_ev: float, onset_ev: float) -> None:
     # calculate the range
     # 1 represents 0eV, 0 represents 4000eV
     # TODO: sub-pixel accuracy
-    energy_range_eV = [energy_calibration.convert_to_calibrated_value(0), energy_calibration.convert_to_calibrated_value(data.shape[0])]
-    envelope = scipy.stats.norm(loc=offset_eV, scale=onset_eV).cdf(numpy.linspace(energy_range_eV[0], energy_range_eV[1], data.shape[0]))
+    energy_range_ev = [energy_calibration.convert_to_calibrated_value(0),
+                       energy_calibration.convert_to_calibrated_value(data.shape[0])]
+    envelope = scipy.stats.norm(loc=offset_ev, scale=onset_ev).cdf(numpy.linspace(energy_range_ev[0], energy_range_ev[1], data.shape[0]))
     max_ev = 4000
     powerlaw_dist = scipy.stats.powerlaw(8, loc=0, scale=max_ev)  # this is an increasing function; must be reversed below; 8 is arbitrary but looks good
-    powerlaw = powerlaw_dist.pdf(numpy.linspace(max_ev - energy_range_eV[0], max_ev - energy_range_eV[1], data.shape[0]))
+    powerlaw = powerlaw_dist.pdf(numpy.linspace(max_ev - energy_range_ev[0], max_ev - energy_range_ev[1], data.shape[0]))
     data += envelope * multiplier * powerlaw
 
 
-def plot_norm(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, energy_eV: float, energy_width_eV: float) -> None:
+def plot_norm(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, energy_ev: float, energy_width_ev: float) -> None:
     # calculate the range
     # 1 represents 0eV, 0 represents 4000eV
     # TODO: sub-pixel accuracy
     data_range = [0, data.shape[0]]
-    energy_range_eV = [energy_calibration.convert_to_calibrated_value(data_range[0]), energy_calibration.convert_to_calibrated_value(data_range[1])]
-    norm = scipy.stats.norm(loc=energy_eV, scale=energy_width_eV)
-    data += multiplier * norm.pdf(numpy.linspace(energy_range_eV[0], energy_range_eV[1], data_range[1])) / norm.pdf(energy_eV)
+    energy_range_ev = [energy_calibration.convert_to_calibrated_value(data_range[0]),
+                       energy_calibration.convert_to_calibrated_value(data_range[1])]
+    norm = scipy.stats.norm(loc=energy_ev, scale=energy_width_ev)
+    data += multiplier * norm.pdf(numpy.linspace(energy_range_ev[0], energy_range_ev[1], data_range[1])) / norm.pdf(energy_ev)
 
 
 def plot_spectrum(feature, data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
@@ -52,7 +56,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
     def __init__(self, instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)
-        self.__cached_frame = None
+        self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         self.__data_scale = 1.0
         self.noise = Noise.PoissonNoise()
 
@@ -95,7 +99,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         """
 
         # grab the probe position
-        probe_position = Geometry.FloatPoint(0.5, 0.5)
+        probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
         if self.instrument.is_blanked:
             probe_position = None
         elif self.instrument.probe_state == "scanning":
@@ -151,7 +155,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                         plot_spectrum(feature, spectrum, 1.0, used_calibration)
                         plot_spectrum(feature, spectrum_ref, 1.0, zlp0_calibration)
                         feature_layer_count += 1
-                feature_pixel_count = max(numpy.sum(spectrum_ref), 0.01)
+                feature_pixel_count = max(typing.cast(float, numpy.sum(spectrum_ref)), 0.01)
 
                 # make the calculations for A, B (zlp_scale and feature_scale).
                 thickness_factor = feature_layer_count * thickness_per_layer_nm / mean_free_path_nm
@@ -189,11 +193,11 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         self.noise.poisson_level = self.__data_scale
         return self.noise.apply(self.__cached_frame)
 
-    def get_dimensional_calibrations(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize):
-        energy_offset_eV = self.instrument.energy_offset_eV
-        # energy_offset_eV += random.uniform(-1, 1) * self.__energy_per_channel_eV * 5
+    def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
+        energy_offset_ev = self.instrument.energy_offset_eV
+        # energy_offset_ev += random.uniform(-1, 1) * self.__energy_per_channel_eV * 5
         dimensional_calibrations = [
             Calibration.Calibration(),
-            Calibration.Calibration(offset=energy_offset_eV, scale=self.instrument.energy_per_channel_eV, units="eV")
+            Calibration.Calibration(offset=energy_offset_ev, scale=self.instrument.energy_per_channel_eV, units="eV")
         ]
         return dimensional_calibrations

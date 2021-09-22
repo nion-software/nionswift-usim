@@ -15,7 +15,7 @@ from nionswift_plugin.usim import RonchigramCameraSimulator
 
 def measure_thickness(d: numpy.ndarray) -> float:
     # estimate the ZLP, assumes the peak value is the ZLP and that the ZLP is the only gaussian feature in the data
-    mx_pos = numpy.argmax(d)
+    mx_pos = int(numpy.argmax(d))
     mx = d[mx_pos]
     mx_tenth = mx/10
     left_pos = mx_pos - sum(d[:mx_pos] > mx_tenth)

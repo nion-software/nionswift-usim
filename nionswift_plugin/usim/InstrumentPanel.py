@@ -21,10 +21,10 @@ class Control2DBinding(Binding.Binding):
         self.source_getter = lambda: getattr(instrument.get_control(control_name), attribute_name).output_value
 
         # thread safe
-        def property_changed(property_name_: str):
+        def property_changed(property_name_: str) -> None:
             if property_name_ == control_name:
                 # perform on the main thread
-                value = self.source_getter()
+                value = self.source_getter() if callable(self.source_getter) else 0.0
                 if value is not None:
                     self.update_target(value)
                 else:
@@ -48,7 +48,7 @@ class ControlBinding(Binding.Binding):
         # thread safe
         def property_changed(property_name_: str) -> None:
             if property_name_ == control_name:
-                value = self.source_getter()
+                value = self.source_getter() if callable(self.source_getter) else 0.0
                 if value is not None:
                     self.update_target(value)
                 else:
