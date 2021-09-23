@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+NEXT RELEASE
+------------
+- Drop support for Python 3.7.
+
 0.3.0 (2020-08-31)
 ------------------
 - Add support for partial synchronized acquisition.
