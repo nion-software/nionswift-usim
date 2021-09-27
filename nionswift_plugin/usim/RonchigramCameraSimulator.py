@@ -363,7 +363,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                     scan_offset = scan_offset*1e-9
 
                 theta = self.__tv_pixel_angle * self._sensor_dimensions.height / 2  # half angle on camera
-                aberrations = dict()
+                aberrations: typing.Dict[str, typing.Union[float, int]] = dict()
                 aberrations["height"] = data.shape[0]
                 aberrations["width"] = data.shape[1]
                 aberrations["theta"] = theta
