@@ -265,7 +265,7 @@ def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float
     left = max(int(ellipse[1] - ellipse[2]), 0)
     bottom = min(int(ellipse[0] + ellipse[2]) + 1, shape[0])
     right = min(int(ellipse[1] + ellipse[2]) + 1, shape[1])
-    coords = numpy.mgrid[top - int(ellipse[0]):bottom - int(ellipse[0]), left - int(ellipse[1]):right - int(ellipse[1])]
+    coords = numpy.mgrid[top - ellipse[0]:bottom - ellipse[0], left - ellipse[1]:right - ellipse[1]]  # type: ignore
     # coords[0] -= ellipse[0]
     # coords[1] -= ellipse[1]
     radii = numpy.sqrt(numpy.sum(coords**2, axis=0))
