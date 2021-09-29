@@ -65,7 +65,8 @@ class ControlBinding(Binding.Binding):
 class PositionWidget(Widgets.CompositeWidgetBase):
 
     def __init__(self, ui, label: str, object, xy_property, unit="nm", multiplier=1E9):
-        super().__init__(ui.create_row_widget())
+        row_widget = ui.create_row_widget()
+        super().__init__(row_widget)
 
         stage_x_field = ui.create_line_edit_widget()
         stage_x_field.bind_text(Control2DBinding(object, xy_property, "x", Converter.PhysicalValueToStringConverter(unit, multiplier)))
@@ -73,25 +74,24 @@ class PositionWidget(Widgets.CompositeWidgetBase):
         stage_y_field = ui.create_line_edit_widget()
         stage_y_field.bind_text(Control2DBinding(object, xy_property, "y", Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
-        row = self.content_widget
-
-        row.add_spacing(8)
-        row.add(ui.create_label_widget(label))
-        row.add_spacing(8)
-        row.add(ui.create_label_widget(_("X")))
-        row.add_spacing(8)
-        row.add(stage_x_field)
-        row.add_spacing(8)
-        row.add(ui.create_label_widget(_("Y")))
-        row.add_spacing(8)
-        row.add(stage_y_field)
-        row.add_spacing(8)
+        row_widget.add_spacing(8)
+        row_widget.add(ui.create_label_widget(label))
+        row_widget.add_spacing(8)
+        row_widget.add(ui.create_label_widget(_("X")))
+        row_widget.add_spacing(8)
+        row_widget.add(stage_x_field)
+        row_widget.add_spacing(8)
+        row_widget.add(ui.create_label_widget(_("Y")))
+        row_widget.add_spacing(8)
+        row_widget.add(stage_y_field)
+        row_widget.add_spacing(8)
 
 
 class InstrumentWidget(Widgets.CompositeWidgetBase):
 
     def __init__(self, document_controller, instrument: InstrumentDevice.Instrument):
-        super().__init__(document_controller.ui.create_column_widget(properties={"margin": 6, "spacing": 2}))
+        column_widget = document_controller.ui.create_column_widget(properties={"margin": 6, "spacing": 2})
+        super().__init__(column_widget)
 
         self.document_controller = document_controller
 
@@ -209,26 +209,24 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         convergence_angle_row.add(convergenve_angle_field)
         convergence_angle_row.add_stretch()
 
-        column = self.content_widget
-
-        column.add(sample_row)
-        column.add(voltage_row)
-        column.add(beam_current_row)
-        column.add(stage_position_widget)
-        column.add(beam_shift_widget)
-        column.add(defocus_row)
-        column.add(c12_widget)
-        column.add(c21_widget)
-        column.add(c23_widget)
-        column.add(c3_row)
-        column.add(c32_widget)
-        column.add(c34_widget)
-        column.add(beam_row)
-        column.add(convergence_angle_row)
-        column.add(c_aperture_widget)
-        column.add(aperture_round_widget)
-        column.add(eels_row)
-        column.add_stretch()
+        column_widget.add(sample_row)
+        column_widget.add(voltage_row)
+        column_widget.add(beam_current_row)
+        column_widget.add(stage_position_widget)
+        column_widget.add(beam_shift_widget)
+        column_widget.add(defocus_row)
+        column_widget.add(c12_widget)
+        column_widget.add(c21_widget)
+        column_widget.add(c23_widget)
+        column_widget.add(c3_row)
+        column_widget.add(c32_widget)
+        column_widget.add(c34_widget)
+        column_widget.add(beam_row)
+        column_widget.add(convergence_angle_row)
+        column_widget.add(c_aperture_widget)
+        column_widget.add(aperture_round_widget)
+        column_widget.add(eels_row)
+        column_widget.add_stretch()
 
 
 class InstrumentControlPanel(Panel.Panel):
