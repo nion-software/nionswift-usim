@@ -344,7 +344,7 @@ class Camera(camera_base.CameraDevice):
                 self.__xdata._set_metadata(metadata)
                 # convert from a sequence to a collection.
                 assert self.__data is not None
-                self.__data[start_row:start_row + rows, ...] = xdata.data.reshape((rows, row_size) + xdata.data.shape[1:])
+                self.__data[start_row:start_row + rows, ...] = xdata._data_ex.reshape((rows, row_size) + xdata._data_ex.shape[1:])
                 self.__start = start + n
                 return is_complete, False, start_row + rows
             self.__start = 0
