@@ -158,7 +158,7 @@ class Camera(camera_base.CameraDevice):
         self.__thread_event.set()
         # has_data_event is cleared in the acquisition loop after stopping
 
-    def acquire_image(self) -> dict:
+    def acquire_image(self) -> ImportExportManager.DataElementType:
         return self.__acquire_image(direct=False)
 
     def __acquire_image(self, *, direct: bool) -> dict:
@@ -202,7 +202,7 @@ class Camera(camera_base.CameraDevice):
     def acquire_sequence_prepare(self, n: int) -> None:
         self.__cancel_sequence_event.clear()
 
-    def acquire_sequence(self, n: int) -> typing.Optional[typing.Dict]:
+    def acquire_sequence(self, n: int) -> typing.Optional[ImportExportManager.DataElementType]:
         # if the device does not implement acquire_sequence, fall back to looping acquisition.
         self.__is_acquiring = True
         self.__has_data_event.clear()  # ensure any has_data_event is new data
@@ -310,10 +310,10 @@ class Camera(camera_base.CameraDevice):
 
         def start(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
             # returns the full scan readout, including flyback pixels
-            camera_readout_shape: typing.Tuple[int, ...] = self.__camera_device.get_expected_dimensions(self.__camera_frame_parameters.get("binning", 1))
-            if self.__camera_frame_parameters.get("processing") == "sum_project":
+            camera_readout_shape: typing.Tuple[int, ...] = self.__camera_device.get_expected_dimensions(self.__camera_frame_parameters.binning)
+            if self.__camera_frame_parameters.processing == "sum_project":
                 camera_readout_shape = camera_readout_shape[1:]
-            elif self.__camera_frame_parameters.get("processing") == "sum_masked":
+            elif self.__camera_frame_parameters.processing == "sum_masked":
                 camera_readout_shape = (len(self.__camera_device.mask_array) if self.__camera_device.mask_array is not None else 1,)
             self.__data = numpy.zeros(self.__scan_shape + camera_readout_shape, numpy.float32)
             data_descriptor = DataAndMetadata.DataDescriptor(False, len(self.__scan_shape), len(camera_readout_shape))
@@ -350,49 +350,22 @@ class Camera(camera_base.CameraDevice):
             self.__start = 0
             return True, True, 0
 
-    def acquire_synchronized_begin(self, camera_frame_parameters: typing.Mapping, scan_shape: typing.Tuple[int, ...], **kwargs) -> camera_base.CameraHardwareSource.PartialData:
+    def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, scan_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.CameraHardwareSource.PartialData:
         self.__camera_task = Camera.CameraTask(self, camera_frame_parameters, scan_shape)
         self.__camera_task.start()
         return camera_base.CameraHardwareSource.PartialData(self.__camera_task.xdata, False, False, 0)
 
-    def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs) -> camera_base.CameraHardwareSource.PartialData:
+    def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs: typing.Any) -> camera_base.CameraHardwareSource.PartialData:
         assert self.__camera_task
         is_complete, is_canceled, valid_rows = self.__camera_task.grab_partial(update_period=update_period)
         return camera_base.CameraHardwareSource.PartialData(self.__camera_task.xdata, is_complete, is_canceled, valid_rows)
 
-    def acquire_synchronized_end(self) -> None:
+    def acquire_synchronized_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
 
     @property
     def _is_acquire_synchronized_running(self) -> bool:
         return self.__camera_task is not None
-
-
-class CameraFrameParameters(dict):
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.__dict__ = self
-        self.exposure_ms = self.get("exposure_ms", 125)
-        self.binning = self.get("binning", 1)
-        self.processing = self.get("processing")
-        self.integration_count = self.get("integration_count")
-
-    def __copy__(self):
-        return self.__class__(copy.copy(dict(self)))
-
-    def __deepcopy__(self, memo):
-        deepcopy = self.__class__(copy.deepcopy(dict(self)))
-        memo[id(self)] = deepcopy
-        return deepcopy
-
-    def as_dict(self):
-        return {
-            "exposure_ms": self.exposure_ms,
-            "binning": self.binning,
-            "processing": self.processing,
-            "integration_count": self.integration_count,
-        }
 
 
 class CameraSettings:
@@ -420,9 +393,9 @@ class CameraSettings:
 
         # configure profiles
         self.__settings = [
-            CameraFrameParameters({"exposure_ms": 100, "binning": 2}),
-            CameraFrameParameters({"exposure_ms": 200, "binning": 2}),
-            CameraFrameParameters({"exposure_ms": 500, "binning": 1}),
+            camera_base.CameraFrameParameters({"exposure_ms": 100, "binning": 2}),
+            camera_base.CameraFrameParameters({"exposure_ms": 200, "binning": 2}),
+            camera_base.CameraFrameParameters({"exposure_ms": 500, "binning": 1}),
         ]
 
         self.__current_settings_index = 0
@@ -445,9 +418,9 @@ class CameraSettings:
         if isinstance(settings_dict, dict):
             settings_list = settings_dict.get("settings", list())
             if len(settings_list) == 3:
-                self.__settings = [CameraFrameParameters(settings) for settings in settings_list]
+                self.__settings = [camera_base.CameraFrameParameters(settings) for settings in settings_list]
             self.__current_settings_index = settings_dict.get("current_settings_index", 0)
-            self.__frame_parameters = CameraFrameParameters(settings_dict.get("current_settings", self.__settings[0].as_dict()))
+            self.__frame_parameters = camera_base.CameraFrameParameters(settings_dict.get("current_settings", self.__settings[0].as_dict()))
             self.__record_parameters = copy.deepcopy(self.__settings[-1])
 
     def __save_settings(self) -> typing.Dict:
@@ -459,9 +432,9 @@ class CameraSettings:
         return settings_dict
 
     def get_frame_parameters_from_dict(self, d):
-        return CameraFrameParameters(d)
+        return camera_base.CameraFrameParameters(d)
 
-    def set_current_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
+    def set_current_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
         """Set the current frame parameters.
 
         Fire the current frame parameters changed event and optionally the settings changed event.
@@ -470,11 +443,11 @@ class CameraSettings:
         self.settings_changed_event.fire(self.__save_settings())
         self.current_frame_parameters_changed_event.fire(frame_parameters)
 
-    def get_current_frame_parameters(self) -> CameraFrameParameters:
+    def get_current_frame_parameters(self) -> camera_base.CameraFrameParameters:
         """Get the current frame parameters."""
-        return CameraFrameParameters(self.__frame_parameters)
+        return camera_base.CameraFrameParameters(self.__frame_parameters.as_dict())
 
-    def set_record_frame_parameters(self, frame_parameters: CameraFrameParameters) -> None:
+    def set_record_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
         """Set the record frame parameters.
 
         Fire the record frame parameters changed event and optionally the settings changed event.
@@ -482,11 +455,11 @@ class CameraSettings:
         self.__record_parameters = copy.copy(frame_parameters)
         self.record_frame_parameters_changed_event.fire(frame_parameters)
 
-    def get_record_frame_parameters(self) -> CameraFrameParameters:
+    def get_record_frame_parameters(self) -> camera_base.CameraFrameParameters:
         """Get the record frame parameters."""
         return self.__record_parameters
 
-    def set_frame_parameters(self, settings_index: int, frame_parameters: CameraFrameParameters) -> None:
+    def set_frame_parameters(self, settings_index: int, frame_parameters: camera_base.CameraFrameParameters) -> None:
         """Set the frame parameters with the settings index and fire the frame parameters changed event.
 
         If the settings index matches the current settings index, call set current frame parameters.
@@ -504,7 +477,7 @@ class CameraSettings:
         self.settings_changed_event.fire(self.__save_settings())
         self.frame_parameters_changed_event.fire(settings_index, frame_parameters)
 
-    def get_frame_parameters(self, settings_index) -> CameraFrameParameters:
+    def get_frame_parameters(self, settings_index) -> camera_base.CameraFrameParameters:
         """Get the frame parameters for the settings index."""
         return copy.copy(self.__settings[settings_index])
 

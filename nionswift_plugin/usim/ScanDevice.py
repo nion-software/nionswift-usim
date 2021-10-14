@@ -282,12 +282,12 @@ class Device:
     def is_scanning(self) -> bool:
         return self.__is_scanning
 
-    def prepare_synchronized_scan(self, scan_frame_parameters: scan_base.ScanFrameParameters, *, camera_exposure_ms, **kwargs) -> None:
-        scan_frame_parameters["pixel_time_us"] = min(5120000, int(1000 * camera_exposure_ms * 0.75))
-        scan_frame_parameters["external_clock_wait_time_ms"] = 20000 # int(camera_frame_parameters["exposure_ms"] * 1.5)
-        scan_frame_parameters["external_clock_mode"] = 1
+    def prepare_synchronized_scan(self, scan_frame_parameters: scan_base.ScanFrameParameters, *, camera_exposure_ms: float, **kwargs: typing.Any) -> None:
+        scan_frame_parameters.pixel_time_us = min(5120000, int(1000 * camera_exposure_ms * 0.75))
+        scan_frame_parameters.external_clock_wait_time_ms = 20000 # int(camera_frame_parameters["exposure_ms"] * 1.5)
+        scan_frame_parameters.external_clock_mode = 1
 
-    def get_buffer_data(self, start: int, count: int) -> typing.Optional[typing.List[typing.List[typing.Dict]]]:
+    def get_buffer_data(self, start: int, count: int) -> typing.List[typing.List[typing.Dict[str, typing.Any]]]:
         if start < 0:
             return self.__buffer[start: start+count if count < -start else None]
         else:

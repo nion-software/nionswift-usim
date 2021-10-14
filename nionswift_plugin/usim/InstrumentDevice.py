@@ -788,7 +788,7 @@ class Instrument(stem_controller.STEMController):
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
 
-    def get_autostem_properties(self):
+    def get_autostem_properties(self) -> typing.Mapping[str, typing.Any]:
         """Return a new autostem properties (dict) to be recorded with an acquisition.
 
            * use property names that are lower case and separated by underscores
@@ -962,7 +962,7 @@ class Instrument(stem_controller.STEMController):
             raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
         return 0
 
-    def change_stage_position(self, *, dy: int = None, dx: int = None) -> None:
+    def change_stage_position(self, *, dy: typing.Optional[float] = None, dx: typing.Optional[float] = None) -> None:
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
         dx = dx or 0
         dy = dy or 0
