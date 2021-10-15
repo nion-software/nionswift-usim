@@ -123,9 +123,8 @@ class Camera(camera_base.CameraDevice):
         self.__binning = frame_parameters.binning
         self.__processing = frame_parameters.processing
         self.__integration_count = frame_parameters.integration_count
-        if hasattr(frame_parameters, "active_masks"):
-            mask_array = [mask.get_mask_array(self.get_expected_dimensions(self.__binning)) for mask in frame_parameters.active_masks]
-            self.__mask_array = numpy.array(mask_array) if mask_array else None
+        mask_array = [mask.get_mask_array(self.get_expected_dimensions(self.__binning)) for mask in frame_parameters.active_masks]
+        self.__mask_array = numpy.array(mask_array) if mask_array else None
 
     @property
     def calibration_controls(self) -> dict:
@@ -350,15 +349,15 @@ class Camera(camera_base.CameraDevice):
             self.__start = 0
             return True, True, 0
 
-    def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, scan_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.CameraHardwareSource.PartialData:
+    def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, scan_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.PartialData:
         self.__camera_task = Camera.CameraTask(self, camera_frame_parameters, scan_shape)
         self.__camera_task.start()
-        return camera_base.CameraHardwareSource.PartialData(self.__camera_task.xdata, False, False, 0)
+        return camera_base.PartialData(self.__camera_task.xdata, False, False, 0)
 
-    def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs: typing.Any) -> camera_base.CameraHardwareSource.PartialData:
+    def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs: typing.Any) -> camera_base.PartialData:
         assert self.__camera_task
         is_complete, is_canceled, valid_rows = self.__camera_task.grab_partial(update_period=update_period)
-        return camera_base.CameraHardwareSource.PartialData(self.__camera_task.xdata, is_complete, is_canceled, valid_rows)
+        return camera_base.PartialData(self.__camera_task.xdata, is_complete, is_canceled, valid_rows)
 
     def acquire_synchronized_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
