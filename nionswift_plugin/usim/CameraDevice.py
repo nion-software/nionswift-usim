@@ -31,7 +31,7 @@ class Camera(camera_base.CameraDevice):
         self.camera_id = camera_id
         self.camera_type = camera_type
         self.camera_name = camera_name
-        self.__camera_task: typing.Optional[Camera.CameraTask] = None
+        self.__camera_task: typing.Optional[CameraTask] = None
         self.__instrument = instrument
         self.__sensor_dimensions = instrument.camera_sensor_dimensions(camera_type)
         self.__readout_area = instrument.camera_readout_area(camera_type)
@@ -261,6 +261,19 @@ class Camera(camera_base.CameraDevice):
     def acquire_sequence_cancel(self) -> None:
         self.__cancel_sequence_event.set()
 
+    def acquire_sequence_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, count: int, **kwargs: typing.Any) -> camera_base.PartialData:
+        self.__camera_task = CameraTask(self, camera_frame_parameters, (count,))
+        self.__camera_task.start()
+        return camera_base.PartialData(self.__camera_task.xdata, False, False, None, 0)
+
+    def acquire_sequence_continue(self, *, update_period: float = 1.0, **kwargs: typing.Any) -> camera_base.PartialData:
+        assert self.__camera_task
+        is_complete, is_canceled, valid_count = self.__camera_task.grab_partial(update_period=update_period)
+        return camera_base.PartialData(self.__camera_task.xdata, is_complete, is_canceled, None, valid_count)
+
+    def acquire_sequence_end(self, **kwargs: typing.Any) -> None:
+        self.__camera_task = None
+
     def __direct_acquire(self, cancel_event):
         start = time.time()
         readout_area = self.readout_area
@@ -292,72 +305,15 @@ class Camera(camera_base.CameraDevice):
                     self.__has_data_event.clear()
                     self.__thread_event.clear()
 
-    class CameraTask:
-        def __init__(self, camera_device: "Camera", camera_frame_parameters, scan_shape: typing.Tuple[int, ...]):
-            self.__camera_device = camera_device
-            self.__camera_frame_parameters = camera_frame_parameters
-            self.__scan_shape = scan_shape
-            self.__scan_count = int(numpy.product(self.__scan_shape))
-            self.__aborted = False
-            self.__data: typing.Optional[numpy.ndarray] = None
-            self.__xdata: typing.Optional[DataAndMetadata.DataAndMetadata] = None
-            self.__start = 0
-
-        @property
-        def xdata(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
-            return self.__xdata
-
-        def start(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
-            # returns the full scan readout, including flyback pixels
-            camera_readout_shape: typing.Tuple[int, ...] = self.__camera_device.get_expected_dimensions(self.__camera_frame_parameters.binning)
-            if self.__camera_frame_parameters.processing == "sum_project":
-                camera_readout_shape = camera_readout_shape[1:]
-            elif self.__camera_frame_parameters.processing == "sum_masked":
-                camera_readout_shape = (len(self.__camera_device.mask_array) if self.__camera_device.mask_array is not None else 1,)
-            self.__data = numpy.zeros(self.__scan_shape + camera_readout_shape, numpy.float32)
-            data_descriptor = DataAndMetadata.DataDescriptor(False, len(self.__scan_shape), len(camera_readout_shape))
-            self.__xdata = DataAndMetadata.new_data_and_metadata(self.__data, data_descriptor=data_descriptor)
-            return self.__xdata
-
-        def grab_partial(self, *, update_period: float = 1.0) -> typing.Tuple[bool, bool, int]:
-            # updates the full scan readout data, returns a tuple of is complete, is canceled, and
-            # the number of valid rows.
-            start = self.__start
-            frame_parameters = self.__camera_frame_parameters
-            exposure = frame_parameters.exposure_ms / 1000.0
-            row_size = self.__scan_shape[-1]
-            n = min(max((int(update_period / exposure) + row_size - 1) // row_size * row_size, row_size), self.__scan_count - start)
-            is_complete = start + n == self.__scan_count
-            # print(f"{start=} {n=} {self.__scan_count=} {is_complete=}")
-            data_element = self.__camera_device.acquire_sequence((n))
-            if data_element and not self.__aborted:
-                xdata = ImportExportManager.convert_data_element_to_data_and_metadata(data_element)
-                start_row = start // row_size
-                rows = n // row_size
-                dimensional_calibrations = tuple(Calibration.Calibration() for _ in range(len(self.__scan_shape))) + tuple(xdata.dimensional_calibrations[1:])
-                metadata = dict(xdata.metadata)
-                metadata.setdefault("hardware_source", dict())["valid_rows"] = start_row + rows
-                assert self.__xdata
-                self.__xdata._set_intensity_calibration(xdata.intensity_calibration)
-                self.__xdata._set_dimensional_calibrations(dimensional_calibrations)
-                self.__xdata._set_metadata(metadata)
-                # convert from a sequence to a collection.
-                assert self.__data is not None
-                self.__data[start_row:start_row + rows, ...] = xdata._data_ex.reshape((rows, row_size) + xdata._data_ex.shape[1:])
-                self.__start = start + n
-                return is_complete, False, start_row + rows
-            self.__start = 0
-            return True, True, 0
-
-    def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, scan_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.PartialData:
-        self.__camera_task = Camera.CameraTask(self, camera_frame_parameters, scan_shape)
+    def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, collection_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.PartialData:
+        self.__camera_task = CameraTask(self, camera_frame_parameters, collection_shape)
         self.__camera_task.start()
-        return camera_base.PartialData(self.__camera_task.xdata, False, False, 0)
+        return camera_base.PartialData(self.__camera_task.xdata, False, False, None, 0)
 
     def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs: typing.Any) -> camera_base.PartialData:
         assert self.__camera_task
-        is_complete, is_canceled, valid_rows = self.__camera_task.grab_partial(update_period=update_period)
-        return camera_base.PartialData(self.__camera_task.xdata, is_complete, is_canceled, valid_rows)
+        is_complete, is_canceled, valid_count = self.__camera_task.grab_partial(update_period=update_period)
+        return camera_base.PartialData(self.__camera_task.xdata, is_complete, is_canceled, None, valid_count)
 
     def acquire_synchronized_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
@@ -365,6 +321,67 @@ class Camera(camera_base.CameraDevice):
     @property
     def _is_acquire_synchronized_running(self) -> bool:
         return self.__camera_task is not None
+
+
+class CameraTask:
+    def __init__(self, camera_device: Camera, camera_frame_parameters, collection_shape: typing.Tuple[int, ...]):
+        self.__camera_device = camera_device
+        self.__camera_frame_parameters = camera_frame_parameters
+        self.__collection_shape = collection_shape
+        self.__count = int(numpy.product(self.__collection_shape))
+        self.__aborted = False
+        self.__data: typing.Optional[numpy.ndarray] = None
+        self.__xdata: typing.Optional[DataAndMetadata.DataAndMetadata] = None
+        self.__start = 0
+
+    @property
+    def xdata(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
+        return self.__xdata
+
+    def start(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
+        # returns the full readout, including flyback pixels
+        camera_readout_shape: typing.Tuple[int, ...] = self.__camera_device.get_expected_dimensions(self.__camera_frame_parameters.binning)
+        if self.__camera_frame_parameters.processing == "sum_project":
+            camera_readout_shape = camera_readout_shape[1:]
+        elif self.__camera_frame_parameters.processing == "sum_masked":
+            camera_readout_shape = (len(self.__camera_device.mask_array) if self.__camera_device.mask_array is not None else 1,)
+        self.__data = numpy.zeros(self.__collection_shape + camera_readout_shape, numpy.float32)
+        data_descriptor = DataAndMetadata.DataDescriptor(False, len(self.__collection_shape), len(camera_readout_shape))
+        self.__xdata = DataAndMetadata.new_data_and_metadata(self.__data, data_descriptor=data_descriptor)
+        return self.__xdata
+
+    def grab_partial(self, *, update_period: float = 1.0) -> typing.Tuple[bool, bool, int]:
+        # updates the full readout data, returns a tuple of is complete, is canceled, and
+        # the number of valid rows.
+        start = self.__start
+        frame_parameters = self.__camera_frame_parameters
+        exposure = frame_parameters.exposure_ms / 1000.0
+        n = min(max(int(update_period / exposure), 1), self.__count - start)
+        is_complete = start + n == self.__count
+        # print(f"{start=} {n=} {self.__count=} {is_complete=}")
+        data_element = self.__camera_device.acquire_sequence((n))
+        if data_element and not self.__aborted:
+            xdata = ImportExportManager.convert_data_element_to_data_and_metadata(data_element)
+            dimensional_calibrations = tuple(Calibration.Calibration() for _ in range(len(self.__collection_shape))) + tuple(xdata.dimensional_calibrations[1:])
+            assert self.__xdata
+            self.__xdata._set_intensity_calibration(xdata.intensity_calibration)
+            self.__xdata._set_dimensional_calibrations(dimensional_calibrations)
+            if len(self.__collection_shape) > 1:
+                row_size = self.__collection_shape[-1]
+                start_row = start // row_size
+                rows = n // row_size
+                metadata = dict(xdata.metadata)
+                metadata.setdefault("hardware_source", dict())["valid_rows"] = start_row + rows
+                self.__xdata._set_metadata(metadata)
+            else:
+                row_size = 1
+            # convert from a sequence to a collection.
+            assert self.__data is not None
+            self.__data.reshape((self.__data.shape[0] * row_size,) + self.__data.shape[len(self.__collection_shape):])[start:start + n, ...] = xdata._data_ex
+            self.__start = start + n
+            return is_complete, False, start + n
+        self.__start = 0
+        return True, True, 0
 
 
 class CameraSettings:
