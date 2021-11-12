@@ -1,9 +1,9 @@
 package:
   name: 'nionswift-usim'
-  version: '0.3.0'
+  version: '0.4.0'
 
 source:
-  git_rev: 0.3.0
+  git_rev: 0.4.0
   git_url: https://github.com/nion-software/nionswift-usim.git
 
 build:
@@ -19,8 +19,8 @@ requirements:
     - setuptools
   run:
     - python >=3.8
-    - nionswift >=0.15.0
-    - nionswift-instrumentation >=0.19.0
+    - nionswift >=0.16.0,<0.17.0
+    - nionswift-instrumentation >=0.20.0,<0.21.0
 
 test:
   imports:
