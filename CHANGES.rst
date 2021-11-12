@@ -1,8 +1,11 @@
 Changelog (nionswift-usim)
 ==========================
 
-NEXT RELEASE
-------------
+0.4.0 (2021-11-21)
+------------------
+- Updates for nionswift-instrumentation 0.20 and nionswift 0.16.
+- Add support for axis descriptors.
+- Add support for camera masks.
 - Drop support for Python 3.7.
 
 0.3.0 (2020-08-31)
