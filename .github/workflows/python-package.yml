@@ -6,6 +6,7 @@ name: Python package
 on:
   push:
     branches: [ master ]
+    tags: '*'
   pull_request:
     branches: [ master ]
 
@@ -42,3 +43,15 @@ jobs:
         python -m unittest discover -s nionswift_plugin/usim/test/ -p '*_test.py'
         # use mypy -p to work around mypy issue 8944
         mypy --namespace-packages --ignore-missing-imports --follow-imports=silent -p nionswift_plugin.usim
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v2
+      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8'
+      with:
+        name: distribution
+        path: dist
+    - name: Publish package
+      uses: pypa/gh-action-pypi-publish@master
+      if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8'
+      with:
+        user: __token__
+        password: ${{ secrets.pypi_password }}
