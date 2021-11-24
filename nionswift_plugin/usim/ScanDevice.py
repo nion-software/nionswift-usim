@@ -298,3 +298,6 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
     scan_device = Device(instrument)
     setattr(scan_device, "priority", 20)
     Registry.register_component(scan_device, {"scan_device"})
+
+def stop() -> None:
+    Registry.unregister_component(Registry.get_component("scan_device"), {"scan_device"})
