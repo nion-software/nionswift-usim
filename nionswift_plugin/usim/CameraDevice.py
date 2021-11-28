@@ -24,7 +24,7 @@ from nion.instrumentation import camera_base
 _ = gettext.gettext
 
 
-class Camera(camera_base.CameraDevice):
+class Camera(camera_base.CameraDevice3):
     """Implement a camera device."""
 
     def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
@@ -119,6 +119,9 @@ class Camera(camera_base.CameraDevice):
         return (readout_area[2] - readout_area[0]) // binning, (readout_area[3] - readout_area[1]) // binning
 
     def set_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
+        self.__set_frame_parameters(frame_parameters)
+
+    def __set_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
         self.__exposure = frame_parameters.exposure_ms / 1000
         self.__binning = frame_parameters.binning
         self.__processing = frame_parameters.processing
@@ -198,10 +201,7 @@ class Camera(camera_base.CameraDevice):
             data_element["datum_dimension_count"] = 1
         return data_element
 
-    def acquire_sequence_prepare(self, n: int) -> None:
-        self.__cancel_sequence_event.clear()
-
-    def acquire_sequence(self, n: int) -> typing.Optional[ImportExportManager.DataElementType]:
+    def _acquire_sequence(self, n: int) -> typing.Optional[ImportExportManager.DataElementType]:
         # if the device does not implement acquire_sequence, fall back to looping acquisition.
         self.__is_acquiring = True
         self.__has_data_event.clear()  # ensure any has_data_event is new data
@@ -262,6 +262,8 @@ class Camera(camera_base.CameraDevice):
         self.__cancel_sequence_event.set()
 
     def acquire_sequence_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, count: int, **kwargs: typing.Any) -> camera_base.PartialData:
+        self.__cancel_sequence_event.clear()
+        self.__set_frame_parameters(camera_frame_parameters)
         self.__camera_task = CameraTask(self, camera_frame_parameters, (count,))
         self.__camera_task.start()
         return camera_base.PartialData(self.__camera_task.xdata, False, False, None, 0)
@@ -306,6 +308,8 @@ class Camera(camera_base.CameraDevice):
                     self.__thread_event.clear()
 
     def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, collection_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.PartialData:
+        self.__cancel_sequence_event.clear()
+        self.__set_frame_parameters(camera_frame_parameters)
         self.__camera_task = CameraTask(self, camera_frame_parameters, collection_shape)
         self.__camera_task.start()
         return camera_base.PartialData(self.__camera_task.xdata, False, False, None, 0)
@@ -317,6 +321,9 @@ class Camera(camera_base.CameraDevice):
 
     def acquire_synchronized_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
+
+    def acquire_synchronized_cancel(self) -> None:
+        self.__cancel_sequence_event.set()
 
     @property
     def _is_acquire_synchronized_running(self) -> bool:
@@ -359,7 +366,7 @@ class CameraTask:
         n = min(max(int(update_period / exposure), 1), self.__count - start)
         is_complete = start + n == self.__count
         # print(f"{start=} {n=} {self.__count=} {is_complete=}")
-        data_element = self.__camera_device.acquire_sequence((n))
+        data_element = self.__camera_device._acquire_sequence((n))
         if data_element and not self.__aborted:
             xdata = ImportExportManager.convert_data_element_to_data_and_metadata(data_element)
             dimensional_calibrations = tuple(Calibration.Calibration() for _ in range(len(self.__collection_shape))) + tuple(xdata.dimensional_calibrations[1:])

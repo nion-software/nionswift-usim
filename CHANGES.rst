@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.4.1 (UNRELEASED)
+------------------
+- Change camera device to implement camera 3 (no prepare methods).
+
 0.4.0 (2021-11-21)
 ------------------
 - Updates for nionswift-instrumentation 0.20 and nionswift 0.16.
