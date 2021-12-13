@@ -23,8 +23,6 @@ from nion.instrumentation import camera_base
 
 _ = gettext.gettext
 
-tt = False
-
 
 class Camera(camera_base.CameraDevice3):
     """Implement a camera device."""
@@ -167,10 +165,6 @@ class Camera(camera_base.CameraDevice3):
 
     def __acquire_image(self, *, direct: bool) -> dict:
         """Acquire the most recent data."""
-        global tt
-        if not tt:
-            tt = True
-            raise Exception("F1")
         xdata_buffer = None
         integration_count = self.__integration_count or 1
         for frame_number in range(integration_count):
