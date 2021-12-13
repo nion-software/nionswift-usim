@@ -1,7 +1,7 @@
 Changelog (nionswift-usim)
 ==========================
 
-0.4.1 (UNRELEASED)
+0.4.1 (2021-12-13)
 ------------------
 - Change camera device to implement camera 3 (no prepare methods).
 
