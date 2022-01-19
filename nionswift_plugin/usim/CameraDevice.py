@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 # standard libraries
+import asyncio
 import copy
 import datetime
 import gettext
 import numpy
+import numpy.typing
+import pathlib
 import threading
 import time
 import typing
@@ -16,15 +21,18 @@ from nion.utils import Event
 from nion.utils import Geometry
 from nion.utils import Registry
 
-from . import InstrumentDevice
-
 # other plug-ins
 from nion.instrumentation import camera_base
+
+if typing.TYPE_CHECKING:
+    from . import InstrumentDevice
+
+_NDArray = numpy.typing.NDArray[typing.Any]
 
 _ = gettext.gettext
 
 
-class Camera(camera_base.CameraDevice3):
+class Camera(camera_base.CameraDevice3):  # type: ignore  # not sure why this doesn't work. try without?
     """Implement a camera device."""
 
     def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
@@ -37,7 +45,7 @@ class Camera(camera_base.CameraDevice3):
         self.__readout_area = instrument.camera_readout_area(camera_type)
         self.__symmetric_binning = True
         self.__integration_count = 1
-        self.__xdata_buffer = None
+        self.__xdata_buffer: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         self.__frame_number = 0
         self.__thread = threading.Thread(target=self.__acquisition_thread)
         self.__thread_event = threading.Event()
@@ -49,35 +57,15 @@ class Camera(camera_base.CameraDevice3):
         self.__cancel_sequence_event = threading.Event()
         self.__exposure = 1.0
         self.__binning = 1
-        self.__processing = None
+        self.__processing: typing.Optional[str] = None
+        self.__mask_array: typing.Optional[_NDArray] = None
         self.__thread.start()
 
-    def close(self):
+    def close(self) -> None:
         self.__cancel = True
         self.__thread_event.set()
         self.__thread.join()
-        self.__thread = None
-
-    def _test_rapid_changes(self, queue_task):
-        delay = 0.05
-        def set_mode(m):
-            self.mode = m
-        def t():
-            import functools
-            for i in range(1):
-                queue_task(functools.partial(set_mode, "run"))
-                # queue_task(functools.partial(set_binning, 1))
-                # set_exposure(0.22, 3)
-                time.sleep(delay)
-                queue_task(functools.partial(set_mode, "snap"))
-                # queue_task(functools.partial(set_binning, 2))
-                # set_exposure(0.33, 3)
-                time.sleep(delay)
-                queue_task(functools.partial(set_mode, "tune"))
-                # queue_task(functools.partial(set_binning, 4))
-                # set_exposure(0.44, 3)
-                time.sleep(delay)
-        threading.Thread(target=t).start()
+        self.__thread = typing.cast(typing.Any, None)
 
     @property
     def sensor_dimensions(self) -> typing.Tuple[int, int]:
@@ -110,7 +98,7 @@ class Camera(camera_base.CameraDevice3):
         return [1, 2, 4, 8]
 
     @property
-    def mask_array(self) -> typing.Optional[numpy.ndarray]:
+    def mask_array(self) -> typing.Optional[_NDArray]:
         return self.__mask_array
 
     def get_expected_dimensions(self, binning: int) -> typing.Tuple[int, int]:
@@ -130,7 +118,7 @@ class Camera(camera_base.CameraDevice3):
         self.__mask_array = numpy.array(mask_array) if mask_array else None
 
     @property
-    def calibration_controls(self) -> dict:
+    def calibration_controls(self) -> typing.Mapping[str, typing.Union[str, int, float]]:
         """Define the STEM calibration controls for this camera.
 
         The controls should be unique for each camera if there are more than one.
@@ -163,7 +151,7 @@ class Camera(camera_base.CameraDevice3):
     def acquire_image(self) -> ImportExportManager.DataElementType:
         return self.__acquire_image(direct=False)
 
-    def __acquire_image(self, *, direct: bool) -> dict:
+    def __acquire_image(self, *, direct: bool) -> ImportExportManager.DataElementType:
         """Acquire the most recent data."""
         xdata_buffer = None
         integration_count = self.__integration_count or 1
@@ -187,7 +175,7 @@ class Camera(camera_base.CameraDevice3):
         # whatever is in "hardware_source" will go into "properties" of data element
         assert xdata_buffer
         assert len(xdata_buffer.dimensional_shape) == 2
-        data_element = dict()
+        data_element: typing.Dict[str, typing.Any] = dict()
         data_element["version"] = 1
         data_element["data"] = xdata_buffer.data
         data_element["timestamp"] = xdata_buffer.timestamp
@@ -196,7 +184,7 @@ class Camera(camera_base.CameraDevice3):
         data_element["properties"]["integration_count"] = integration_count
         # data that has been binned vertically to a single row will be converted to 1D
         if xdata_buffer.dimensional_shape[0] == 1:
-            data_element["data"] = numpy.squeeze(xdata_buffer.data)
+            data_element["data"] = numpy.squeeze(xdata_buffer._data_ex)
             data_element["collection_dimension_count"] = 0
             data_element["datum_dimension_count"] = 1
         return data_element
@@ -276,7 +264,7 @@ class Camera(camera_base.CameraDevice3):
     def acquire_sequence_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
 
-    def __direct_acquire(self, cancel_event):
+    def __direct_acquire(self, cancel_event: threading.Event) -> bool:
         start = time.time()
         readout_area = self.readout_area
         binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
@@ -291,7 +279,7 @@ class Camera(camera_base.CameraDevice3):
             return True
         return False
 
-    def __acquisition_thread(self):
+    def __acquisition_thread(self) -> None:
         while True:
             if self.__cancel:  # case where exposure was canceled.
                 break
@@ -331,13 +319,13 @@ class Camera(camera_base.CameraDevice3):
 
 
 class CameraTask:
-    def __init__(self, camera_device: Camera, camera_frame_parameters, collection_shape: typing.Tuple[int, ...]):
+    def __init__(self, camera_device: Camera, camera_frame_parameters: camera_base.CameraFrameParameters, collection_shape: typing.Tuple[int, ...]) -> None:
         self.__camera_device = camera_device
         self.__camera_frame_parameters = camera_frame_parameters
         self.__collection_shape = collection_shape
         self.__count = int(numpy.product(self.__collection_shape))
         self.__aborted = False
-        self.__data: typing.Optional[numpy.ndarray] = None
+        self.__data: typing.Optional[_NDArray] = None
         self.__xdata: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         self.__start = 0
 
@@ -422,21 +410,21 @@ class CameraSettings:
         ]
 
         self.__current_settings_index = 0
-        self.__masks: typing.List = []
+        self.__masks: typing.List[camera_base.Mask] = list()
         self.__frame_parameters = copy.deepcopy(self.__settings[self.__current_settings_index])
         self.__record_parameters = copy.deepcopy(self.__settings[-1])
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-    def initialize(self, **kwargs):
+    def initialize(self, configuration_location: typing.Optional[pathlib.Path] = None, event_loop: typing.Optional[asyncio.AbstractEventLoop] = None, **kwargs: typing.Any) -> None:
         pass
 
     @property
-    def masks(self) -> typing.List:
+    def masks(self) -> typing.List[camera_base.Mask]:
         return self.__masks
 
-    def apply_settings(self, settings_dict: typing.Dict) -> None:
+    def apply_settings(self, settings_dict: typing.Mapping[str, typing.Any]) -> None:
         """Initialize the settings with the settings_dict."""
         if isinstance(settings_dict, dict):
             settings_list = settings_dict.get("settings", list())
@@ -446,7 +434,7 @@ class CameraSettings:
             self.__frame_parameters = camera_base.CameraFrameParameters(settings_dict.get("current_settings", self.__settings[0].as_dict()))
             self.__record_parameters = copy.deepcopy(self.__settings[-1])
 
-    def __save_settings(self) -> typing.Dict:
+    def __save_settings(self) -> typing.Mapping[str, typing.Any]:
         settings_dict = {
             "settings": [settings.as_dict() for settings in self.__settings],
             "current_settings_index": self.__current_settings_index,
@@ -454,7 +442,7 @@ class CameraSettings:
         }
         return settings_dict
 
-    def get_frame_parameters_from_dict(self, d):
+    def get_frame_parameters_from_dict(self, d: typing.Mapping[str, typing.Any]) -> camera_base.CameraFrameParameters:
         return camera_base.CameraFrameParameters(d)
 
     def set_current_frame_parameters(self, frame_parameters: camera_base.CameraFrameParameters) -> None:
@@ -500,7 +488,7 @@ class CameraSettings:
         self.settings_changed_event.fire(self.__save_settings())
         self.frame_parameters_changed_event.fire(settings_index, frame_parameters)
 
-    def get_frame_parameters(self, settings_index) -> camera_base.CameraFrameParameters:
+    def get_frame_parameters(self, settings_index: int) -> camera_base.CameraFrameParameters:
         """Get the frame parameters for the settings index."""
         return copy.copy(self.__settings[settings_index])
 

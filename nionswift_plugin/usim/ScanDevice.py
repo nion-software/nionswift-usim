@@ -1,19 +1,24 @@
+from __future__ import annotations
+
 # standard libraries
 import copy
 import gettext
 import math
 import numpy
+import numpy.typing
 import time
 import typing
-
-# local libraries
-from . import InstrumentDevice
 
 # other plug-ins
 from nion.instrumentation import scan_base
 from nion.instrumentation import stem_controller
 from nion.utils import Geometry
 from nion.utils import Registry
+
+if typing.TYPE_CHECKING:
+    from . import InstrumentDevice
+
+_NDArray = numpy.typing.NDArray[typing.Any]
 
 _ = gettext.gettext
 
@@ -24,7 +29,7 @@ class Channel:
         self.channel_id = channel_id
         self.name = name
         self.enabled = enabled
-        self.data = None
+        self.data: typing.Optional[_NDArray] = None
 
 
 class Frame:
@@ -37,7 +42,7 @@ class Frame:
         self.bad = False
         self.data_count = 0
         self.start_time = time.time()
-        self.scan_data = None
+        self.scan_data: typing.Optional[typing.List[_NDArray]] = None
 
 
 class Device:
@@ -48,7 +53,7 @@ class Device:
         self.stem_controller_id = "usim_stem_controller"
         self.__instrument = instrument
         self.__channels = self.__get_channels()
-        self.__frame = None
+        self.__frame: typing.Optional[Frame] = None
         self.__frame_number = 0
         self.__is_scanning = False
         self.on_device_state_changed = None
@@ -57,7 +62,7 @@ class Device:
         self.flyback_pixels = 2
         self.__buffer: typing.List[typing.List[typing.Dict[str, typing.Any]]] = list()
 
-    def close(self):
+    def close(self) -> None:
         pass
 
     def __get_channels(self) -> typing.List[Channel]:
@@ -78,7 +83,7 @@ class Device:
         return self.__frame_parameters
 
     @property
-    def channel_count(self):
+    def channel_count(self) -> int:
         return len(self.__channels)
 
     @property
@@ -95,7 +100,7 @@ class Device:
     def get_channel_name(self, channel_index: int) -> str:
         return self.__channels[channel_index].name
 
-    def read_partial(self, frame_number: int, pixels_to_skip: int) -> typing.Tuple[typing.Sequence[typing.Dict[str, typing.Any]], bool, bool, tuple, int, int]:
+    def read_partial(self, frame_number: int, pixels_to_skip: int) -> typing.Tuple[typing.Sequence[typing.Dict[str, typing.Any]], bool, bool, typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], int, int]:
         """Read or continue reading a frame.
 
         The `frame_number` may be None, in which case a new frame should be read.
@@ -174,6 +179,7 @@ class Device:
 
         if self.__is_scanning and target_count > current_frame.data_count:
             for channel_index, channel in enumerate(current_frame.channels):
+                assert channel.data is not None
                 scan_data_flat = current_frame.scan_data[channel_index].reshape((total_pixels,))
                 channel_data_flat = channel.data.reshape((total_pixels,))
                 channel_data_flat[current_frame.data_count:target_count] = scan_data_flat[current_frame.data_count:target_count]
@@ -200,7 +206,7 @@ class Device:
         current_rows_read = current_frame.data_count // size.width
 
         if current_frame.complete:
-            sub_area = ((0, 0), size)
+            sub_area = ((0, 0), size.as_tuple())
             pixels_to_skip = 0
             self.__frame = None
         else:
@@ -258,7 +264,7 @@ class Device:
             self.__instrument.live_probe_position = Geometry.FloatPoint() if self.__frame_parameters.external_clock_mode != 0 else None
         return self.__frame_number
 
-    def __start_next_frame(self):
+    def __start_next_frame(self) -> None:
         frame_parameters = copy.deepcopy(self.__frame_parameters)
         channels = [copy.deepcopy(channel) for channel in self.__channels if channel.enabled]
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)

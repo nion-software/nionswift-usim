@@ -3,9 +3,9 @@ import unittest
 from nion.instrumentation.test import CameraControl_test
 
 
-class TestCamera(CameraControl_test.TestCameraControlClass):
+class TestCamera(CameraControl_test.TestCameraControlClass):  # type: ignore  # not sure why this doesn't work. try without?
 
-    def test_camera_integrate_frames_updates_frame_count_by_integration_count(self):
+    def test_camera_integrate_frames_updates_frame_count_by_integration_count(self) -> None:
         with self._test_context() as test_context:
             hardware_source = test_context.camera_hardware_source
             frame_parameters = hardware_source.get_frame_parameters(0)
@@ -20,7 +20,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
             finally:
                 hardware_source.abort_playing(sync_timeout=3.0)
 
-    def test_camera_eels_works_when_it_produces_1d_data(self):
+    def test_camera_eels_works_when_it_produces_1d_data(self) -> None:
         with self._test_context(is_eels=True) as test_context:
             document_controller = test_context.document_controller
             document_model = test_context.document_model

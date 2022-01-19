@@ -1,16 +1,24 @@
-import numpy
+from __future__ import annotations
+
+import numpy.typing
 import typing
 
 from nion.data import Calibration
 from nion.data import DataAndMetadata
 from nion.utils import Geometry
 
+if typing.TYPE_CHECKING:
+    from . import InstrumentDevice
+    from nion.instrumentation import stem_controller
+
+_NDArray = numpy.typing.NDArray[typing.Any]
+
 
 class CameraSimulator:
 
     depends_on: typing.List[str] = list() # subclasses should define the controls and attributes they depend on here
 
-    def __init__(self, instrument, camera_type: str, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
+    def __init__(self, instrument: InstrumentDevice.Instrument, camera_type: str, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
         self.__instrument = instrument
         self._camera_type = camera_type
         self._sensor_dimensions = sensor_dimensions
@@ -18,22 +26,22 @@ class CameraSimulator:
         self._needs_recalculation = True
         self._last_frame_settings = [Geometry.IntRect((0, 0), (0, 0)), Geometry.IntSize(), 0.0, None]
 
-        def property_changed(name):
+        def property_changed(name: str) -> None:
             if name in self.depends_on:
                 self._needs_recalculation = True
 
         self.__property_changed_event_listener = instrument.property_changed_event.listen(property_changed)
 
         # we also need to inform the cameras about changes to the (parked) probe position
-        def probe_state_changed(probe_state, probe_position):
+        def probe_state_changed(probe_state: str, probe_position: typing.Optional[Geometry.FloatPoint]) -> None:
             property_changed("probe_state")
             property_changed("probe_position")
 
         self.__probe_state_changed_event_listener = instrument.probe_state_changed_event.listen(probe_state_changed)
 
-    def close(self):
+    def close(self) -> None:
         self.__property_changed_event_listener.close()
-        self.__property_changed_event_listener = None
+        self.__property_changed_event_listener = typing.cast(typing.Any, None)
         self.__probe_state_changed_event_listener.close()
         self.__probe_state_changed_event_listener = None
 
@@ -42,7 +50,7 @@ class CameraSimulator:
         return self._sensor_dimensions
 
     @property
-    def instrument(self):
+    def instrument(self) -> InstrumentDevice.Instrument:
         return self.__instrument
 
     def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
@@ -51,7 +59,7 @@ class CameraSimulator:
         """
         return [Calibration.Calibration(), Calibration.Calibration()]
 
-    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, probe_position) -> DataAndMetadata.DataAndMetadata:
+    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata:
         """
         Subclasses must override this method
         """
@@ -62,7 +70,7 @@ class CameraSimulator:
         e_per_pa = 6.242E18 / 1E12
         return beam_current_pa * e_per_pa * exposure_s * self._counts_per_electron
 
-    def _get_binned_data(self, data: numpy.ndarray, binning_shape: Geometry.IntSize) -> numpy.ndarray:
+    def _get_binned_data(self, data: _NDArray, binning_shape: Geometry.IntSize) -> _NDArray:
         if binning_shape.height > 1:
             # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
             data_T = data.T

@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 # standard libraries
 import gettext
+import typing
 
 # local libraries
 from nion.swift import Panel
@@ -7,18 +10,32 @@ from nion.swift import Workspace
 from nion.ui import Widgets
 from nion.utils import Binding
 from nion.utils import Converter
+from nion.utils.ReferenceCounting import weak_partial
 
-from . import InstrumentDevice
+if typing.TYPE_CHECKING:
+    from . import InstrumentDevice
+    from nion.swift import DocumentController
+    from nion.ui import UserInterface
+    from nion.utils import Validator
 
 _ = gettext.gettext
 
 
 class Control2DBinding(Binding.Binding):
-    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, attribute_name: str, converter=None, fallback=None):
+    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, attribute_name: str,
+                 converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
+                 fallback: typing.Any = None) -> None:
         super().__init__(None, converter=converter, fallback=fallback)
 
-        self.source_setter = lambda value: getattr(instrument.get_control(control_name), attribute_name).set_output_value(value)
-        self.source_getter = lambda: getattr(instrument.get_control(control_name), attribute_name).output_value
+        def set_property_value(source: typing.Any, value: typing.Any) -> None:
+            if source:
+                getattr(instrument.get_control(control_name), attribute_name).set_output_value(value)
+
+        def get_property_value(source: typing.Any) -> typing.Any:
+            return getattr(instrument.get_control(control_name), attribute_name).output_value if source else None
+
+        self.source_setter = weak_partial(set_property_value, self.source)
+        self.source_getter = weak_partial(get_property_value, self.source)
 
         # thread safe
         def property_changed(property_name_: str) -> None:
@@ -32,18 +49,28 @@ class Control2DBinding(Binding.Binding):
 
         self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
 
-    def close(self):
+    def close(self) -> None:
         self.__property_changed_listener.close()
-        self.__property_changed_listener = None
+        self.__property_changed_listener = typing.cast(typing.Any, None)
         super().close()
 
 
 class ControlBinding(Binding.Binding):
-    def __init__(self, instrument, control_name: str, *, converter=None, validator=None, fallback=None):
+    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, *,
+                 converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
+                 validator: typing.Optional[Validator.ValidatorLike[typing.Any]] = None,
+                 fallback: typing.Any = None) -> None:
         super().__init__(None, converter=converter, validator=validator, fallback=fallback)
 
-        self.source_setter = lambda value: instrument.SetVal(control_name, value)
-        self.source_getter = lambda: instrument.GetVal(control_name)
+        def set_property_value(source: typing.Any, value: typing.Any) -> None:
+            if source:
+                instrument.SetVal(control_name, value)
+
+        def get_property_value(source: typing.Any) -> typing.Any:
+            return instrument.GetVal(control_name) if source else None
+
+        self.source_setter = weak_partial(set_property_value, self.source)
+        self.source_getter = weak_partial(get_property_value, self.source)
 
         # thread safe
         def property_changed(property_name_: str) -> None:
@@ -56,23 +83,24 @@ class ControlBinding(Binding.Binding):
 
         self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
 
-    def close(self):
+    def close(self) -> None:
         self.__property_changed_listener.close()
-        self.__property_changed_listener = None
+        self.__property_changed_listener = typing.cast(typing.Any, None)
         super().close()
 
 
 class PositionWidget(Widgets.CompositeWidgetBase):
 
-    def __init__(self, ui, label: str, object, xy_property, unit="nm", multiplier=1E9):
+    def __init__(self, ui: UserInterface.UserInterface, label: str, instrument: InstrumentDevice.Instrument,
+                 xy_property: str, unit: str = "nm", multiplier: float = 1E9) -> None:
         row_widget = ui.create_row_widget()
         super().__init__(row_widget)
 
         stage_x_field = ui.create_line_edit_widget()
-        stage_x_field.bind_text(Control2DBinding(object, xy_property, "x", Converter.PhysicalValueToStringConverter(unit, multiplier)))
+        stage_x_field.bind_text(Control2DBinding(instrument, xy_property, "x", Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         stage_y_field = ui.create_line_edit_widget()
-        stage_y_field.bind_text(Control2DBinding(object, xy_property, "y", Converter.PhysicalValueToStringConverter(unit, multiplier)))
+        stage_y_field.bind_text(Control2DBinding(instrument, xy_property, "y", Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         row_widget.add_spacing(8)
         row_widget.add(ui.create_label_widget(label))
@@ -89,13 +117,9 @@ class PositionWidget(Widgets.CompositeWidgetBase):
 
 class InstrumentWidget(Widgets.CompositeWidgetBase):
 
-    def __init__(self, document_controller, instrument: InstrumentDevice.Instrument):
-        column_widget = document_controller.ui.create_column_widget(properties={"margin": 6, "spacing": 2})
+    def __init__(self, ui: UserInterface.UserInterface, instrument: InstrumentDevice.Instrument) -> None:
+        column_widget = ui.create_column_widget(properties={"margin": 6, "spacing": 2})
         super().__init__(column_widget)
-
-        self.document_controller = document_controller
-
-        ui = document_controller.ui
 
         sample_combo_box = ui.create_combo_box_widget(instrument.sample_titles)
         sample_combo_box.current_index = instrument.sample_index
@@ -231,12 +255,12 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
 
 class InstrumentControlPanel(Panel.Panel):
 
-    def __init__(self, document_controller, panel_id, properties):
+    def __init__(self, document_controller: DocumentController.DocumentController, panel_id: str, properties: typing.Mapping[str, typing.Any]) -> None:
         super().__init__(document_controller, panel_id, panel_id)
         ui = document_controller.ui
         self.widget = ui.create_column_widget()
         instrument = properties["instrument"]
-        instrument_widget = InstrumentWidget(self.document_controller, instrument)
+        instrument_widget = InstrumentWidget(ui, instrument)
         self.widget.add(instrument_widget)
         self.widget.add_spacing(12)
         self.widget.add_stretch()
