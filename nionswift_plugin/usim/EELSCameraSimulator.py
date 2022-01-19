@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 # standard libraries
 import copy
 import math
 import typing
 
 import numpy
+import numpy.typing
 import scipy.ndimage.interpolation
 import scipy.stats
 
@@ -15,8 +18,16 @@ from nion.utils import Geometry
 from . import CameraSimulator
 from . import Noise
 
+if typing.TYPE_CHECKING:
+    from . import InstrumentDevice
+    from . import SampleSimulator
+    from nion.instrumentation import stem_controller
 
-def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, offset_ev: float, onset_ev: float) -> None:
+_NDArray = numpy.typing.NDArray[typing.Any]
+
+
+
+def plot_powerlaw(data: _NDArray, multiplier: float, energy_calibration: Calibration.Calibration, offset_ev: float, onset_ev: float) -> None:
     # calculate the range
     # 1 represents 0eV, 0 represents 4000eV
     # TODO: sub-pixel accuracy
@@ -29,7 +40,7 @@ def plot_powerlaw(data: numpy.ndarray, multiplier: float, energy_calibration: Ca
     data += envelope * multiplier * powerlaw
 
 
-def plot_norm(data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration, energy_ev: float, energy_width_ev: float) -> None:
+def plot_norm(data: _NDArray, multiplier: float, energy_calibration: Calibration.Calibration, energy_ev: float, energy_width_ev: float) -> None:
     # calculate the range
     # 1 represents 0eV, 0 represents 4000eV
     # TODO: sub-pixel accuracy
@@ -40,7 +51,7 @@ def plot_norm(data: numpy.ndarray, multiplier: float, energy_calibration: Calibr
     data += multiplier * norm.pdf(numpy.linspace(energy_range_ev[0], energy_range_ev[1], data_range[1])) / norm.pdf(energy_ev)
 
 
-def plot_spectrum(feature, data: numpy.ndarray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
+def plot_spectrum(feature: SampleSimulator.Feature, data: _NDArray, multiplier: float, energy_calibration: Calibration.Calibration) -> None:
     for edge_eV, onset_eV in feature.edges:
         # print(f"edge_eV {edge_eV} onset_eV {onset_eV}")
         strength = multiplier * 0.1
@@ -54,13 +65,13 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                   "stage_position_m", "beam_shift_m", "features", "energy_offset_eV", "energy_per_channel_eV",
                   "BeamCurrent"]
 
-    def __init__(self, instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int):
+    def __init__(self, instrument: InstrumentDevice.Instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         self.__data_scale = 1.0
         self.noise = Noise.PoissonNoise()
 
-    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, parked_probe_position):
+    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata:
         """
         Features at the probe position will add plasmons and edges in addition to a ZLP.
 
@@ -115,7 +126,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         self._last_frame_settings = new_frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
-            data = numpy.zeros(tuple(self._sensor_dimensions), float)
+            data: numpy.typing.NDArray[numpy.float_] = numpy.zeros(tuple(self._sensor_dimensions), float)
             slit_attenuation = 10 if self.instrument.is_slit_in else 1
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
@@ -130,19 +141,19 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
             # grab the specific calibration for the energy direction and offset by ZLPoffset
             used_calibration = dimensional_calibrations[1]
-            used_calibration.offset = self.instrument.get_control("ZLPoffset").local_value
+            used_calibration.offset = typing.cast("InstrumentDevice.Control", self.instrument.get_control("ZLPoffset")).local_value
 
             if scan_context.is_valid and probe_position is not None:
 
                 # make a buffer for the spectrum
-                spectrum = numpy.zeros((data.shape[1], ), float)
+                spectrum: numpy.typing.NDArray[numpy.float_] = numpy.zeros((data.shape[1], ), float)
 
                 # configure a calibration for the reference spectrum. then plot the ZLP on the reference data. sum it to
                 # get the zlp_pixel_count and the zlp_scale. this is the value to multiple zlp data by to scale it so
                 # that it will produce the target pixel count. since we will be storing the spectra in a 2d array,
                 # divide by the height of that array so that when it is summed, the value comes out correctly.
                 zlp0_calibration = Calibration.Calibration(scale=used_calibration.scale, offset=-20)
-                spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), float)
+                spectrum_ref: numpy.typing.NDArray[numpy.float_] = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), float)
                 plot_norm(spectrum_ref, 1.0, Calibration.Calibration(scale=used_calibration.scale, offset=-20), 0, 0.5 / slit_attenuation)
                 zlp_ref_pixel_count = float(numpy.sum(spectrum_ref))
 

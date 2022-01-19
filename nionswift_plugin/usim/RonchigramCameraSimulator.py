@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 # standard libraries
 import copy
 import typing
 import math
 import numpy
+import numpy.typing
 import scipy.ndimage.interpolation
 import scipy.stats
 
@@ -13,6 +16,13 @@ from nion.utils import Geometry
 
 from . import CameraSimulator
 from . import Noise
+
+if typing.TYPE_CHECKING:
+    from . import InstrumentDevice
+    from . import SampleSimulator
+    from nion.instrumentation import stem_controller
+
+_NDArray = numpy.typing.NDArray[typing.Any]
 
 
 class AberrationsController:
@@ -27,21 +37,21 @@ class AberrationsController:
         "c41a", "c41b", "c43a", "c43b", "c45a", "c45b", "c50", "c52a", "c52b", "c54a", "c54b", "c56a", "c56b", "c70"
     )
 
-    def __init__(self, height, width, theta, max_defocus, defocus):
+    def __init__(self, height: int, width: int, theta: float, max_defocus: float, defocus: float) -> None:
         self.__height = height
         self.__width = width
         self.__theta = theta
         self.__max_defocus = max_defocus
-        self.__coefficients = dict()
-        self.__intermediates = dict()  # functions of height/width/theta
-        self.__chis = dict()  # chi's, functions of intermediate and coefficients
+        self.__coefficients: typing.Dict[str, float] = dict()
+        self.__intermediates: typing.Dict[str, _NDArray] = dict()  # functions of height/width/theta
+        self.__chis: typing.Dict[str, _NDArray] = dict()  # chi's, functions of intermediate and coefficients
         self.__coefficients["c10"] = defocus
-        self.__chi = None
-        self.__c = None
+        self.__chi: typing.Optional[_NDArray] = None
+        self.__c: typing.Optional[typing.List[float]] = None
 
-    def apply(self, aberrations, data):
-        height = aberrations["height"]
-        width = aberrations["width"]
+    def apply(self, aberrations: typing.Mapping[str, typing.Union[int, float]], data: numpy.typing.NDArray[numpy.float32]) -> _NDArray:
+        height = int(aberrations["height"])
+        width = int(aberrations["width"])
         theta = aberrations["theta"]
 
         if theta != self.__theta or width != self.__width or height != self.__height:
@@ -63,7 +73,7 @@ class AberrationsController:
 
         # below: the tedious part...
 
-        def get_i0ab():
+        def get_i0ab() -> typing.Tuple[_NDArray, _NDArray]:
             i0a = self.__intermediates.get("c0a")
             i0b = self.__intermediates.get("c0b")
             if i0a is None or i0b is None:
@@ -72,41 +82,41 @@ class AberrationsController:
                 self.__intermediates["c0b"] = i0b
             return i0a, i0b
 
-        def get_i0a():
+        def get_i0a() -> _NDArray:
             return get_i0ab()[0]
 
-        def get_i0b():
+        def get_i0b() -> _NDArray:
             return get_i0ab()[1]
 
-        def get_i0a_squared():
+        def get_i0a_squared() -> _NDArray:
             i0a_squared = self.__intermediates.get("c0a_squared")
             if i0a_squared is None:
                 i0a_squared = get_i0a() ** 2
                 self.__intermediates["c0a_squared"] = i0a_squared
             return i0a_squared
 
-        def get_i0b_squared():
+        def get_i0b_squared() -> _NDArray:
             i0b_squared = self.__intermediates.get("c0b_squared")
             if i0b_squared is None:
                 i0b_squared = get_i0b() ** 2
                 self.__intermediates["c0b_squared"] = i0b_squared
             return i0b_squared
 
-        def get_iradius():
+        def get_iradius() -> _NDArray:
             ir = self.__intermediates.get("ir")
             if ir is None:
                 ir = get_i0a_squared() + get_i0b_squared()
                 self.__intermediates["ir"] = ir
             return ir
 
-        def get_idiff_sq():
+        def get_idiff_sq() -> _NDArray:
             ids = self.__intermediates.get("ids")
             if ids is None:
                 ids = get_i0a_squared() - get_i0b_squared()
                 self.__intermediates["ids"] = ids
             return ids
 
-        def get_intermediate(coefficient_name):
+        def get_intermediate(coefficient_name: str) -> _NDArray:
             intermediate = self.__intermediates.get(coefficient_name)
             if intermediate is None:
                 if coefficient_name == "c0a":
@@ -148,7 +158,8 @@ class AberrationsController:
                 elif coefficient_name == "c45a":
                     intermediate = (get_i0a() * get_idiff_sq() ** 2 - 4 * get_i0a() * get_idiff_sq() * get_i0b() ** 2 - 4 * get_i0a() ** 3 * get_i0b() ** 2) / 5
                 elif coefficient_name == "c45b":
-                    intermediate = (get_i0b() * get_idiff_sq() ** 2 + 4 * get_i0b() * get_idiff_sq() * get_i0a() ** 2 - 4 * get_i0a() ** 2 * get_i0b() ** 3) / 5
+                    # this type: ignore is inexplicably necessary; seems like bug in numpy.typing or mypy. try removing to see if it passes typing tests.
+                    intermediate = (get_i0b() * get_idiff_sq() ** 2 + 4 * get_i0b() * get_idiff_sq() * get_i0a() ** 2 - 4 * get_i0a() ** 2 * get_i0b() ** 3) / 5  # type: ignore
                 elif coefficient_name == "c50":
                     intermediate = 8 * get_intermediate("c10") ** 3 / 6
                 elif coefficient_name == "c52a":
@@ -165,9 +176,10 @@ class AberrationsController:
                     intermediate = get_intermediate("c12b") * get_idiff_sq() ** 2 - (4 * get_i0a() ** 3 * get_i0b() ** 3) / 3
                 elif coefficient_name == "c70":
                     intermediate = 2 * get_intermediate("c10") ** 4
+            assert intermediate is not None
             return intermediate
 
-        def get_chi(coefficient_name):
+        def get_chi(coefficient_name: str) -> typing.Optional[_NDArray]:
             chi = self.__chis.get(coefficient_name)
             if chi is None:
                 coefficient = self.__coefficients.get(coefficient_name, 0.0)
@@ -206,19 +218,19 @@ class AberrationsController:
 
         if self.__c is not None:
             # scale the offsets so that at max defocus, the coordinates cover the entire area of data.
-            return scipy.ndimage.interpolation.map_coordinates(data, self.__c)
+            return scipy.ndimage.interpolation.map_coordinates(data, self.__c)  # type: ignore
 
         return numpy.zeros((height, width))
 
 
-def ellipse_radius(polar_angle: typing.Union[float, numpy.ndarray], a: float, b: float, rotation: float) -> typing.Union[float, numpy.ndarray]:
+def ellipse_radius(polar_angle: typing.Union[float, _NDArray], a: float, b: float, rotation: float) -> typing.Union[float, _NDArray]:
     """
     Returns the radius of a point lying on an ellipse with the given parameters. The ellipse is described in polar
     coordinates here, which makes it easy to incorporate a rotation.
 
     Parameters
     -----------
-    polar_angle : float or numpy.ndarray
+    polar_angle : float or _NDArray
                   Polar angle of a point to which the corresponding radius should be calculated (rad).
     a : float
         Length of the major half-axis of the ellipse.
@@ -228,14 +240,14 @@ def ellipse_radius(polar_angle: typing.Union[float, numpy.ndarray], a: float, b:
 
     Returns
     --------
-    radius : float or numpy.ndarray
+    radius : float or _NDArray
              Radius of a point lying on an ellipse with the given parameters.
     """
 
-    return a*b/numpy.sqrt((b*numpy.cos(polar_angle+rotation))**2+(a*numpy.sin(polar_angle+rotation))**2)
+    return a * b / numpy.sqrt((b * numpy.cos(polar_angle + rotation)) ** 2 + (a * numpy.sin(polar_angle + rotation)) ** 2)  # type: ignore
 
 
-def draw_ellipse(image: numpy.ndarray, ellipse: typing.Tuple[float, float, float, float, float], *, color: typing.Any = 1.0) -> None:
+def draw_ellipse(image: _NDArray, ellipse: typing.Tuple[float, float, float, float, float], *, color: typing.Any = 1.0) -> None:
     """
     Draws an ellipse on a 2D-array.
 
@@ -279,9 +291,9 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                   "C34Control", "stage_position_m", "probe_state", "probe_position", "live_probe_position", "features",
                   "beam_shift_m", "is_blanked", "BeamCurrent", "CAperture", "ApertureRound", "S_VOA", "ConvergenceAngle"]
 
-    def __init__(self, instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float):
+    def __init__(self, instrument: InstrumentDevice.Instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float) -> None:
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
-        self.__last_sample = None
+        self.__last_sample: typing.Optional[SampleSimulator.Sample] = None
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         max_defocus = instrument.max_defocus
         tv_pixel_angle = math.asin(instrument.stage_size_nm / (max_defocus * 1E9)) / ronchigram_shape.height
@@ -296,7 +308,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
         self.noise = Noise.PoissonNoise()
 
-    def _draw_aperture(self, frame_data: numpy.ndarray, binning_shape: Geometry.IntSize, enlarge_by: float = 0.0) -> None:
+    def _draw_aperture(self, frame_data: _NDArray, binning_shape: Geometry.IntSize, enlarge_by: float = 0.0) -> None:
         # TODO handle asymmetric binning
         binning = binning_shape[0]
         position = self.instrument.GetVal2D("CAperture")
@@ -318,7 +330,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         draw_ellipse(aperture_mask, self.__aperture_ellipse)
         frame_data *= aperture_mask
 
-    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context, parked_probe_position) -> DataAndMetadata.DataAndMetadata:
+    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata:
         # check if one of the arguments has changed since last call
         new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context)]
         if new_frame_settings != self._last_frame_settings:
@@ -338,7 +350,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 full_fov_nm * (readout_area.center.y / self._sensor_dimensions.height - 0.5),
                 full_fov_nm * (readout_area.center.x / self._sensor_dimensions.width - 0.5))
             size = Geometry.IntSize(height, width)
-            data = numpy.zeros((height, width), numpy.float32)
+            data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((height, width), numpy.float32)
             # features will be positive values; thickness can be simulated by subtracting the features from the
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
@@ -349,7 +361,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             self.__last_sample = self.instrument.sample
 
             if not self.instrument.is_blanked:
-                probe_position = Geometry.FloatPoint(0.5, 0.5)
+                probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
                 if self.instrument.probe_state == "scanning":
                     probe_position = self.instrument.live_probe_position
                 elif self.instrument.probe_state == "parked" and parked_probe_position is not None:

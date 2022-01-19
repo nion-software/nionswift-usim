@@ -3,6 +3,7 @@ Useful references:
     http://www.rodenburg.org/guide/index.html
     http://www.ammrf.org.au/myscope/
 """
+from __future__ import annotations
 
 # standard libraries
 import copy
@@ -10,6 +11,7 @@ import math
 import time
 
 import numpy
+import numpy.typing
 import threading
 import typing
 import re
@@ -22,10 +24,17 @@ from nion.swift.model import Utility
 from nion.utils import Event
 from nion.utils import Geometry
 
-from . import CameraSimulator
 from . import EELSCameraSimulator
 from . import SampleSimulator
 from . import RonchigramCameraSimulator
+
+if typing.TYPE_CHECKING:
+    from . import CameraSimulator
+    from . import ScanDevice
+    from nion.instrumentation import scan_base
+    from nion.data import Calibration
+
+_NDArray = numpy.typing.NDArray[typing.Any]
 
 
 """
@@ -96,7 +105,7 @@ class Variable:
         self.__last_output_value: typing.Optional[float] = None
         self.on_changed: typing.Optional[typing.Callable[[Variable], None]] = None
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "{}: {}".format(self.name, self.output_value)
 
     @property
@@ -145,14 +154,15 @@ class Variable:
         self.__expression = expression
         self._notify_change()
 
-    def __evaluate_expression(self):
+    def __evaluate_expression(self) -> float:
         variables = dict()
         for key, value in self.__variables.items():
             if isinstance(value, Variable):
                 value = value.output_value
             variables[key] = value
         try:
-            res = eval(self.__expression, globals(), variables)
+            assert self.__expression
+            res = typing.cast(float, eval(self.__expression, globals(), variables))
         except Exception:
             import traceback
             traceback.print_exc()
@@ -207,7 +217,7 @@ class Control(Variable):
         super().__init__(name, weighted_inputs)
         self.local_value = float(local_value)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "{}: {} + {} = {}".format(self.name, self.weighted_input_value, self.local_value, self.output_value)
 
     @property
@@ -304,7 +314,7 @@ class AxisManager(metaclass=Utility.Singleton):
     if we need to support axis with different rotations between each other.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.__supported_axis_names: typing.List[stem_controller.AxisType] = [('a', 'b'), ('x', 'y'), ('u', 'v'),
                                                                               ('mx', 'my'), ('px', 'py'), ('sx', 'sy'),
                                                                               ('sa', 'sb')]
@@ -340,7 +350,7 @@ class Control2D:
 
         self.__controls = (control_a, control_b)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "{0}.{1[0]}: {2} + {3} = {4}\n{0}.{1[1]}: {5} + {6} = {7}\n".format(self.name,
                                                                                    self.native_axis,
                                                                                    self.__controls[0].weighted_input_value,
@@ -354,7 +364,7 @@ class Control2D:
     def controls(self) -> typing.Tuple["Control", "Control"]:
         return self.__controls
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> typing.Any:
         if attr in self.native_axis:
             return self.__controls[self.native_axis.index(attr)]
         axis_names = AxisManager().supported_axis_names
@@ -367,7 +377,7 @@ class Control2D:
 
 class DriftController:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.__start_time = time.time()
 
     @property
@@ -383,12 +393,12 @@ class DriftController:
                                    x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
 
 
-class Instrument(stem_controller.STEMController):
+class Instrument(stem_controller.STEMController):  # type: ignore  # not sure why this doesn't work. try without?
     """
     TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
     """
 
-    def __init__(self, instrument_id: str):
+    def __init__(self, instrument_id: str) -> None:
         super().__init__()
         self.priority = 20
         self.instrument_id = instrument_id
@@ -431,7 +441,7 @@ class Instrument(stem_controller.STEMController):
             "eels": EELSCameraSimulator.EELSCameraSimulator(self, self.__eels_shape, self.counts_per_electron)
         }
 
-    def close(self):
+    def close(self) -> None:
         for camera in self.__cameras.values():
             camera.close()
         self.__cameras = dict()
@@ -503,21 +513,23 @@ class Instrument(stem_controller.STEMController):
                 slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
                 rsq_seconds, rsq_thirds, voltage, order_1_patch, order_2_patch, order_3_patch]
 
-    def __set_expressions(self):
-        self.get_control("RSquareC2s").set_expression("(((C21_a**2+C21_b**2)/1296+(C23_a**2+C23_b**2)/144)/lamb**2)*6.283**2*MaxApertureAngle**6",
-                                                      variables={"C21_a": "C21.x", "C21_b": "C21.y",
-                                                                 "C23_a": "C23.x", "C23_b": "C23.y",
-                                                                 "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
-                                                      instrument=self)
-        self.get_control("RSquareC3s").set_expression("((C30**2/5760+(C32_a**2+C32_b**2)/5120+(C34_a**2+C34_b**2)/320)/lamb**2)*6.283**2*MaxApertureAngle**8",
-                                                      variables={"C30": "C30",
-                                                                 "C32_a": "C32.x", "C32_b": "C32.y",
-                                                                 "C34_a": "C34.x", "C34_b": "C34.y",
-                                                                 "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
-                                                      instrument=self)
-        self.get_control("Order1MaxAngle").set_expression("-1")
-        self.get_control("Order2MaxAngle").set_expression("-1")
-        self.get_control("Order3MaxAngle").set_expression("-1")
+    def __set_expressions(self) -> None:
+        typing.cast(Variable, self.get_control("RSquareC2s")).set_expression(
+            "(((C21_a**2+C21_b**2)/1296+(C23_a**2+C23_b**2)/144)/lamb**2)*6.283**2*MaxApertureAngle**6",
+            variables={"C21_a": "C21.x", "C21_b": "C21.y",
+                       "C23_a": "C23.x", "C23_b": "C23.y",
+                       "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
+            instrument=self)
+        typing.cast(Variable, self.get_control("RSquareC3s")).set_expression(
+            "((C30**2/5760+(C32_a**2+C32_b**2)/5120+(C34_a**2+C34_b**2)/320)/lamb**2)*6.283**2*MaxApertureAngle**8",
+            variables={"C30": "C30",
+                       "C32_a": "C32.x", "C32_b": "C32.y",
+                       "C34_a": "C34.x", "C34_b": "C34.y",
+                       "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
+            instrument=self)
+        typing.cast(Variable, self.get_control("Order1MaxAngle")).set_expression("-1")
+        typing.cast(Variable, self.get_control("Order2MaxAngle")).set_expression("-1")
+        typing.cast(Variable, self.get_control("Order3MaxAngle")).set_expression("-1")
 
     @property
     def sample(self) -> SampleSimulator.Sample:
@@ -561,7 +573,7 @@ class Instrument(stem_controller.STEMController):
     def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None) -> Control:
         return Control(name, local_value, weighted_inputs)
 
-    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[WeightedInput], typing.List[WeightedInput]]] = None):
+    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[WeightedInput], typing.List[WeightedInput]]] = None) -> Control2D:
         return Control2D(name, native_axis, local_values, weighted_inputs)
 
     def add_control(self, control: typing.Union[Variable, Control2D]) -> None:
@@ -614,16 +626,16 @@ class Instrument(stem_controller.STEMController):
         return weight
 
     @property
-    def sequence_progress(self):
+    def sequence_progress(self) -> int:
         with self.__lock:
             return self.__sequence_progress
 
     @sequence_progress.setter
-    def sequence_progress(self, value):
+    def sequence_progress(self, value: int) -> None:
         with self.__lock:
             self.__sequence_progress = value
 
-    def increment_sequence_progress(self):
+    def increment_sequence_progress(self) -> None:
         with self.__lock:
             self.__sequence_progress += 1
 
@@ -653,7 +665,8 @@ class Instrument(stem_controller.STEMController):
         self.__camera_frame_event.clear()
         return result
 
-    def get_scan_data(self, frame_parameters, channel) -> numpy.ndarray:
+    # note: channel typing is just for ease of tests. it can be more strict in the future.
+    def get_scan_data(self, frame_parameters: scan_base.ScanFrameParameters, channel: typing.Union[int, ScanDevice.Channel]) -> _NDArray:
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
         offset_m = self.actual_offset_m  # stage position - beam shift + drift
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
@@ -671,7 +684,7 @@ class Instrument(stem_controller.STEMController):
         extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
         extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])
         used_size = size + Geometry.IntSize(height=extra, width=extra)
-        data = numpy.zeros((used_size.height, used_size.width), numpy.float32)
+        data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
         self.sample.plot_features(data, offset_m, used_fov_size_nm, extra_nm, center_nm, used_size)
         noise_factor = 0.3
         total_rotation = frame_parameters.rotation_rad
@@ -687,8 +700,8 @@ class Instrument(stem_controller.STEMController):
             assert rotated_data is not None
             data = rotated_data
         else:
-            data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
-        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us
+            data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]  # type: ignore
+        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us  # type: ignore
 
     def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
         if camera_type == "ronchigram":
@@ -704,7 +717,7 @@ class Instrument(stem_controller.STEMController):
             return 0, 0, self.__eels_shape[0], self.__eels_shape[1]
 
     @property
-    def counts_per_electron(self):
+    def counts_per_electron(self) -> int:
         return 40
 
     def get_electrons_per_pixel(self, pixel_count: int, exposure_s: float) -> float:
@@ -717,7 +730,7 @@ class Instrument(stem_controller.STEMController):
     def get_camera_data(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float) -> DataAndMetadata.DataAndMetadata:
         return self.__cameras[camera_type].get_frame_data(readout_area, binning_shape, exposure_s, self.__scan_context, self.__probe_position)
 
-    def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: Geometry.IntRect = None, binning_shape: Geometry.IntSize = None):
+    def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: typing.Optional[Geometry.IntRect] = None, binning_shape: typing.Optional[Geometry.IntSize] = None) -> typing.Sequence[Calibration.Calibration]:
         return self.__cameras[camera_type].get_dimensional_calibrations(readout_area, binning_shape)
 
     @property
@@ -861,7 +874,7 @@ class Instrument(stem_controller.STEMController):
         else:
             return self.__resolve_control_name(s)
 
-    def GetVal(self, s: str, default_value: float = None) -> float:
+    def GetVal(self, s: str, default_value: typing.Optional[float] = None) -> float:
         good, d = self.TryGetVal(s)
         if not good or d is None:
             if default_value is None:
@@ -908,7 +921,7 @@ class Instrument(stem_controller.STEMController):
                 return True
         return self.SetVal(s, val)
 
-    def GetVal2D(self, s: str, default_value: Geometry.FloatPoint = None, *, axis: stem_controller.AxisType = None) -> Geometry.FloatPoint:
+    def GetVal2D(self, s: str, default_value: typing.Optional[Geometry.FloatPoint] = None, *, axis: typing.Optional[stem_controller.AxisType] = None) -> Geometry.FloatPoint:
         control = self.__controls.get(s)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis

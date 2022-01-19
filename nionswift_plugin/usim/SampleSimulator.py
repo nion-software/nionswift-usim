@@ -2,6 +2,7 @@
 import abc
 import gettext
 import numpy
+import numpy.typing
 import random
 import scipy.ndimage
 import typing
@@ -9,13 +10,15 @@ import typing
 from nion.data import Image
 from nion.utils import Geometry
 
+_NDArray = numpy.typing.NDArray[typing.Any]
+
 
 _ = gettext.gettext
 
 
 class Feature:
 
-    def __init__(self, position_m, size_m, edges, plasmon_eV, plurality):
+    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int) -> None:
         self.position_m = position_m
         self.size_m = size_m
         self.edges = edges
@@ -37,7 +40,7 @@ class Feature:
         probe_position_m = Geometry.FloatPoint(y=probe_position.y * scan_rect_m.height + scan_rect_m.top, x=probe_position.x * scan_rect_m.width + scan_rect_m.left)
         return scan_rect_m.intersects_rect(feature_rect_m) and feature_rect_m.contains_point(probe_position_m)
 
-    def plot(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> int:
+    def plot(self, data: _NDArray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> int:
         # TODO: how does center_nm interact with stage position?
         # TODO: take into account feature angle
         # TODO: take into account frame parameters angle
@@ -79,7 +82,7 @@ class Sample(abc.ABC):
     def features(self) -> typing.List[Feature]: ...
 
     @abc.abstractmethod
-    def plot_features(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None: ...
+    def plot_features(self, data: _NDArray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None: ...
 
 
 class RectangleFlakeSample(Sample):
@@ -106,15 +109,15 @@ class RectangleFlakeSample(Sample):
     def features(self) -> typing.List[Feature]:
         return self.__features
 
-    def plot_features(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None:
+    def plot_features(self, data: _NDArray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None:
         for feature in self.__features:
             feature.plot(data, offset_m, fov_size_nm + extra_nm, center_nm, used_size)
 
 
 class AmorphousSample(Sample):
 
-    def __init__(self):
-        self.__amorphous = numpy.random.RandomState(1).randn(2048, 2048) * 2 + 1
+    def __init__(self) -> None:
+        self.__amorphous = typing.cast(_NDArray, numpy.random.RandomState(1).randn(2048, 2048)) * 2 + 1
 
     @property
     def title(self) -> str:
@@ -124,7 +127,7 @@ class AmorphousSample(Sample):
     def features(self) -> typing.List[Feature]:
         return list()
 
-    def plot_features(self, data: numpy.ndarray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None:
+    def plot_features(self, data: _NDArray, offset_m: Geometry.FloatPoint, fov_size_nm: Geometry.FloatSize, extra_nm: Geometry.FloatPoint, center_nm: Geometry.FloatPoint, used_size: Geometry.IntSize) -> None:
 
         range_nm = 80
 

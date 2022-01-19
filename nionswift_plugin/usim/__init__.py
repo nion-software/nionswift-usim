@@ -5,7 +5,7 @@ from . import CameraDevice
 from . import ScanDevice
 from . import InstrumentPanel
 
-def run():
+def run() -> None:
     instrument = InstrumentDevice.Instrument("usim_stem_controller")
     Registry.register_component(instrument, {"instrument_controller", "stem_controller"})
 
