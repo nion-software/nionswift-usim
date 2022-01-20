@@ -296,17 +296,23 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         self.__last_sample: typing.Optional[SampleSimulator.Sample] = None
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         max_defocus = instrument.max_defocus
-        tv_pixel_angle = math.asin(instrument.stage_size_nm / (max_defocus * 1E9)) / ronchigram_shape.height
-        self.__tv_pixel_angle = tv_pixel_angle
         self.__stage_size_nm = stage_size_nm
-        self.__max_defocus = max_defocus
         self.__data_scale = 1.0
         self.__aperture_ellipse: typing.Optional[typing.Tuple[float, float, float, float, float]] = None
         self.__aperture_mask = None
-        theta = tv_pixel_angle * ronchigram_shape.height / 2  # half angle on camera
+        theta = self._tv_pixel_angle * ronchigram_shape.height / 2  # half angle on camera
         defocus_m = instrument.defocus_m
         self.__aberrations_controller = AberrationsController(ronchigram_shape.height, ronchigram_shape.width, theta, max_defocus, defocus_m)
         self.noise = Noise.PoissonNoise()
+
+    @property
+    def _tv_pixel_angle(self) -> float:
+        instrument = self.instrument
+        return math.asin(instrument.stage_size_nm / (instrument.max_defocus * 1E9)) / self._camera_shape.height
+
+    @property
+    def _max_defocus(self) -> float:
+        return self.instrument.max_defocus
 
     def _draw_aperture(self, frame_data: _NDArray, binning_shape: Geometry.IntSize, enlarge_by: float = 0.0) -> None:
         # TODO handle asymmetric binning
@@ -314,7 +320,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         position = self.instrument.GetVal2D("CAperture")
         aperture_round = self.instrument.GetVal2D("ApertureRound")
         shape = frame_data.shape
-        ellipse_center = 0.5 * shape[0] + position.y / self.__tv_pixel_angle / binning, 0.5 * shape[1] + position.x / self.__tv_pixel_angle / binning
+        ellipse_center = 0.5 * shape[0] + position.y / self._tv_pixel_angle / binning, 0.5 * shape[1] + position.x / self._tv_pixel_angle / binning
         excentricity = math.sqrt(aperture_round[0]**2 + aperture_round[1]**2)
         # adapt excentricity so that control behaves linearly and is defined for all values
         # this is the modified inverse function of the calculation of the major half-axis a
@@ -322,7 +328,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         direction = numpy.arctan2(aperture_round[0], aperture_round[1])
         # Calculate a and b (the ellipse half-axes) from excentricity. Keep ellipse area constant
         convergence_angle = self.instrument.GetVal("ConvergenceAngle") * (1 + enlarge_by)
-        convergence_angle_pixels = convergence_angle / self.__tv_pixel_angle / binning
+        convergence_angle_pixels = convergence_angle / self._tv_pixel_angle / binning
         a = math.sqrt(convergence_angle_pixels**2 / math.sqrt(1 - excentricity**2))
         b = convergence_angle_pixels**2 / a
         self.__aperture_ellipse = ellipse_center + (a, b, direction)
@@ -375,7 +381,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                         x=probe_position[1] * scan_context_fov_nm[1] - scan_context_fov_nm[1] / 2)
                     scan_offset = scan_offset*1e-9
 
-                theta = self.__tv_pixel_angle * self._sensor_dimensions.height / 2  # half angle on camera
+                theta = self._tv_pixel_angle * self._sensor_dimensions.height / 2  # half angle on camera
                 aberrations: typing.Dict[str, typing.Union[float, int]] = dict()
                 aberrations["height"] = data.shape[0]
                 aberrations["width"] = data.shape[1]
@@ -414,8 +420,8 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
     def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
         height = readout_area.height if readout_area else self._sensor_dimensions[0]
         width = readout_area.width if readout_area else self._sensor_dimensions[1]
-        scale_y = self.__tv_pixel_angle
-        scale_x = self.__tv_pixel_angle
+        scale_y = self._tv_pixel_angle
+        scale_x = self._tv_pixel_angle
         offset_y = -scale_y * height * 0.5
         offset_x = -scale_x * width * 0.5
         dimensional_calibrations = [
