@@ -43,7 +43,7 @@ class CameraSimulator:
         self.__property_changed_event_listener.close()
         self.__property_changed_event_listener = typing.cast(typing.Any, None)
         self.__probe_state_changed_event_listener.close()
-        self.__probe_state_changed_event_listener = None
+        self.__probe_state_changed_event_listener = typing.cast(typing.Any, None)
 
     @property
     def _camera_shape(self) -> Geometry.IntSize:

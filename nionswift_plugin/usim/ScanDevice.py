@@ -19,6 +19,7 @@ if typing.TYPE_CHECKING:
     from . import InstrumentDevice
 
 _NDArray = numpy.typing.NDArray[typing.Any]
+_DataElementType = typing.Dict[str, typing.Any]
 
 _ = gettext.gettext
 
@@ -193,7 +194,7 @@ class Device:
         data_elements = list()
 
         for channel in current_frame.channels:
-            data_element = dict()
+            data_element: _DataElementType = dict()
             data_element["data"] = channel.data
             properties = current_frame.frame_parameters.as_dict()
             properties["center_x_nm"] = current_frame.frame_parameters.center_nm[1]

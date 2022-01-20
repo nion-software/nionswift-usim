@@ -639,12 +639,12 @@ class Instrument(stem_controller.STEMController):  # type: ignore  # not sure wh
         with self.__lock:
             self.__sequence_progress += 1
 
-    def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource = None) -> None:
+    def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: typing.Optional[HardwareSource.HardwareSource] = None) -> None:
         self._is_synchronized = True
         self.__camera_frame_event.clear()
         self.__camera_frame_event_ack.clear()
 
-    def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: HardwareSource.HardwareSource = None) -> None:
+    def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: typing.Optional[HardwareSource.HardwareSource] = None) -> None:
         self._is_synchronized = False
 
     def wait_for_camera_ack(self, cancel_event: threading.Event) -> None:
@@ -931,7 +931,7 @@ class Instrument(stem_controller.STEMController):  # type: ignore  # not sure wh
         else:
             return default_value
 
-    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType = None) -> bool:
+    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: typing.Optional[stem_controller.AxisType] = None) -> bool:
         control = self.__controls.get(s)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis

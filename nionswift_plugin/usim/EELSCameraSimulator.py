@@ -162,7 +162,9 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 offset_m = self.instrument.actual_offset_m  # stage position - beam shift + drift
                 feature_layer_count = 0
                 for index, feature in enumerate(self.instrument.sample.features):
-                    if feature.intersects(offset_m, scan_context.fov_size_nm, scan_context.center_nm, probe_position):
+                    scan_context_fov_size_nm = scan_context.fov_size_nm or Geometry.FloatSize()
+                    scan_context_center_nm = scan_context.center_nm or Geometry.FloatPoint()
+                    if feature.intersects(offset_m, scan_context_fov_size_nm, scan_context_center_nm, probe_position):
                         plot_spectrum(feature, spectrum, 1.0, used_calibration)
                         plot_spectrum(feature, spectrum_ref, 1.0, zlp0_calibration)
                         feature_layer_count += 1

@@ -368,10 +368,11 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                     probe_position = parked_probe_position
 
                 scan_offset = Geometry.FloatPoint()
-                if scan_context.is_valid and probe_position is not None:
+                scan_context_fov_nm = scan_context.fov_size_nm
+                if scan_context.is_valid and probe_position is not None and scan_context_fov_nm is not None:
                     scan_offset = Geometry.FloatPoint(
-                        y=probe_position[0] * scan_context.fov_size_nm[0] - scan_context.fov_size_nm[0] / 2,
-                        x=probe_position[1] * scan_context.fov_size_nm[1] - scan_context.fov_size_nm[1] / 2)
+                        y=probe_position[0] * scan_context_fov_nm[0] - scan_context_fov_nm[0] / 2,
+                        x=probe_position[1] * scan_context_fov_nm[1] - scan_context_fov_nm[1] / 2)
                     scan_offset = scan_offset*1e-9
 
                 theta = self.__tv_pixel_angle * self._sensor_dimensions.height / 2  # half angle on camera

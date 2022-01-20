@@ -80,12 +80,12 @@ class TestInstrumentDevice(unittest.TestCase):
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
-        instrument.ZLPoffset = 0
+        instrument.SetVal("ZLPoffset", 0)
         d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, 0.01), axis=0)
         index200_0 = int(d.dimensional_calibrations[-1].convert_from_calibrated_value(200))
         value200_0 = d._data_ex[index200_0]
         # get the value at 200eV and ZLP offset of 100
-        instrument.ZLPoffset = 100
+        instrument.SetVal("ZLPoffset", 100)
         d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, 0.01), axis=0)
         index200_100 = int(d.dimensional_calibrations[-1].convert_from_calibrated_value(200))
         value200_100 = d._data_ex[index200_100]
@@ -103,7 +103,7 @@ class TestInstrumentDevice(unittest.TestCase):
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
-        instrument.ZLPoffset = -20
+        instrument.SetVal("ZLPoffset", -20)
         instrument.get_camera_data("eels", readout_area, binning_shape, 0.01)
 
     def test_eels_data_thickness_is_consistent(self) -> None:
@@ -122,7 +122,7 @@ class TestInstrumentDevice(unittest.TestCase):
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
-        instrument.ZLPoffset = -20
+        instrument.SetVal("ZLPoffset", -20)
         d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, 0.01), axis=0)._data_ex
         # confirm it is a reasonable value
         # print(measure_thickness(d))
@@ -142,7 +142,7 @@ class TestInstrumentDevice(unittest.TestCase):
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
-        instrument.ZLPoffset = -20
+        instrument.SetVal("ZLPoffset", -20)
         exposure_s = 0.01
         d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, exposure_s), axis=0)._data_ex
         # confirm it is a reasonable value

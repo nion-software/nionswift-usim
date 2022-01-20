@@ -32,7 +32,7 @@ _NDArray = numpy.typing.NDArray[typing.Any]
 _ = gettext.gettext
 
 
-class Camera(camera_base.CameraDevice3):  # type: ignore  # not sure why this doesn't work. try without?
+class Camera(camera_base.CameraDevice3):
     """Implement a camera device."""
 
     def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
@@ -254,12 +254,12 @@ class Camera(camera_base.CameraDevice3):  # type: ignore  # not sure why this do
         self.__set_frame_parameters(camera_frame_parameters)
         self.__camera_task = CameraTask(self, camera_frame_parameters, (count,))
         self.__camera_task.start()
-        return camera_base.PartialData(self.__camera_task.xdata, False, False, None, 0)
+        return camera_base.PartialData(self.__camera_task._xdata_ex, False, False, None, 0)
 
     def acquire_sequence_continue(self, *, update_period: float = 1.0, **kwargs: typing.Any) -> camera_base.PartialData:
         assert self.__camera_task
         is_complete, is_canceled, valid_count = self.__camera_task.grab_partial(update_period=update_period)
-        return camera_base.PartialData(self.__camera_task.xdata, is_complete, is_canceled, None, valid_count)
+        return camera_base.PartialData(self.__camera_task._xdata_ex, is_complete, is_canceled, None, valid_count)
 
     def acquire_sequence_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
@@ -300,12 +300,12 @@ class Camera(camera_base.CameraDevice3):  # type: ignore  # not sure why this do
         self.__set_frame_parameters(camera_frame_parameters)
         self.__camera_task = CameraTask(self, camera_frame_parameters, collection_shape)
         self.__camera_task.start()
-        return camera_base.PartialData(self.__camera_task.xdata, False, False, None, 0)
+        return camera_base.PartialData(self.__camera_task._xdata_ex, False, False, None, 0)
 
     def acquire_synchronized_continue(self, *, update_period: float = 1.0, **kwargs: typing.Any) -> camera_base.PartialData:
         assert self.__camera_task
         is_complete, is_canceled, valid_count = self.__camera_task.grab_partial(update_period=update_period)
-        return camera_base.PartialData(self.__camera_task.xdata, is_complete, is_canceled, None, valid_count)
+        return camera_base.PartialData(self.__camera_task._xdata_ex, is_complete, is_canceled, None, valid_count)
 
     def acquire_synchronized_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
@@ -331,6 +331,11 @@ class CameraTask:
 
     @property
     def xdata(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
+        return self.__xdata
+
+    @property
+    def _xdata_ex(self) -> DataAndMetadata.DataAndMetadata:
+        assert self.__xdata
         return self.__xdata
 
     def start(self) -> typing.Optional[DataAndMetadata.DataAndMetadata]:
@@ -534,14 +539,14 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
     component_types = {"camera_module"}  # the set of component types that this component represents
 
     camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
-    camera_device.camera_panel_type = "ronchigram"
+    setattr(camera_device, "camera_panel_type", "ronchigram")
 
     camera_settings = CameraSettings("usim_ronchigram_camera")
 
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
 
     camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
-    camera_device.camera_panel_type = "eels"
+    setattr(camera_device, "camera_panel_type", "eels")
 
     camera_settings = CameraSettings("usim_eels_camera")
 
