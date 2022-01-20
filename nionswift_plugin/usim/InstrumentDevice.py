@@ -446,6 +446,16 @@ class Instrument(stem_controller.STEMController):  # type: ignore  # not sure wh
             camera.close()
         self.__cameras = dict()
 
+    def _get_config_property(self, name: str) -> typing.Any:
+        if name in ("stage_size_nm", "max_defocus"):
+            return getattr(self, name)
+        raise AttributeError()
+
+    def _set_config_property(self, name: str, value: typing.Any) -> None:
+        if name in ("stage_size_nm", "max_defocus"):
+            return setattr(self, name, value)
+        raise AttributeError()
+
     def _get_camera_simulator(self, camera_id: str) -> CameraSimulator.CameraSimulator:
         return self.__cameras[camera_id]
 
