@@ -393,7 +393,7 @@ class DriftController:
                                    x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
 
 
-class Instrument(stem_controller.STEMController):  # type: ignore  # not sure why this doesn't work. try without?
+class Instrument(stem_controller.STEMController):
     """
     TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
     """

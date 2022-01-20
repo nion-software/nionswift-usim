@@ -4,7 +4,7 @@ from nion.swift import Facade
 from nion.instrumentation.test import ScanControl_test
 
 
-class TestSimulatorScan(ScanControl_test.TestScanControlClass):  # type: ignore  # not sure why this doesn't work. try without?
+class TestSimulatorScan(ScanControl_test.TestScanControlClass):
 
     def test_facade_record_data_with_immediate_close(self) -> None:
         with self._test_context() as test_context:

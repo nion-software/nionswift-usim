@@ -3,7 +3,7 @@ import unittest
 from nion.instrumentation.test import CameraControl_test
 
 
-class TestCamera(CameraControl_test.TestCameraControlClass):  # type: ignore  # not sure why this doesn't work. try without?
+class TestCamera(CameraControl_test.TestCameraControlClass):
 
     def test_camera_integrate_frames_updates_frame_count_by_integration_count(self) -> None:
         with self._test_context() as test_context:
