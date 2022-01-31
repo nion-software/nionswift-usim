@@ -8,12 +8,15 @@ import numpy
 import numpy.typing
 import time
 import typing
+import threading
 
 # other plug-ins
 from nion.instrumentation import scan_base
 from nion.instrumentation import stem_controller
 from nion.utils import Geometry
 from nion.utils import Registry
+from nion.data import DataAndMetadata
+from nion.data import Core
 
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
@@ -46,6 +49,85 @@ class Frame:
         self.scan_data: typing.Optional[typing.List[_NDArray]] = None
 
 
+class ScanBoxSimulator:
+
+    def __init__(self):
+        self.__blanker_signal_condition = threading.Condition()
+        # self.__pixel_advance_condition = threading.Condition()
+        self.__advance_pixel_lock = threading.RLock()
+        self.__current_pixel_flat = 0
+        self.__scan_shape_pixels = Geometry.IntSize()
+        self.__pixel_size_nm = Geometry.FloatSize()
+        self.flyback_pixels = 2
+        self.__n_flyback_pixels = 0
+        self.external_clock = False
+
+    @property
+    def scan_shape_pixels(self) -> Geometry.IntSize:
+        return self.__scan_shape_pixels
+
+    @scan_shape_pixels.setter
+    def scan_shape_pixels(self, shape: typing.Union[Geometry.IntSize, Geometry.SizeIntTuple]):
+        self.__scan_shape_pixels = Geometry.IntSize.make(shape)
+        with self.__advance_pixel_lock:
+            self.__current_pixel_flat = 0
+
+    @property
+    def pixel_size_nm(self) -> Geometry.FloatSize:
+        return self.__pixel_size_nm
+
+    @pixel_size_nm.setter
+    def pixel_size_nm(self, size: typing.Union[Geometry.FloatSize, Geometry.SizeFloatTuple]):
+        self.__pixel_size_nm = Geometry.FloatSize.make(size)
+        with self.__advance_pixel_lock:
+            self.__current_pixel_flat = 0
+
+    @property
+    def probe_position_pixels(self) -> Geometry.IntPoint:
+        if self.__scan_shape_pixels.width != 0:
+            current_pixel_flat = self.__current_pixel_flat
+            return Geometry.IntPoint(y=current_pixel_flat // self.__scan_shape_pixels.width, x=current_pixel_flat % self.__scan_shape_pixels.width)
+        return Geometry.IntPoint()
+
+    @property
+    def current_pixel_flat(self) -> int:
+        return self.__current_pixel_flat
+
+    @property
+    def blanker_signal_condition(self) -> threading.Condition:
+        """
+        This can be used like the blanker signal on real hardware: The signal is emitted when the beam moves from the
+        last pixel in a line to the first pixel in the next line.
+        To use it, you need to wait for the condition to be set. Note that you need to acquire the underlying
+        lock of the condition before calling its "wait" method, so best practice is to use a "with" statement:
+
+        .. code-block:: python
+
+            with scan_box_simulator.blanker_signal_condition:
+                scan_box_simulator.blanker_signal_condition.wait()
+
+        """
+        return self.__blanker_signal_condition
+
+    def _advance_pixel(self) -> None:
+        with self.__advance_pixel_lock:
+            if self.__current_pixel_flat % self.__scan_shape_pixels.width == 0 and self.__n_flyback_pixels < self.flyback_pixels:
+                self.__n_flyback_pixels += 1
+            else:
+                self.__n_flyback_pixels = 0
+                self.__current_pixel_flat += 1
+                if self.__current_pixel_flat % self.__scan_shape_pixels.width == 0:
+                    with self.__blanker_signal_condition:
+                        self.__blanker_signal_condition.notify_all()
+
+    def advance_pixel(self) -> None:
+        """
+        This equals the external clock input. From a camera simply call this function to simulate a sync pulse.
+        """
+        if self.external_clock:
+            self._advance_pixel()
+
+
 class Device:
 
     def __init__(self, instrument: InstrumentDevice.Instrument):
@@ -62,6 +144,7 @@ class Device:
         self.__frame_parameters = copy.deepcopy(self.__profiles[0])
         self.flyback_pixels = 2
         self.__buffer: typing.List[typing.List[typing.Dict[str, typing.Any]]] = list()
+        self.__scan_box = ScanBoxSimulator()
 
     def close(self) -> None:
         pass
@@ -91,6 +174,33 @@ class Device:
     def channels_enabled(self) -> typing.Tuple[bool, ...]:
         return tuple(channel.enabled for channel in self.__channels)
 
+    @property
+    def current_probe_position(self) -> Geometry.FloatPoint:
+        current_frame = self.__frame
+        if current_frame is None:
+            return Geometry.FloatPoint()
+        frame_parameters = current_frame.frame_parameters
+        h, w = self.__scan_box.scan_shape_pixels
+        # calculate relative position within sub-area
+        probe_position_pixels = self.__scan_box.probe_position_pixels
+        ry, rx = probe_position_pixels.y / h - 0.5, probe_position_pixels.x / w - 0.5
+        # now translate to context
+        ss = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size) if frame_parameters.subscan_fractional_size else Geometry.FloatSize(h=1.0, w=1.0)
+        oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint()
+        oo += Geometry.FloatSize(h=frame_parameters.center_nm[0] / frame_parameters.fov_nm, w=frame_parameters.center_nm[1] / frame_parameters.fov_nm)
+        pt = Geometry.FloatPoint(y=ry * ss.height + oo.y, x=rx * ss.width + oo.x)
+        pt = pt.rotate(frame_parameters.rotation_rad)
+        if frame_parameters.subscan_rotation:
+            pt = pt.rotate(-frame_parameters.subscan_rotation, oo)
+        return pt + Geometry.FloatPoint(y=0.5, x=0.5)
+
+    @property
+    def blanker_signal_condition(self) -> threading.Condition:
+        return self.__scan_box.blanker_signal_condition
+
+    def advance_pixel(self) -> None:
+        self.__scan_box.advance_pixel()
+
     def set_channel_enabled(self, channel_index: int, enabled: bool) -> bool:
         assert 0 <= channel_index < self.channel_count
         self.__channels[channel_index].enabled = enabled
@@ -100,6 +210,44 @@ class Device:
 
     def get_channel_name(self, channel_index: int) -> str:
         return self.__channels[channel_index].name
+
+    # note: channel typing is just for ease of tests. it can be more strict in the future.
+    def get_scan_data(self, frame_parameters: scan_base.ScanFrameParameters, channel: typing.Union[int, Channel]) -> _NDArray:
+        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
+        offset_m = self.__instrument.actual_offset_m  # stage position - beam shift + drift
+        fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
+        if frame_parameters.subscan_fractional_size:
+            subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
+            used_fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height,
+                                                  width=fov_size_nm.width * subscan_fractional_size.width)
+        else:
+            used_fov_size_nm = fov_size_nm
+        center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
+        if frame_parameters.subscan_fractional_center:
+            subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5)
+            fc = subscan_fractional_center.rotate(frame_parameters.rotation_rad)
+            center_nm += Geometry.FloatPoint(y=fc.y * fov_size_nm.height, x=fc.x * fov_size_nm.width)
+        extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
+        extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])
+        used_size = size + Geometry.IntSize(height=extra, width=extra)
+        data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
+        self.__instrument.sample.plot_features(data, offset_m, used_fov_size_nm, extra_nm, center_nm, used_size)
+        noise_factor = 0.3
+        total_rotation = frame_parameters.rotation_rad
+        if frame_parameters.subscan_rotation:
+            total_rotation -= frame_parameters.subscan_rotation
+        if total_rotation != 0:
+            inner_height = size.height / used_size.height
+            inner_width = size.width / used_size.width
+            inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
+            rotated_xdata = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -total_rotation)
+            assert rotated_xdata
+            rotated_data = rotated_xdata.data
+            assert rotated_data is not None
+            data = rotated_data
+        else:
+            data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]  # type: ignore
+        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us  # type: ignore
 
     def read_partial(self, frame_number: int, pixels_to_skip: int) -> typing.Tuple[typing.Sequence[typing.Dict[str, typing.Any]], bool, bool, typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], int, int]:
         """Read or continue reading a frame.
@@ -129,54 +277,29 @@ class Device:
         frame_parameters = current_frame.frame_parameters
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
         total_pixels = size.height * size.width
-        time_slice = 0.005  # 5ms
+        time_slice = 0.05  # 50 ms
 
         if current_frame.scan_data is None:
             scan_data = list()
             for channel in current_frame.channels:
-                scan_data.append(self.__instrument.get_scan_data(current_frame.frame_parameters, channel))
+                scan_data.append(self.get_scan_data(current_frame.frame_parameters, channel))
             current_frame.scan_data = scan_data
 
         is_synchronized_scan = frame_parameters.external_clock_mode != 0
-        if current_frame.data_count == 0 and is_synchronized_scan:
-            self.__instrument.live_probe_position = Geometry.FloatPoint()
 
         target_count = 0
-        while self.__is_scanning and target_count <= current_frame.data_count:
-            if is_synchronized_scan:
-                # set the probe position
-                h, w = current_frame.scan_data[0].shape
-                # calculate relative position within sub-area
-                ry, rx = current_frame.data_count // w / h - 0.5, current_frame.data_count % w / w - 0.5
-                # now translate to context
-                ss = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size) if frame_parameters.subscan_fractional_size else Geometry.FloatSize(h=1.0, w=1.0)
-                oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint()
-                oo += Geometry.FloatSize(h=frame_parameters.center_nm[0] / frame_parameters.fov_nm, w=frame_parameters.center_nm[1] / frame_parameters.fov_nm)
-                pt = Geometry.FloatPoint(y=ry * ss.height + oo.y, x=rx * ss.width + oo.x)
-                pt = pt.rotate(frame_parameters.rotation_rad)
-                if frame_parameters.subscan_rotation:
-                    pt = pt.rotate(-frame_parameters.subscan_rotation, oo)
-                # print(f"{x}, {y} = ({ry} - 0.5) * {ss.height} + {oo.y} / (ry - 0.5) * ss.height + oo.y")
-                # >>> def f(s, c, x): return (x - 0.5) * s + c # |------<---c--->------------|
-                self.__instrument.live_probe_position = pt + Geometry.FloatPoint(y=0.5, x=0.5)
-                # do a synchronized readout
-                if current_frame.data_count % size.width == 0:
-                    # throw away two flyback images at beginning of line
-                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
-                        current_frame.bad = True
-                        current_frame.complete = True
-                    if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
-                        current_frame.bad = True
-                        current_frame.complete = True
-                if not self.__is_scanning or not self.__instrument.wait_for_camera_frame(frame_parameters.external_clock_wait_time_ms / 1000):
-                    current_frame.bad = True
-                    current_frame.complete = True
-                target_count = current_frame.data_count + 1
-            else:
+        if is_synchronized_scan:
+            time.sleep(time_slice)
+            target_count = self.__scan_box.current_pixel_flat
+        else:
+            while self.__is_scanning and target_count <= current_frame.data_count:
                 pixels_remaining = total_pixels - current_frame.data_count
                 pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)
                 time.sleep(pixel_wait)
                 target_count = min(int((time.time() - current_frame.start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
+
+            while self.__is_scanning and target_count > self.__scan_box.current_pixel_flat:
+                self.__scan_box._advance_pixel()
 
         if self.__is_scanning and target_count > current_frame.data_count:
             for channel_index, channel in enumerate(current_frame.channels):
@@ -186,8 +309,7 @@ class Device:
                 channel_data_flat[current_frame.data_count:target_count] = scan_data_flat[current_frame.data_count:target_count]
             current_frame.data_count = target_count
             current_frame.complete = current_frame.data_count == total_pixels
-        else:
-            assert not self.__is_scanning
+        elif not self.__is_scanning:
             current_frame.data_count = total_pixels
             current_frame.complete = True
 
@@ -262,7 +384,6 @@ class Device:
             self.__buffer = list()
             self.__start_next_frame()
             self.__is_scanning = True
-            self.__instrument.live_probe_position = Geometry.FloatPoint() if self.__frame_parameters.external_clock_mode != 0 else None
         return self.__frame_number
 
     def __start_next_frame(self) -> None:
@@ -273,13 +394,15 @@ class Device:
             channel.data = numpy.zeros(tuple(size), numpy.float32)
         self.__frame_number += 1
         self.__frame = Frame(self.__frame_number, channels, frame_parameters)
+        self.__scan_box.scan_shape_pixels = size
+        self.__scan_box.pixel_size_nm = Geometry.FloatSize(frame_parameters.fov_size_nm.height / size.height,
+                                                          frame_parameters.fov_size_nm.width / size.width)
+        self.__scan_box.external_clock = self.__frame_parameters.external_clock_mode != 0
         self.__is_scanning = True
 
     def cancel(self) -> None:
         """Cancel acquisition (immediate)."""
         self.__is_scanning = False
-        self.__instrument.live_probe_position = None
-        self.__instrument.trigger_camera_frame()
 
     def stop(self) -> None:
         """Stop acquiring."""
@@ -293,6 +416,8 @@ class Device:
         scan_frame_parameters.pixel_time_us = min(5120000, int(1000 * camera_exposure_ms * 0.75))
         scan_frame_parameters.external_clock_wait_time_ms = 20000 # int(camera_frame_parameters["exposure_ms"] * 1.5)
         scan_frame_parameters.external_clock_mode = 1
+        self.__scan_box.external_clock = True
+        self.__scan_box.scan_shape_pixels = scan_frame_parameters.size
 
     def get_buffer_data(self, start: int, count: int) -> typing.List[typing.List[typing.Dict[str, typing.Any]]]:
         if start < 0:

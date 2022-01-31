@@ -23,9 +23,13 @@ from nion.utils import Registry
 
 # other plug-ins
 from nion.instrumentation import camera_base
+from . import RonchigramCameraSimulator
+from . import EELSCameraSimulator
 
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
+    from . import CameraSimulator
+    from . import ScanDevice
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
@@ -35,12 +39,13 @@ _ = gettext.gettext
 class Camera(camera_base.CameraDevice3):
     """Implement a camera device."""
 
-    def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
+    def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument, camera_simulator: CameraSimulator.CameraSimulator):
         self.camera_id = camera_id
         self.camera_type = camera_type
         self.camera_name = camera_name
         self.__camera_task: typing.Optional[CameraTask] = None
         self.__instrument = instrument
+        self.__camera_simulator = camera_simulator
         self.__sensor_dimensions = instrument.camera_sensor_dimensions(camera_type)
         self.__readout_area = instrument.camera_readout_area(camera_type)
         self.__symmetric_binning = True
@@ -60,12 +65,14 @@ class Camera(camera_base.CameraDevice3):
         self.__processing: typing.Optional[str] = None
         self.__mask_array: typing.Optional[_NDArray] = None
         self.__thread.start()
+        self._external_trigger = False
 
     def close(self) -> None:
         self.__cancel = True
         self.__thread_event.set()
         self.__thread.join()
         self.__thread = typing.cast(typing.Any, None)
+        self.__camera_simulator.close()
 
     @property
     def sensor_dimensions(self) -> typing.Tuple[int, int]:
@@ -157,14 +164,11 @@ class Camera(camera_base.CameraDevice3):
         integration_count = self.__integration_count or 1
         for frame_number in range(integration_count):
             if direct:
-                self.__instrument.wait_for_camera_ack(self.__cancel_sequence_event)
-                if self.__direct_acquire(self.__cancel_sequence_event):
-                    self.__instrument.trigger_camera_frame()
-                self.__has_data_event.clear()
+                self.__direct_acquire(self.__cancel_sequence_event)
             else:
                 if not self.__has_data_event.wait(self.__exposure * 200) and not self.__thread.is_alive():
                     raise Exception("No simulator thread.")
-                self.__has_data_event.clear()
+            self.__has_data_event.clear()
             if xdata_buffer is None:
                 xdata_buffer = copy.deepcopy(self.__xdata_buffer)
             else:
@@ -197,6 +201,11 @@ class Camera(camera_base.CameraDevice3):
         try:
             properties = None
             data = None
+            if self._external_trigger:
+                scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
+                if scan_device and hasattr(scan_device, "blanker_signal_condition"):
+                    with scan_device.blanker_signal_condition:
+                        scan_device.blanker_signal_condition.wait(timeout=max(self.__exposure * 2, 5))
             for index in range(n):
                 if self.__cancel_sequence_event.is_set():
                     return None
@@ -268,7 +277,10 @@ class Camera(camera_base.CameraDevice3):
         start = time.time()
         readout_area = self.readout_area
         binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
-        xdata = self.__instrument.get_camera_data(self.camera_type, Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure)
+        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
+        if scan_device and hasattr(scan_device, "advance_pixel"):
+            scan_device.advance_pixel()
+        xdata = self.__camera_simulator.get_frame_data(Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure, self.__instrument.scan_context, self.__instrument.probe_position)
         self.__acquired_one_event.set()
         elapsed = time.time() - start
         wait_s = max(self.__exposure - elapsed, 0)
@@ -537,16 +549,21 @@ class CameraModule:
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
     component_types = {"camera_module"}  # the set of component types that this component represents
-
-    camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
+    ronchigram_simulator = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("ronchigram")), instrument.counts_per_electron, instrument.stage_size_nm)
+    camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument, ronchigram_simulator)
     setattr(camera_device, "camera_panel_type", "ronchigram")
+    if hasattr(instrument, "_set_camera_simulator"):
+        instrument._set_camera_simulator("ronchigram", ronchigram_simulator)
 
     camera_settings = CameraSettings("usim_ronchigram_camera")
 
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
 
-    camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
+    eels_simulator = EELSCameraSimulator.EELSCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
+    camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument, eels_simulator)
     setattr(camera_device, "camera_panel_type", "eels")
+    if hasattr(instrument, "_set_camera_simulator"):
+        instrument._set_camera_simulator("eels", eels_simulator)
 
     camera_settings = CameraSettings("usim_eels_camera")
 

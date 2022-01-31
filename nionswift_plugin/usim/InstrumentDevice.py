@@ -10,13 +10,11 @@ import copy
 import math
 import time
 
-import numpy
 import numpy.typing
 import threading
 import typing
 import re
 
-from nion.data import Core
 from nion.data import DataAndMetadata
 from nion.instrumentation import HardwareSource
 from nion.instrumentation import stem_controller
@@ -24,14 +22,10 @@ from nion.swift.model import Utility
 from nion.utils import Event
 from nion.utils import Geometry
 
-from . import EELSCameraSimulator
 from . import SampleSimulator
-from . import RonchigramCameraSimulator
 
 if typing.TYPE_CHECKING:
     from . import CameraSimulator
-    from . import ScanDevice
-    from nion.instrumentation import scan_base
     from nion.data import Calibration
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -403,8 +397,6 @@ class Instrument(stem_controller.STEMController):
         self.priority = 20
         self.instrument_id = instrument_id
         self.property_changed_event = Event.Event()
-        self.__camera_frame_event = threading.Event()
-        self.__camera_frame_event_ack = threading.Event()
 
         # define the STEM geometry limits
         self.stage_size_nm = 1000
@@ -436,14 +428,9 @@ class Instrument(stem_controller.STEMController):
         # We need to set the expressions after adding the controls to InstrumentDevice
         self.__set_expressions()
 
-        self.__cameras = {
-            "ronchigram": RonchigramCameraSimulator.RonchigramCameraSimulator(self, self.__ronchigram_shape, self.counts_per_electron, self.stage_size_nm),
-            "eels": EELSCameraSimulator.EELSCameraSimulator(self, self.__eels_shape, self.counts_per_electron)
-        }
+        self.__cameras: typing.Mapping[str, CameraSimulator.CameraSimulator] = {}
 
     def close(self) -> None:
-        for camera in self.__cameras.values():
-            camera.close()
         self.__cameras = dict()
 
     def _get_config_property(self, name: str) -> typing.Any:
@@ -458,6 +445,9 @@ class Instrument(stem_controller.STEMController):
 
     def _get_camera_simulator(self, camera_id: str) -> CameraSimulator.CameraSimulator:
         return self.__cameras[camera_id]
+
+    def _set_camera_simulator(self, camera_id: str, camera_simulator: CameraSimulator.CameraSimulator):
+        self.__cameras[camera_id]= camera_simulator
 
     def __create_built_in_controls(self) -> typing.List[typing.Union[Variable, Control2D]]:
         zlp_tare_control = Control("ZLPtare")
@@ -651,67 +641,9 @@ class Instrument(stem_controller.STEMController):
 
     def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: typing.Optional[HardwareSource.HardwareSource] = None) -> None:
         self._is_synchronized = True
-        self.__camera_frame_event.clear()
-        self.__camera_frame_event_ack.clear()
 
     def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: typing.Optional[HardwareSource.HardwareSource] = None) -> None:
         self._is_synchronized = False
-
-    def wait_for_camera_ack(self, cancel_event: threading.Event) -> None:
-        if self._is_synchronized:
-            for _ in range(100):
-                if self.__camera_frame_event_ack.wait(5.0 / 100) or cancel_event.is_set():
-                    self.__camera_frame_event_ack.clear()
-                    return
-            print("ACK TIMEOUT")
-        self.__camera_frame_event_ack.clear()
-
-    def trigger_camera_frame(self) -> None:
-        self.__camera_frame_event.set()
-
-    def wait_for_camera_frame(self, timeout: float) -> bool:
-        self.__camera_frame_event_ack.set()
-        result = self.__camera_frame_event.wait(timeout)
-        self.__camera_frame_event.clear()
-        return result
-
-    # note: channel typing is just for ease of tests. it can be more strict in the future.
-    def get_scan_data(self, frame_parameters: scan_base.ScanFrameParameters, channel: typing.Union[int, ScanDevice.Channel]) -> _NDArray:
-        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
-        offset_m = self.actual_offset_m  # stage position - beam shift + drift
-        fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
-        if frame_parameters.subscan_fractional_size:
-            subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
-            used_fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height,
-                                                  width=fov_size_nm.width * subscan_fractional_size.width)
-        else:
-            used_fov_size_nm = fov_size_nm
-        center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
-        if frame_parameters.subscan_fractional_center:
-            subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5)
-            fc = subscan_fractional_center.rotate(frame_parameters.rotation_rad)
-            center_nm += Geometry.FloatPoint(y=fc.y * fov_size_nm.height, x=fc.x * fov_size_nm.width)
-        extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
-        extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])
-        used_size = size + Geometry.IntSize(height=extra, width=extra)
-        data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
-        self.sample.plot_features(data, offset_m, used_fov_size_nm, extra_nm, center_nm, used_size)
-        noise_factor = 0.3
-        total_rotation = frame_parameters.rotation_rad
-        if frame_parameters.subscan_rotation:
-            total_rotation -= frame_parameters.subscan_rotation
-        if total_rotation != 0:
-            inner_height = size.height / used_size.height
-            inner_width = size.width / used_size.width
-            inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
-            rotated_xdata = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -total_rotation)
-            assert rotated_xdata
-            rotated_data = rotated_xdata.data
-            assert rotated_data is not None
-            data = rotated_data
-        else:
-            data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]  # type: ignore
-        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us  # type: ignore
 
     def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
         if camera_type == "ronchigram":
