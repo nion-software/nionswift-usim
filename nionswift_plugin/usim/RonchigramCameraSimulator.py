@@ -13,6 +13,7 @@ from nion.data import Calibration
 from nion.data import DataAndMetadata
 
 from nion.utils import Geometry
+from nion.utils import Registry
 
 from . import CameraSimulator
 from . import Noise
@@ -20,6 +21,7 @@ from . import Noise
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
     from . import SampleSimulator
+    from . import ScanDevice
     from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -288,12 +290,13 @@ def draw_ellipse(image: _NDArray, ellipse: typing.Tuple[float, float, float, flo
 
 class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
     depends_on = ["C10Control", "C12Control", "C21Control", "C23Control", "C30Control", "C32Control", "C34Control",
-                  "C34Control", "stage_position_m", "probe_state", "probe_position", "live_probe_position", "features",
+                  "C34Control", "stage_position_m", "probe_state", "probe_position", "features",
                   "beam_shift_m", "is_blanked", "BeamCurrent", "CAperture", "ApertureRound", "S_VOA", "ConvergenceAngle"]
 
     def __init__(self, instrument: InstrumentDevice.Instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float) -> None:
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
         self.__last_sample: typing.Optional[SampleSimulator.Sample] = None
+        self.__last_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         max_defocus = instrument.max_defocus
         self.__stage_size_nm = stage_size_nm
@@ -343,6 +346,16 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             self._needs_recalculation = True
         if self.instrument.sample != self.__last_sample:
             self._needs_recalculation = True
+        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
+        probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
+        if scan_device:
+            if self.instrument.probe_state == "scanning" and hasattr(scan_device, "current_probe_position"):
+                probe_position = scan_device.current_probe_position
+            elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
+                    probe_position = parked_probe_position
+            if probe_position != self.__last_probe_position:
+                self._needs_recalculation = True
+                self.__last_probe_position = probe_position
         self._last_frame_settings = new_frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
@@ -367,12 +380,6 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             self.__last_sample = self.instrument.sample
 
             if not self.instrument.is_blanked:
-                probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
-                if self.instrument.probe_state == "scanning":
-                    probe_position = self.instrument.live_probe_position
-                elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
-                    probe_position = parked_probe_position
-
                 scan_offset = Geometry.FloatPoint()
                 scan_context_fov_nm = scan_context.fov_size_nm
                 if scan_context.is_valid and probe_position is not None and scan_context_fov_nm is not None:

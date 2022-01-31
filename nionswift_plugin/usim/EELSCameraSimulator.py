@@ -14,6 +14,7 @@ from nion.data import Calibration
 from nion.data import DataAndMetadata
 
 from nion.utils import Geometry
+from nion.utils import Registry
 
 from . import CameraSimulator
 from . import Noise
@@ -21,6 +22,7 @@ from . import Noise
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
     from . import SampleSimulator
+    from . import ScanDevice
     from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -61,12 +63,13 @@ def plot_spectrum(feature: SampleSimulator.Feature, data: _NDArray, multiplier: 
 
 
 class EELSCameraSimulator(CameraSimulator.CameraSimulator):
-    depends_on = ["is_slit_in", "probe_state", "probe_position", "live_probe_position", "is_blanked", "ZLPoffset",
+    depends_on = ["is_slit_in", "probe_state", "probe_position", "is_blanked", "ZLPoffset",
                   "stage_position_m", "beam_shift_m", "features", "energy_offset_eV", "energy_per_channel_eV",
                   "BeamCurrent"]
 
     def __init__(self, instrument: InstrumentDevice.Instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)
+        self.__last_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         self.__data_scale = 1.0
         self.noise = Noise.PoissonNoise()
@@ -110,14 +113,16 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         """
 
         # grab the probe position
+        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
         probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
-        if self.instrument.is_blanked:
-            probe_position = None
-        elif self.instrument.probe_state == "scanning":
-            probe_position = self.instrument.live_probe_position
-        elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
-            probe_position = parked_probe_position
-        probe_position = Geometry.FloatPoint.make(probe_position) if probe_position is not None else None
+        if scan_device:
+            if self.instrument.probe_state == "scanning" and hasattr(scan_device, "current_probe_position"):
+                probe_position = scan_device.current_probe_position
+            elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
+                    probe_position = parked_probe_position
+            if probe_position != self.__last_probe_position:
+                self._needs_recalculation = True
+                self.__last_probe_position = probe_position
 
         # check if one of the arguments has changed since last call
         new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position]
@@ -196,7 +201,6 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 # print(f"target {target_pixel_count}  actual {spectrum_pixel_count}")
                 # print(f"s {spectrum_pixel_count} z {zlp_ref_pixel_count * zlp_scale * data.shape[0]}")
                 # print(f"{math.log(spectrum_pixel_count / (zlp_ref_pixel_count * zlp_scale * data.shape[0]))} {thickness_factor}")
-
             data = self._get_binned_data(data, binning_shape)
 
             self.__cached_frame = DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
