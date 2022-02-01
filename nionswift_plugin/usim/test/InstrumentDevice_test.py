@@ -13,6 +13,8 @@ from nion.instrumentation import scan_base
 from nionswift_plugin.usim import EELSCameraSimulator
 from nionswift_plugin.usim import InstrumentDevice
 from nionswift_plugin.usim import RonchigramCameraSimulator
+from nionswift_plugin.usim import ScanDevice
+from nionswift_plugin.usim import CameraSimulator
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
@@ -26,6 +28,16 @@ def measure_thickness(d: _NDArray) -> float:
     right_pos = mx_pos + (mx_pos - left_pos)
     s = sum(d[left_pos:right_pos])
     return math.log(sum(d) / s)
+
+def create_camera_and_scan_simulator(instrument: InstrumentDevice.Instrument, camera_type: str) -> typing.Tuple[CameraSimulator.CameraSimulator, ScanDevice.Device]:
+    if camera_type == "eels":
+        camera_simulator = EELSCameraSimulator.EELSCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
+    else:
+        camera_simulator = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("ronchigram")), instrument.counts_per_electron, instrument.stage_size_nm)
+
+    scan_device = ScanDevice.Device(instrument)
+
+    return camera_simulator, scan_device
 
 
 class TestInstrumentDevice(unittest.TestCase):
@@ -72,21 +84,21 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_eels_data_is_consistent_when_energy_offset_changes(self) -> None:
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
-        instrument.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
-        camera = typing.cast(EELSCameraSimulator.EELSCameraSimulator, instrument._get_camera_simulator("eels"))
-        camera_size = camera._camera_shape
-        camera.noise.enabled = False
+        camera_size = camera_simulator._camera_shape
+        typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
         instrument.SetVal("ZLPoffset", 0)
-        d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, 0.01), axis=0)
+        d = xd.sum(camera_simulator.get_frame_data(readout_area, binning_shape, 0.01, instrument.scan_context, instrument.probe_position), axis=0)
         index200_0 = int(d.dimensional_calibrations[-1].convert_from_calibrated_value(200))
         value200_0 = d._data_ex[index200_0]
         # get the value at 200eV and ZLP offset of 100
         instrument.SetVal("ZLPoffset", 100)
-        d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, 0.01), axis=0)
+        d = xd.sum(camera_simulator.get_frame_data(readout_area, binning_shape, 0.01, instrument.scan_context, instrument.probe_position), axis=0)
         index200_100 = int(d.dimensional_calibrations[-1].convert_from_calibrated_value(200))
         value200_100 = d._data_ex[index200_100]
         self.assertEqual(int(value200_0 / 100), int(value200_100 / 100))
@@ -95,56 +107,56 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_eels_data_is_consistent_when_energy_offset_changes_with_negative_zlp_offset(self) -> None:
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
-        instrument.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
-        camera = typing.cast(EELSCameraSimulator.EELSCameraSimulator, instrument._get_camera_simulator("eels"))
-        camera_size = camera._camera_shape
-        camera.noise.enabled = False
+        camera_size = camera_simulator._camera_shape
+        typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
         instrument.SetVal("ZLPoffset", -20)
-        instrument.get_camera_data("eels", readout_area, binning_shape, 0.01)
+        camera_simulator.get_frame_data(readout_area, binning_shape, 0.01, instrument.scan_context, instrument.probe_position)
 
     def test_eels_data_thickness_is_consistent(self) -> None:
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
         # use the flake sample
         instrument.sample_index = 0
         # set up the scan context; these are here temporarily until the scan context architecture is fully implemented
         instrument._update_scan_context(Geometry.IntSize(256, 256), Geometry.FloatPoint(), 10, 0.0)
         instrument._set_scan_context_probe_position(instrument.scan_context, Geometry.FloatPoint(0.5, 0.5))
         # grab scan data
-        instrument.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
-        camera = typing.cast(EELSCameraSimulator.EELSCameraSimulator, instrument._get_camera_simulator("eels"))
-        camera_size = camera._camera_shape
-        camera.noise.enabled = False
+        camera_size = camera_simulator._camera_shape
+        typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
         instrument.SetVal("ZLPoffset", -20)
-        d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, 0.01), axis=0)._data_ex
+        d = xd.sum(camera_simulator.get_frame_data(readout_area, binning_shape, 0.01, instrument.scan_context, instrument.probe_position), axis=0)._data_ex
         # confirm it is a reasonable value
         # print(measure_thickness(d))
         self.assertTrue(0.40 < measure_thickness(d) < 1.00)
 
     def test_eels_data_camera_current_is_consistent(self) -> None:
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
+        camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
         # set up the scan context; these are here temporarily until the scan context architecture is fully implemented
         instrument._update_scan_context(Geometry.IntSize(256, 256), Geometry.FloatPoint(), 10, 0.0)
         instrument._set_scan_context_probe_position(instrument.scan_context, Geometry.FloatPoint(0.5, 0.5))
         # grab scan data
-        instrument.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
-        camera = typing.cast(EELSCameraSimulator.EELSCameraSimulator, instrument._get_camera_simulator("eels"))
-        camera_size = camera._camera_shape
-        camera.noise.enabled = False
+        camera_size = camera_simulator._camera_shape
+        typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
         readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera_size)
         binning_shape = Geometry.IntSize(1, 1)
         # get the value at 200eV and ZLP offset of 0
         instrument.SetVal("ZLPoffset", -20)
         exposure_s = 0.01
-        d = xd.sum(instrument.get_camera_data("eels", readout_area, binning_shape, exposure_s), axis=0)._data_ex
+        d = xd.sum(camera_simulator.get_frame_data(readout_area, binning_shape, 0.01, instrument.scan_context, instrument.probe_position), axis=0)._data_ex
         # confirm it is a reasonable value
         camera_current_pA = numpy.sum(d) / exposure_s / instrument.counts_per_electron / 6.242e18 * 1e12
         # print(f"current {camera_current_pA :#.2f}pA")
