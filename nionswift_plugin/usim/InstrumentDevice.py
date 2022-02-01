@@ -15,18 +15,17 @@ import threading
 import typing
 import re
 
-from nion.data import DataAndMetadata
 from nion.instrumentation import HardwareSource
 from nion.instrumentation import stem_controller
 from nion.swift.model import Utility
 from nion.utils import Event
 from nion.utils import Geometry
+from nion.utils import Registry
 
 from . import SampleSimulator
 
 if typing.TYPE_CHECKING:
-    from . import CameraSimulator
-    from nion.data import Calibration
+    from . import CameraDevice
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
@@ -428,10 +427,9 @@ class Instrument(stem_controller.STEMController):
         # We need to set the expressions after adding the controls to InstrumentDevice
         self.__set_expressions()
 
-        self.__cameras: typing.Mapping[str, CameraSimulator.CameraSimulator] = {}
 
     def close(self) -> None:
-        self.__cameras = dict()
+        ...
 
     def _get_config_property(self, name: str) -> typing.Any:
         if name in ("stage_size_nm", "max_defocus"):
@@ -442,12 +440,6 @@ class Instrument(stem_controller.STEMController):
         if name in ("stage_size_nm", "max_defocus"):
             return setattr(self, name, value)
         raise AttributeError()
-
-    def _get_camera_simulator(self, camera_id: str) -> CameraSimulator.CameraSimulator:
-        return self.__cameras[camera_id]
-
-    def _set_camera_simulator(self, camera_id: str, camera_simulator: CameraSimulator.CameraSimulator):
-        self.__cameras[camera_id]= camera_simulator
 
     def __create_built_in_controls(self) -> typing.List[typing.Union[Variable, Control2D]]:
         zlp_tare_control = Control("ZLPtare")
@@ -669,12 +661,6 @@ class Instrument(stem_controller.STEMController):
         e_per_pixel_per_second = beam_e / pixel_count
         return e_per_pixel_per_second * exposure_s
 
-    def get_camera_data(self, camera_type: str, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float) -> DataAndMetadata.DataAndMetadata:
-        return self.__cameras[camera_type].get_frame_data(readout_area, binning_shape, exposure_s, self.__scan_context, self.__probe_position)
-
-    def get_camera_dimensional_calibrations(self, camera_type: str, readout_area: typing.Optional[Geometry.IntRect] = None, binning_shape: typing.Optional[Geometry.IntSize] = None) -> typing.Sequence[Calibration.Calibration]:
-        return self.__cameras[camera_type].get_dimensional_calibrations(readout_area, binning_shape)
-
     @property
     def actual_offset_m(self) -> Geometry.FloatPoint:
         return self.stage_position_m - self.GetVal2D("beam_shift_m") + self.__drift_controller.offset_m
@@ -792,14 +778,16 @@ class Instrument(stem_controller.STEMController):
     def TryGetVal(self, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
 
         def parse_camera_values(p: str, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
-            if s == "y_offset":
-                return True, self.get_camera_dimensional_calibrations(p)[0].offset
-            elif s == "x_offset":
-                return True, self.get_camera_dimensional_calibrations(p)[1].offset
-            elif s == "y_scale":
-                return True, self.get_camera_dimensional_calibrations(p)[0].scale
-            elif s == "x_scale":
-                return True, self.get_camera_dimensional_calibrations(p)[1].scale
+            camera_device: typing.Optional[CameraDevice.Camera] = Registry.get_component(f"usim_{p}_camera_device")
+            if camera_device:
+                if s == "y_offset":
+                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[0].offset
+                elif s == "x_offset":
+                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[1].offset
+                elif s == "y_scale":
+                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[0].scale
+                elif s == "x_scale":
+                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[1].scale
             return False, None
 
         if s == "EELS_MagneticShift_Offset":
