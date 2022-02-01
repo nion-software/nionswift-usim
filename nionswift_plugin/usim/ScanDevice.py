@@ -277,7 +277,7 @@ class Device:
         frame_parameters = current_frame.frame_parameters
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
         total_pixels = size.height * size.width
-        time_slice = 0.05  # 50 ms
+        time_slice = 0.005  # 5 ms
 
         if current_frame.scan_data is None:
             scan_data = list()
