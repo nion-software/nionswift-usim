@@ -51,9 +51,9 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                     hardware_source.set_current_frame_parameters(frame_parameters)
                     hardware_source.camera._external_trigger = external_trigger
                     sequence_data_elements = None
-                    sequence_time = 0
+                    sequence_time = 0.
                     camera_event = threading.Event()
-                    def acquire():
+                    def acquire() -> None:
                         nonlocal sequence_data_elements, sequence_time
                         starttime = time.time()
                         sequence_data_elements = hardware_source.acquire_sequence(10)

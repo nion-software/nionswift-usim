@@ -51,9 +51,8 @@ class Frame:
 
 class ScanBoxSimulator:
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.__blanker_signal_condition = threading.Condition()
-        # self.__pixel_advance_condition = threading.Condition()
         self.__advance_pixel_lock = threading.RLock()
         self.__current_pixel_flat = 0
         self.__scan_shape_pixels = Geometry.IntSize()
@@ -67,7 +66,7 @@ class ScanBoxSimulator:
         return self.__scan_shape_pixels
 
     @scan_shape_pixels.setter
-    def scan_shape_pixels(self, shape: typing.Union[Geometry.IntSize, Geometry.SizeIntTuple]):
+    def scan_shape_pixels(self, shape: typing.Union[Geometry.IntSize, Geometry.SizeIntTuple]) -> None:
         self.__scan_shape_pixels = Geometry.IntSize.make(shape)
         with self.__advance_pixel_lock:
             self.__current_pixel_flat = 0
@@ -77,7 +76,7 @@ class ScanBoxSimulator:
         return self.__pixel_size_nm
 
     @pixel_size_nm.setter
-    def pixel_size_nm(self, size: typing.Union[Geometry.FloatSize, Geometry.SizeFloatTuple]):
+    def pixel_size_nm(self, size: typing.Union[Geometry.FloatSize, Geometry.SizeFloatTuple]) -> None:
         self.__pixel_size_nm = Geometry.FloatSize.make(size)
         with self.__advance_pixel_lock:
             self.__current_pixel_flat = 0
@@ -395,8 +394,9 @@ class Device:
         self.__frame_number += 1
         self.__frame = Frame(self.__frame_number, channels, frame_parameters)
         self.__scan_box.scan_shape_pixels = size
-        self.__scan_box.pixel_size_nm = Geometry.FloatSize(frame_parameters.fov_size_nm.height / size.height,
-                                                          frame_parameters.fov_size_nm.width / size.width)
+        if frame_parameters.fov_size_nm is not None:
+            self.__scan_box.pixel_size_nm = Geometry.FloatSize(frame_parameters.fov_size_nm.height / size.height,
+                                                               frame_parameters.fov_size_nm.width / size.width)
         self.__scan_box.external_clock = self.__frame_parameters.external_clock_mode != 0
         self.__is_scanning = True
 
