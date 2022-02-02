@@ -30,6 +30,7 @@ def measure_thickness(d: _NDArray) -> float:
     return math.log(sum(d) / s)
 
 def create_camera_and_scan_simulator(instrument: InstrumentDevice.Instrument, camera_type: str) -> typing.Tuple[CameraSimulator.CameraSimulator, ScanDevice.Device]:
+    camera_simulator: CameraSimulator.CameraSimulator
     if camera_type == "eels":
         camera_simulator = EELSCameraSimulator.EELSCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
     else:
