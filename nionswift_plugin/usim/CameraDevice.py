@@ -72,6 +72,12 @@ class Camera(camera_base.CameraDevice3):
         self.__mask_array: typing.Optional[_NDArray] = None
         self.__thread.start()
 
+        # Also register the camera device and use a unique name for it so that we can directly access it
+        if Registry.get_component(f"usim_{camera_type}_camera_device"):
+            raise RuntimeError(f"Component 'usim_{camera_type}_camera_device' is already registered.")
+        Registry.register_component(self, {f"usim_{camera_type}_camera_device"})
+
+        # TODO Define external trigger interface and the mechanism for aqcuiring multiple sequences
         self._external_trigger = False # Just here for testing, we need to decide on how to specify external trigger mode in the base class
 
     def close(self) -> None:
@@ -80,6 +86,7 @@ class Camera(camera_base.CameraDevice3):
         self.__thread.join()
         self.__thread = typing.cast(typing.Any, None)
         self.__simulator.close()
+        Registry.unregister_component(self)
 
     @property
     def sensor_dimensions(self) -> typing.Tuple[int, int]:
@@ -562,18 +569,10 @@ def run(instrument: InstrumentDevice.Instrument) -> None:
     component_types = {"camera_module"}  # the set of component types that this component represents
     camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
     setattr(camera_device, "camera_panel_type", "ronchigram")
-
     camera_settings = CameraSettings("usim_ronchigram_camera")
-
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
-    # Also register the camera device and use a unique name for it so that we can directly access it
-    Registry.register_component(camera_device, {"usim_ronchigram_camera_device"})
 
     camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
     setattr(camera_device, "camera_panel_type", "eels")
-
     camera_settings = CameraSettings("usim_eels_camera")
-
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
-    # Also register the camera device and use a unique name for it so that we can directly access it
-    Registry.register_component(camera_device, {"usim_eels_camera_device"})
