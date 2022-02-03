@@ -50,6 +50,25 @@ class Frame:
 
 
 class ScanBoxSimulator:
+    """Scan box simulator
+
+    This class simulates the behavior of the scan box used in Nion microscopes. It supports two types of signals that
+    can be used to syncronize another device with the scan:
+
+    1. Blanker signal : This is an outgoing singal that is high during the time the beam is moving from the end of one line
+                        to the beginning of the next line (flyback time). This signal is typically used to blank the beam
+                        during flyback to reduce the electron dose on the sample. It can also be used to do "line-by-line"
+                        synchronization with a camera. In this mode, the camera is triggered by the blanker signal and is
+                        then free-running for one line in a synchronized acquisition. The implementation here is intended
+                        to be used for the latter purpose: `blanker_signal_condition` will notify waiting threads before
+                        the scan begins a new line.
+
+    2. External clock : This is an incoming signal that signals the scan box to move the beam to the next probe location.
+                        This signal is used for "pixel-by-pixel" synchronization with a camera. The camera will be
+                        free-running for the whole synchronized acquisition and it needs to emit a sync signal for each
+                        frame. To simulate this behavior, cameras should call `advance_pixel` once per frame during a
+                        synchronized acquisition.
+    """
 
     def __init__(self) -> None:
         self.__blanker_signal_condition = threading.Condition()
@@ -94,7 +113,8 @@ class ScanBoxSimulator:
 
     @property
     def blanker_signal_condition(self) -> threading.Condition:
-        """
+        """Blanker signal condition.
+
         This can be used like the blanker signal on real hardware: The signal is emitted when the beam moves from the
         last pixel in a line to the first pixel in the next line.
         To use it, you need to wait for the condition to be set. Note that you need to acquire the underlying
@@ -120,7 +140,8 @@ class ScanBoxSimulator:
                         self.__blanker_signal_condition.notify_all()
 
     def advance_pixel(self) -> None:
-        """
+        """Advance pixel.
+
         This equals the external clock input. From a camera simply call this function to simulate a sync pulse.
         """
         if self.external_clock:
@@ -175,6 +196,8 @@ class Device:
 
     @property
     def current_probe_position(self) -> Geometry.FloatPoint:
+        # The scan box simulator keeps track of where we are in the currently configured scan. Here we calculate the
+        # probe position in the context scan from the current position in the ongoing scan.
         current_frame = self.__frame
         if current_frame is None:
             return Geometry.FloatPoint()
@@ -183,12 +206,19 @@ class Device:
         # calculate relative position within sub-area
         probe_position_pixels = self.__scan_box.probe_position_pixels
         ry, rx = probe_position_pixels.y / h - 0.5, probe_position_pixels.x / w - 0.5
-        # now translate to context
+        # now translate to context:
+        # First get the fractional size of the subscan if we are using one, otherwise this is just (1, 1)
         ss = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size) if frame_parameters.subscan_fractional_size else Geometry.FloatSize(h=1.0, w=1.0)
+        # We need the offset of the configured scan to calculate the absolute probe position
+        # First is the subscan center if one is used, otherwise this is just (0, 0)
         oo = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5) if frame_parameters.subscan_fractional_center else Geometry.FloatPoint()
+        # Add the offset of the context scan. Since we are working in fractional coordinates here, we calculate the fractional center
         oo += Geometry.FloatSize(h=frame_parameters.center_nm[0] / frame_parameters.fov_nm, w=frame_parameters.center_nm[1] / frame_parameters.fov_nm)
+        # Now add the offset to the relative probe position in the scan
         pt = Geometry.FloatPoint(y=ry * ss.height + oo.y, x=rx * ss.width + oo.x)
+        # Apply the scan rotation
         pt = pt.rotate(frame_parameters.rotation_rad)
+        # And the subscan rotation if there is one
         if frame_parameters.subscan_rotation:
             pt = pt.rotate(-frame_parameters.subscan_rotation, oo)
         return pt + Geometry.FloatPoint(y=0.5, x=0.5)
@@ -212,27 +242,36 @@ class Device:
 
     # note: channel typing is just for ease of tests. it can be more strict in the future.
     def get_scan_data(self, frame_parameters: scan_base.ScanFrameParameters, channel: typing.Union[int, Channel]) -> _NDArray:
+        """Get the simulated data from the sample simulator
+
+        """
+
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
         offset_m = self.__instrument.actual_offset_m  # stage position - beam shift + drift
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
+        # If we are doing a subscan calculate the actually used fov
         if frame_parameters.subscan_fractional_size:
             subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
             used_fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height,
                                                   width=fov_size_nm.width * subscan_fractional_size.width)
         else:
             used_fov_size_nm = fov_size_nm
+        # Get the scan offset, if we are using a subscan we add the subscan offset to the context offset
         center_nm = Geometry.FloatPoint.make(frame_parameters.center_nm)
         if frame_parameters.subscan_fractional_center:
             subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5)
             fc = subscan_fractional_center.rotate(frame_parameters.rotation_rad)
             center_nm += Geometry.FloatPoint(y=fc.y * fov_size_nm.height, x=fc.x * fov_size_nm.width)
+        # Add some margin in case we need to rotate the data later
         extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
         extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])
         used_size = size + Geometry.IntSize(height=extra, width=extra)
         data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
+        # Now get the data from the sample simulator
         self.__instrument.sample.plot_features(data, offset_m, used_fov_size_nm, extra_nm, center_nm, used_size)
         noise_factor = 0.3
         total_rotation = frame_parameters.rotation_rad
+        # Apply any rotation (context + subscan)
         if frame_parameters.subscan_rotation:
             total_rotation -= frame_parameters.subscan_rotation
         if total_rotation != 0:
@@ -288,6 +327,8 @@ class Device:
 
         target_count = 0
         if is_synchronized_scan:
+            # In synchronized mode, sleep for the update period and check where we are afterwards since the camera will
+            # tell us when to move formward.
             time.sleep(time_slice)
             target_count = self.__scan_box.current_pixel_flat
         else:
