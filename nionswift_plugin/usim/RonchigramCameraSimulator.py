@@ -13,15 +13,12 @@ from nion.data import Calibration
 from nion.data import DataAndMetadata
 
 from nion.utils import Geometry
-from nion.utils import Registry
 
 from . import CameraSimulator
 from . import Noise
 
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
-    from . import SampleSimulator
-    from . import ScanDevice
     from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -295,8 +292,6 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
 
     def __init__(self, instrument: InstrumentDevice.Instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float) -> None:
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
-        self.__last_sample: typing.Optional[SampleSimulator.Sample] = None
-        self.__last_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         max_defocus = instrument.max_defocus
         self.__stage_size_nm = stage_size_nm
@@ -340,23 +335,10 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         frame_data *= aperture_mask
 
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata:
-        # check if one of the arguments has changed since last call
-        new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context)]
-        if new_frame_settings != self._last_frame_settings:
+        frame_settings = self._get_frame_settings(readout_area, binning_shape, exposure_s, scan_context, parked_probe_position)
+        if frame_settings != self._last_frame_settings:
             self._needs_recalculation = True
-        if self.instrument.sample != self.__last_sample:
-            self._needs_recalculation = True
-        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
-        probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
-        if scan_device:
-            if self.instrument.probe_state == "scanning" and hasattr(scan_device, "current_probe_position"):
-                probe_position = scan_device.current_probe_position
-            elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
-                    probe_position = parked_probe_position
-            if probe_position != self.__last_probe_position:
-                self._needs_recalculation = True
-                self.__last_probe_position = probe_position
-        self._last_frame_settings = new_frame_settings
+            self._last_frame_settings = frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
             # print("recalculating frame")
@@ -377,15 +359,14 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 self.instrument.sample.plot_features(data, offset_m, fov_size_nm, Geometry.FloatPoint(), center_nm, size)
                 data = thickness_param - data
             data = self._get_binned_data(data, binning_shape)
-            self.__last_sample = self.instrument.sample
 
             if not self.instrument.is_blanked:
                 scan_offset = Geometry.FloatPoint()
                 scan_context_fov_nm = scan_context.fov_size_nm
-                if scan_context.is_valid and probe_position is not None and scan_context_fov_nm is not None:
+                if scan_context.is_valid and frame_settings.current_probe_position is not None and scan_context_fov_nm is not None:
                     scan_offset = Geometry.FloatPoint(
-                        y=probe_position[0] * scan_context_fov_nm[0] - scan_context_fov_nm[0] / 2,
-                        x=probe_position[1] * scan_context_fov_nm[1] - scan_context_fov_nm[1] / 2)
+                        y=frame_settings.current_probe_position[0] * scan_context_fov_nm[0] - scan_context_fov_nm[0] / 2,
+                        x=frame_settings.current_probe_position[1] * scan_context_fov_nm[1] - scan_context_fov_nm[1] / 2)
                     scan_offset = scan_offset*1e-9
 
                 theta = self._tv_pixel_angle * self._sensor_dimensions.height / 2  # half angle on camera
