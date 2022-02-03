@@ -427,10 +427,6 @@ class Instrument(stem_controller.STEMController):
         # We need to set the expressions after adding the controls to InstrumentDevice
         self.__set_expressions()
 
-
-    def close(self) -> None:
-        ...
-
     def _get_config_property(self, name: str) -> typing.Any:
         if name in ("stage_size_nm", "max_defocus"):
             return getattr(self, name)
