@@ -14,7 +14,6 @@ from nion.data import Calibration
 from nion.data import DataAndMetadata
 
 from nion.utils import Geometry
-from nion.utils import Registry
 
 from . import CameraSimulator
 from . import Noise
@@ -22,7 +21,6 @@ from . import Noise
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
     from . import SampleSimulator
-    from . import ScanDevice
     from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -69,7 +67,6 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
     def __init__(self, instrument: InstrumentDevice.Instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)
-        self.__last_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         self.__data_scale = 1.0
         self.noise = Noise.PoissonNoise()
@@ -112,23 +109,10 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             B = (P - Az) / f
         """
 
-        # grab the probe position
-        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
-        probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
-        if scan_device:
-            if self.instrument.probe_state == "scanning" and hasattr(scan_device, "current_probe_position"):
-                probe_position = scan_device.current_probe_position
-            elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
-                    probe_position = parked_probe_position
-            if probe_position != self.__last_probe_position:
-                self._needs_recalculation = True
-                self.__last_probe_position = probe_position
-
-        # check if one of the arguments has changed since last call
-        new_frame_settings = [readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position]
-        if new_frame_settings != self._last_frame_settings:
+        frame_settings = self._get_frame_settings(readout_area, binning_shape, exposure_s, scan_context, parked_probe_position)
+        if frame_settings != self._last_frame_settings:
             self._needs_recalculation = True
-        self._last_frame_settings = new_frame_settings
+            self._last_frame_settings = frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
             data: numpy.typing.NDArray[numpy.float_] = numpy.zeros(tuple(self._sensor_dimensions), float)
@@ -148,7 +132,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             used_calibration = dimensional_calibrations[1]
             used_calibration.offset = typing.cast("InstrumentDevice.Control", self.instrument.get_control("ZLPoffset")).local_value
 
-            if scan_context.is_valid and probe_position is not None:
+            if scan_context.is_valid and frame_settings.current_probe_position is not None:
 
                 # make a buffer for the spectrum
                 spectrum: numpy.typing.NDArray[numpy.float_] = numpy.zeros((data.shape[1], ), float)
@@ -169,7 +153,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 for index, feature in enumerate(self.instrument.sample.features):
                     scan_context_fov_size_nm = scan_context.fov_size_nm or Geometry.FloatSize()
                     scan_context_center_nm = scan_context.center_nm or Geometry.FloatPoint()
-                    if feature.intersects(offset_m, scan_context_fov_size_nm, scan_context_center_nm, probe_position):
+                    if feature.intersects(offset_m, scan_context_fov_size_nm, scan_context_center_nm, frame_settings.current_probe_position):
                         plot_spectrum(feature, spectrum, 1.0, used_calibration)
                         plot_spectrum(feature, spectrum_ref, 1.0, zlp0_calibration)
                         feature_layer_count += 1

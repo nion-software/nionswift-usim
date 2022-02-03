@@ -2,16 +2,30 @@ from __future__ import annotations
 
 import numpy.typing
 import typing
+import copy
+from dataclasses import dataclass
 
 from nion.data import Calibration
 from nion.data import DataAndMetadata
 from nion.utils import Geometry
+from nion.utils import Registry
 
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
+    from . import ScanDevice
     from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
+
+
+@dataclass
+class FrameSettings:
+    readout_area: Geometry.IntRect
+    binning_shape: Geometry.IntSize
+    exposure_s: float
+    scan_context: stem_controller.ScanContext
+    current_probe_position: typing.Optional[Geometry.FloatPoint]
+    sample_name: str
 
 
 class CameraSimulator:
@@ -24,7 +38,7 @@ class CameraSimulator:
         self._sensor_dimensions = sensor_dimensions
         self._counts_per_electron = counts_per_electron
         self._needs_recalculation = True
-        self._last_frame_settings = [Geometry.IntRect((0, 0), (0, 0)), Geometry.IntSize(), 0.0, None]
+        self._last_frame_settings: typing.Optional[FrameSettings] = None
 
         def property_changed(name: str) -> None:
             if name in self.depends_on:
@@ -78,3 +92,13 @@ class CameraSimulator:
             if binning_shape.width > 1:
                 data = data[:(data.shape[-1] // binning_shape.width) * binning_shape.width].reshape(data.shape[0], -1, binning_shape.width).sum(axis=-1)
         return data
+
+    def _get_frame_settings(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint] = None) -> FrameSettings:
+        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
+        probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
+        if scan_device:
+            if self.instrument.probe_state == "scanning" and hasattr(scan_device, "current_probe_position"):
+                probe_position = scan_device.current_probe_position
+            elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
+                    probe_position = parked_probe_position
+        return FrameSettings(readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position, self.instrument.sample.title)
