@@ -78,6 +78,7 @@ class ScanBoxSimulator:
         self.__pixel_size_nm = Geometry.FloatSize()
         self.flyback_pixels = 2
         self.__n_flyback_pixels = 0
+        self.__current_line = 0
         self.external_clock = False
 
     @property
@@ -89,6 +90,8 @@ class ScanBoxSimulator:
         self.__scan_shape_pixels = Geometry.IntSize.make(shape)
         with self.__advance_pixel_lock:
             self.__current_pixel_flat = 0
+            self.__current_line = 0
+            self.__n_flyback_pixels = 0
 
     @property
     def pixel_size_nm(self) -> Geometry.FloatSize:
@@ -99,6 +102,8 @@ class ScanBoxSimulator:
         self.__pixel_size_nm = Geometry.FloatSize.make(size)
         with self.__advance_pixel_lock:
             self.__current_pixel_flat = 0
+            self.__current_line = 0
+            self.__n_flyback_pixels = 0
 
     @property
     def probe_position_pixels(self) -> Geometry.IntPoint:
@@ -128,16 +133,19 @@ class ScanBoxSimulator:
         """
         return self.__blanker_signal_condition
 
-    def _advance_pixel(self) -> None:
+    def _advance_pixel(self, n: int) -> None:
         with self.__advance_pixel_lock:
-            if self.__current_pixel_flat % self.__scan_shape_pixels.width == 0 and self.__n_flyback_pixels < self.flyback_pixels:
-                self.__n_flyback_pixels += 1
-            else:
+            next_line = (self.__current_pixel_flat + n) // self.__scan_shape_pixels.width
+            if next_line > self.__current_line:
                 self.__n_flyback_pixels = 0
-                self.__current_pixel_flat += 1
-                if self.__current_pixel_flat % self.__scan_shape_pixels.width == 0:
-                    with self.__blanker_signal_condition:
-                        self.__blanker_signal_condition.notify_all()
+                self.__current_line = next_line
+                with self.__blanker_signal_condition:
+                    self.__blanker_signal_condition.notify_all()
+            if self.__n_flyback_pixels < self.flyback_pixels:
+                new_flyback_pixels = min(self.flyback_pixels - self.__n_flyback_pixels, n)
+                n -= new_flyback_pixels
+                self.__n_flyback_pixels += new_flyback_pixels
+            self.__current_pixel_flat += n
 
     def advance_pixel(self) -> None:
         """Advance pixel.
@@ -145,7 +153,7 @@ class ScanBoxSimulator:
         This equals the external clock input. From a camera simply call this function to simulate a sync pulse.
         """
         if self.external_clock:
-            self._advance_pixel()
+            self._advance_pixel(1)
 
 
 class Device:
@@ -330,16 +338,15 @@ class Device:
             # In synchronized mode, sleep for the update period and check where we are afterwards since the camera will
             # tell us when to move formward.
             time.sleep(time_slice)
-            target_count = self.__scan_box.current_pixel_flat
+            target_count = self.__scan_box.current_pixel_flat + 1
         else:
             while self.__is_scanning and target_count <= current_frame.data_count:
-                pixels_remaining = total_pixels - current_frame.data_count
+                pixels_remaining = min(total_pixels - current_frame.data_count, int(time_slice * 1e6 / frame_parameters.pixel_time_us) + 1)
                 pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)
                 time.sleep(pixel_wait)
                 target_count = min(int((time.time() - current_frame.start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
-
-            while self.__is_scanning and target_count > self.__scan_box.current_pixel_flat:
-                self.__scan_box._advance_pixel()
+            if (new_pixels := target_count - self.__scan_box.current_pixel_flat) > 0:
+                self.__scan_box._advance_pixel(new_pixels)
 
         if self.__is_scanning and target_count > current_frame.data_count:
             for channel_index, channel in enumerate(current_frame.channels):
