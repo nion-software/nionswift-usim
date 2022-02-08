@@ -777,13 +777,13 @@ class Instrument(stem_controller.STEMController):
             camera_device: typing.Optional[CameraDevice.Camera] = Registry.get_component(f"usim_{p}_camera_device")
             if camera_device:
                 if s == "y_offset":
-                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[0].offset
+                    return True, camera_device.get_dimensional_calibrations(None, None)[0].offset
                 elif s == "x_offset":
-                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[1].offset
+                    return True, camera_device.get_dimensional_calibrations(None, None)[1].offset
                 elif s == "y_scale":
-                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[0].scale
+                    return True, camera_device.get_dimensional_calibrations(None, None)[0].scale
                 elif s == "x_scale":
-                    return True, camera_device.simulator.get_dimensional_calibrations(None, None)[1].scale
+                    return True, camera_device.get_dimensional_calibrations(None, None)[1].scale
             return False, None
 
         if s == "EELS_MagneticShift_Offset":
