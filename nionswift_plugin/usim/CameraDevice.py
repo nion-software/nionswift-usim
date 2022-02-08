@@ -159,6 +159,9 @@ class Camera(camera_base.CameraDevice3):
             "counts_per_electron_value": self.__instrument.counts_per_electron
         }
 
+    def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
+        return self.__simulator.get_dimensional_calibrations(readout_area, binning_shape)
+
     def start_live(self) -> None:
         """Start live acquisition. Required before using acquire_image."""
         if not self.__is_playing:
