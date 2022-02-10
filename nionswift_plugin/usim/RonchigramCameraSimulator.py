@@ -6,7 +6,7 @@ import typing
 import math
 import numpy
 import numpy.typing
-import scipy.ndimage.interpolation
+import scipy.ndimage
 import scipy.stats
 
 from nion.data import Calibration
@@ -217,7 +217,7 @@ class AberrationsController:
 
         if self.__c is not None:
             # scale the offsets so that at max defocus, the coordinates cover the entire area of data.
-            return scipy.ndimage.interpolation.map_coordinates(data, self.__c)  # type: ignore
+            return scipy.ndimage.map_coordinates(data, self.__c)  # type: ignore
 
         return numpy.zeros((height, width))
 
