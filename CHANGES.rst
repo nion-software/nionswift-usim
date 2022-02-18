@@ -1,6 +1,11 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.4.2 (2022-02-18)
+------------------
+- Improve simulated synchronization behavior for future work.
+- Fix minor issues with camera length.
+
 0.4.1 (2021-12-13)
 ------------------
 - Change camera device to implement camera 3 (no prepare methods).
