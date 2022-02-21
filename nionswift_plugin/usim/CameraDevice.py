@@ -283,7 +283,6 @@ class Camera(camera_base.CameraDevice3):
         # if the device does not implement acquire_sequence, fall back to looping acquisition.
         self.__is_acquiring = True
         self.__has_data_event.clear()  # ensure any has_data_event is new data
-        self.__instrument.sequence_progress = 0
         try:
             properties = None
             data = None
