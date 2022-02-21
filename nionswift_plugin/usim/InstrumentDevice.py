@@ -416,7 +416,6 @@ class Instrument(stem_controller.STEMController):
         self.__scan_context = stem_controller.ScanContext()
         self.__probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__live_probe_position: typing.Optional[Geometry.FloatPoint] = None
-        self.__sequence_progress = 0
         self._is_synchronized = False
         self.__controls: typing.Dict[str, typing.Union[Control2D, Variable]] = dict()
 
