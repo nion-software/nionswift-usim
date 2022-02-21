@@ -268,7 +268,6 @@ class Camera(camera_base.CameraDevice3):
                     spatial_properties = properties.get("spatial_calibrations")
                     if spatial_properties is not None:
                         properties["spatial_calibrations"] = spatial_properties[1:]
-                self.__instrument.increment_sequence_progress()
         finally:
             self.__is_acquiring = False
         data_element = dict()
@@ -392,7 +391,7 @@ class CameraTask:
         n = min(max(int(update_period / exposure), 1), self.__count - start)
         is_complete = start + n == self.__count
         # print(f"{start=} {n=} {self.__count=} {is_complete=}")
-        data_element = self.__camera_device._acquire_sequence((n))
+        data_element = self.__camera_device._acquire_sequence(n)
         if data_element and not self.__aborted:
             xdata = ImportExportManager.convert_data_element_to_data_and_metadata(data_element)
             dimensional_calibrations = tuple(Calibration.Calibration() for _ in range(len(self.__collection_shape))) + tuple(xdata.dimensional_calibrations[1:])

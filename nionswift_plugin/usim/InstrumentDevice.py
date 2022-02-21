@@ -418,7 +418,6 @@ class Instrument(stem_controller.STEMController):
         self.__live_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__sequence_progress = 0
         self._is_synchronized = False
-        self.__lock = threading.Lock()
         self.__controls: typing.Dict[str, typing.Union[Control2D, Variable]] = dict()
 
         built_in_controls = self.__create_built_in_controls()
@@ -612,20 +611,6 @@ class Instrument(stem_controller.STEMController):
         if isinstance(weight, Variable):
             return weight.output_value
         return weight
-
-    @property
-    def sequence_progress(self) -> int:
-        with self.__lock:
-            return self.__sequence_progress
-
-    @sequence_progress.setter
-    def sequence_progress(self, value: int) -> None:
-        with self.__lock:
-            self.__sequence_progress = value
-
-    def increment_sequence_progress(self) -> None:
-        with self.__lock:
-            self.__sequence_progress += 1
 
     def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: typing.Optional[HardwareSource.HardwareSource] = None) -> None:
         self._is_synchronized = True
