@@ -4,6 +4,7 @@ import time
 
 
 from nion.instrumentation.test import CameraControl_test
+from nionswift_plugin.usim import CameraDevice
 
 
 class TestCamera(CameraControl_test.TestCameraControlClass):
@@ -71,6 +72,50 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                         self.assertGreater(sequence_time, 3.0)
                     else:
                         self.assertLess(sequence_time, 3.0)
+
+
+    def test_camera_burst_mode(self) -> None:
+        for external_trigger in [False, True]:
+            with self.subTest(external_trigger=external_trigger):
+                with self._test_context(is_eels=True) as test_context:
+                    document_controller = test_context.document_controller
+                    document_model = test_context.document_model
+                    hardware_source = test_context.camera_hardware_source
+                    scan = test_context.scan_hardware_source
+                    frame_parameters = hardware_source.get_frame_parameters(0)
+                    frame_parameters.binning = 1
+                    frame_parameters.processing = "sum_project"
+                    frame_parameters.exposure_ms = 50
+                    hardware_source.set_current_frame_parameters(frame_parameters)
+                    sequence_data_elements = []
+                    sequence_time = 0.
+                    camera_event = threading.Event()
+                    def acquire() -> None:
+                        nonlocal sequence_data_elements, sequence_time
+                        starttime = time.time()
+                        mode_parameters = CameraDevice.ModeParameters(frame_parameters, 12, 4, CameraDevice.TriggerMode.EXTERNAL if external_trigger else CameraDevice.TriggerMode.INTERNAL)
+                        mode_controller = hardware_source.camera.enter_mode("burst_mode", mode_parameters)
+                        partial_data = mode_controller.begin_mode()
+                        while not partial_data.is_complete:
+                            partial_data = mode_controller.continue_mode()
+                            print(f'{partial_data.valid_count=}, {partial_data.is_complete=}, {partial_data.xdata.data=}')
+                            if partial_data.valid_count == mode_parameters.number_frames:
+                                sequence_data_elements.append(partial_data.xdata)
+                        sequence_time = time.time() - starttime
+                        camera_event.set()
+                    scan_frame_parameters = scan.get_frame_parameters(0)
+                    scan_frame_parameters.size = (4, 10)
+                    scan_frame_parameters.pixel_time_us = 100000
+                    scan.set_current_frame_parameters(scan_frame_parameters)
+                    threading.Thread(target=acquire).start()
+                    time.sleep(3)
+                    xdata_list = scan.record_immediate(scan_frame_parameters)
+                    self.assertTrue(camera_event.wait(20))
+                    self.assertEqual(len(sequence_data_elements), 4)
+                    if external_trigger:
+                        self.assertGreater(sequence_time, 6.0)
+                    else:
+                        self.assertLess(sequence_time, 6.0)
 
 
 if __name__ == '__main__':

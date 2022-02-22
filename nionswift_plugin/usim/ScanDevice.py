@@ -78,7 +78,7 @@ class ScanBoxSimulator:
         self.__pixel_size_nm = Geometry.FloatSize()
         self.flyback_pixels = 2
         self.__n_flyback_pixels = 0
-        self.__current_line = 0
+        self.__current_line = -1
         self.external_clock = False
 
     @property
@@ -90,7 +90,7 @@ class ScanBoxSimulator:
         self.__scan_shape_pixels = Geometry.IntSize.make(shape)
         with self.__advance_pixel_lock:
             self.__current_pixel_flat = 0
-            self.__current_line = 0
+            self.__current_line = -1
             self.__n_flyback_pixels = 0
 
     @property
@@ -102,7 +102,7 @@ class ScanBoxSimulator:
         self.__pixel_size_nm = Geometry.FloatSize.make(size)
         with self.__advance_pixel_lock:
             self.__current_pixel_flat = 0
-            self.__current_line = 0
+            self.__current_line = -1
             self.__n_flyback_pixels = 0
 
     @property
@@ -132,13 +132,16 @@ class ScanBoxSimulator:
 
         """
         return self.__blanker_signal_condition
-
+    # pixel_sum = 0
     def _advance_pixel(self, n: int) -> None:
+        # self.pixel_sum += n
+        # print(f'{self.pixel_sum=}')
         with self.__advance_pixel_lock:
             next_line = (self.__current_pixel_flat + n) // self.__scan_shape_pixels.width
             if next_line > self.__current_line:
                 self.__n_flyback_pixels = 0
                 self.__current_line = next_line
+                print(f'NOTIFIYING CONDITION: {self.__current_line}, {time.time()}')
                 with self.__blanker_signal_condition:
                     self.__blanker_signal_condition.notify_all()
             if self.__n_flyback_pixels < self.flyback_pixels:
@@ -345,6 +348,7 @@ class Device:
                 pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)
                 time.sleep(pixel_wait)
                 target_count = min(int((time.time() - current_frame.start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
+            print(f'{target_count=}, {self.__scan_box.current_pixel_flat=}')
             if (new_pixels := target_count - self.__scan_box.current_pixel_flat) > 0:
                 self.__scan_box._advance_pixel(new_pixels)
 
