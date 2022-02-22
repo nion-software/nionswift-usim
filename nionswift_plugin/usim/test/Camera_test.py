@@ -75,7 +75,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
 
 
     def test_camera_burst_mode(self) -> None:
-        for external_trigger in [False, True]:
+        for external_trigger in [True]:
             with self.subTest(external_trigger=external_trigger):
                 with self._test_context(is_eels=True) as test_context:
                     document_controller = test_context.document_controller
@@ -85,7 +85,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                     frame_parameters = hardware_source.get_frame_parameters(0)
                     frame_parameters.binning = 1
                     frame_parameters.processing = "sum_project"
-                    frame_parameters.exposure_ms = 50
+                    frame_parameters.exposure_ms = 80
                     hardware_source.set_current_frame_parameters(frame_parameters)
                     sequence_data_elements = []
                     sequence_time = 0.
@@ -93,7 +93,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                     def acquire() -> None:
                         nonlocal sequence_data_elements, sequence_time
                         starttime = time.time()
-                        mode_parameters = CameraDevice.ModeParameters(frame_parameters, 12, 4, CameraDevice.TriggerMode.EXTERNAL if external_trigger else CameraDevice.TriggerMode.INTERNAL)
+                        mode_parameters = CameraDevice.ModeParameters(frame_parameters, 10, 4, CameraDevice.TriggerMode.EXTERNAL if external_trigger else CameraDevice.TriggerMode.INTERNAL)
                         mode_controller = hardware_source.camera.enter_mode("burst_mode", mode_parameters)
                         partial_data = mode_controller.begin_mode()
                         while not partial_data.is_complete:

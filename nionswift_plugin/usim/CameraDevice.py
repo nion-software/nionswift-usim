@@ -42,6 +42,8 @@ class ModeController(typing.Protocol):
     # is_continuous
     # is_interruptable?
 
+    def __init__(self, *args: typing.Any, **kwargs: typing.Any): ...
+
     def begin_mode(self) -> camera_base.PartialData: ...
 
     def continue_mode(self) -> camera_base.PartialData: ...
@@ -102,7 +104,7 @@ class ModeParameters:
 class Camera(camera_base.CameraDevice3):
     """Implement a camera device."""
 
-    _modes_lookup: typing.Mapping[str, type(ModeController)] = {'burst_mode': BurstModeController}
+    _modes_lookup: typing.Mapping[str, typing.Type[ModeController]] = {'burst_mode': BurstModeController}
 
     def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
         self.camera_id = camera_id
