@@ -42,8 +42,6 @@ class ModeController(typing.Protocol):
     # is_continuous
     # is_interruptable?
 
-    def __init__(self, *args: typing.Any, **kwargs: typing.Any): ...
-
     def begin_mode(self) -> camera_base.PartialData: ...
 
     def continue_mode(self) -> camera_base.PartialData: ...
@@ -53,7 +51,7 @@ class ModeController(typing.Protocol):
     def cancel_mode(self) -> None: ...
 
 
-class BurstModeController(ModeController):
+class BurstModeController:
 
     def __init__(self, mode_parameters: ModeParameters, camera_device: Camera):
         self.__parameters = mode_parameters
