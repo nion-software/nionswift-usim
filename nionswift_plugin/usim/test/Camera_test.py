@@ -75,7 +75,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
 
 
     def test_camera_burst_mode(self) -> None:
-        for external_trigger in [True]:
+        for external_trigger in [True, False]:
             with self.subTest(external_trigger=external_trigger):
                 with self._test_context(is_eels=True) as test_context:
                     document_controller = test_context.document_controller
@@ -85,7 +85,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                     frame_parameters = hardware_source.get_frame_parameters(0)
                     frame_parameters.binning = 1
                     frame_parameters.processing = "sum_project"
-                    frame_parameters.exposure_ms = 80
+                    frame_parameters.exposure_ms = 100
                     hardware_source.set_current_frame_parameters(frame_parameters)
                     sequence_data_elements = []
                     sequence_time = 0.
@@ -98,7 +98,6 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                         partial_data = mode_controller.begin_mode()
                         while not partial_data.is_complete:
                             partial_data = mode_controller.continue_mode()
-                            print(f'{partial_data.valid_count=}, {partial_data.is_complete=}, {partial_data.xdata.data=}')
                             if partial_data.valid_count == mode_parameters.number_frames:
                                 sequence_data_elements.append(partial_data.xdata)
                         sequence_time = time.time() - starttime
@@ -106,6 +105,7 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                     scan_frame_parameters = scan.get_frame_parameters(0)
                     scan_frame_parameters.size = (4, 10)
                     scan_frame_parameters.pixel_time_us = 100000
+                    scan_frame_parameters.flyback_time_us = 30000
                     scan.set_current_frame_parameters(scan_frame_parameters)
                     threading.Thread(target=acquire).start()
                     time.sleep(3)

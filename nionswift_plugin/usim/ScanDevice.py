@@ -77,6 +77,9 @@ class ScanBoxSimulator:
         self.__scan_shape_pixels = Geometry.IntSize()
         self.__pixel_size_nm = Geometry.FloatSize()
         self.flyback_pixels = 2
+        self.flyback_time_us = 300
+        self.pixel_time_us = 10
+        self.__line_start_time = 0.0
         self.__n_flyback_pixels = 0
         self.__current_line = -1
         self.external_clock = False
@@ -92,6 +95,8 @@ class ScanBoxSimulator:
             self.__current_pixel_flat = 0
             self.__current_line = -1
             self.__n_flyback_pixels = 0
+            self.__line_start_time = 0.0
+
 
     @property
     def pixel_size_nm(self) -> Geometry.FloatSize:
@@ -104,6 +109,7 @@ class ScanBoxSimulator:
             self.__current_pixel_flat = 0
             self.__current_line = -1
             self.__n_flyback_pixels = 0
+            self.__line_start_time = 0.0
 
     @property
     def probe_position_pixels(self) -> Geometry.IntPoint:
@@ -132,19 +138,33 @@ class ScanBoxSimulator:
 
         """
         return self.__blanker_signal_condition
-    # pixel_sum = 0
+
+    def _line_time_wait(self) -> None:
+        expected_line_time = (self.scan_shape_pixels[1] * self.pixel_time_us + self.flyback_time_us) * 1e-6
+        now = time.time()
+        extra_wait_time = self.__line_start_time + expected_line_time - now
+        if extra_wait_time > 0.02:
+            time.sleep(extra_wait_time)
+        elif extra_wait_time > 0:
+            starttime = time.time()
+            while time.time() - starttime < extra_wait_time:
+                pass
+
     def _advance_pixel(self, n: int) -> None:
-        # self.pixel_sum += n
-        # print(f'{self.pixel_sum=}')
         with self.__advance_pixel_lock:
             next_line = (self.__current_pixel_flat + n) // self.__scan_shape_pixels.width
             if next_line > self.__current_line:
                 self.__n_flyback_pixels = 0
                 self.__current_line = next_line
-                print(f'NOTIFIYING CONDITION: {self.__current_line}, {time.time()}')
+                if not self.external_clock:
+                    # If the scan does not get advanced by an external signal, we need to ensure that our line time
+                    # is correct so that the blanker signals are not triggered too close to each other. This is important
+                    # when trying to run a camera in sync with the scan.
+                    self._line_time_wait()
+                self.__line_start_time = time.time()
                 with self.__blanker_signal_condition:
                     self.__blanker_signal_condition.notify_all()
-            if self.__n_flyback_pixels < self.flyback_pixels:
+            if self.external_clock and self.__n_flyback_pixels < self.flyback_pixels:
                 new_flyback_pixels = min(self.flyback_pixels - self.__n_flyback_pixels, n)
                 n -= new_flyback_pixels
                 self.__n_flyback_pixels += new_flyback_pixels
@@ -327,6 +347,8 @@ class Device:
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
         total_pixels = size.height * size.width
         time_slice = 0.005  # 5 ms
+        self.__scan_box.pixel_time_us = frame_parameters.pixel_time_us
+        self.__scan_box.flyback_time_us = frame_parameters.flyback_time_us
 
         if current_frame.scan_data is None:
             scan_data = list()
@@ -348,7 +370,6 @@ class Device:
                 pixel_wait = min(pixels_remaining * frame_parameters.pixel_time_us / 1E6, time_slice)
                 time.sleep(pixel_wait)
                 target_count = min(int((time.time() - current_frame.start_time) / (frame_parameters.pixel_time_us / 1E6)), total_pixels)
-            print(f'{target_count=}, {self.__scan_box.current_pixel_flat=}')
             if (new_pixels := target_count - self.__scan_box.current_pixel_flat) > 0:
                 self.__scan_box._advance_pixel(new_pixels)
 

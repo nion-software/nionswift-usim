@@ -132,6 +132,7 @@ class Camera(camera_base.CameraDevice3):
         self.__is_acquiring = False
         self.__cancel_sequence_event = threading.Event()
         self.__exposure = 1.0
+        self.__original_exposure = self.__exposure
         self.__binning = 1
         self.__processing: typing.Optional[str] = None
         self.__mask_array: typing.Optional[_NDArray] = None
@@ -283,13 +284,21 @@ class Camera(camera_base.CameraDevice3):
         # if the device does not implement acquire_sequence, fall back to looping acquisition.
         self.__is_acquiring = True
         self.__has_data_event.clear()  # ensure any has_data_event is new data
+        self.__original_exposure = self.__exposure
         try:
             properties = None
             data = None
             for index in range(n):
                 if self.__cancel_sequence_event.is_set():
                     return None
+                # Time the actual duration of a frame and adjust the internal exposure time accordingly to account for
+                # overhead. This is important when acquiring data where synchronization between scan and camera is
+                # achieved via having them run at the same speed.
+                frame_start_time = time.time()
                 frame_data_element = self.__acquire_image(direct=True)
+                frame_time = time.time() - frame_start_time
+                difference = frame_time - self.__original_exposure
+                self.__exposure -= difference
                 frame_data = frame_data_element["data"]
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
                     data_shape = (n,) + frame_data.shape[1:]
@@ -329,6 +338,7 @@ class Camera(camera_base.CameraDevice3):
                         properties["spatial_calibrations"] = spatial_properties[1:]
         finally:
             self.__is_acquiring = False
+            self.__exposure = self.__original_exposure
         data_element = dict()
         data_element["data"] = data
         data_element["properties"] = properties
@@ -454,17 +464,12 @@ class CameraTask:
         exposure = frame_parameters.exposure_ms / 1000.0
         n = min(max(int(update_period / exposure), 1), self.__count - start)
         is_complete = start + n == self.__count
-        # print(f"{start=} {n=} {self.__count=} {is_complete=}")
         if start == 0 and self.__camera_device._external_trigger:
             scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
             if scan_device and hasattr(scan_device, "blanker_signal_condition"):
-                print('Waiting for trigger from scan...')
                 with scan_device.blanker_signal_condition:
                     assert scan_device.blanker_signal_condition.wait(timeout=max(exposure * 2, 5))
-        print(f'****** Acquiring {n} frames **************')
-        starttime = time.time()
         data_element = self.__camera_device._acquire_sequence(n)
-        print(f'Acquired {n} frames in {time.time() - starttime:.2f} s')
         if data_element and not self.__aborted:
             xdata = ImportExportManager.convert_data_element_to_data_and_metadata(data_element)
             dimensional_calibrations = tuple(Calibration.Calibration() for _ in range(len(self.__collection_shape))) + tuple(xdata.dimensional_calibrations[1:])
