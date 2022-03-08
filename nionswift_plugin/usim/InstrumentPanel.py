@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # standard libraries
+import functools
 import gettext
 import typing
 
@@ -25,7 +26,7 @@ class Control2DBinding(Binding.Binding):
     def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, attribute_name: str,
                  converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
                  fallback: typing.Any = None) -> None:
-        super().__init__(None, converter=converter, fallback=fallback)
+        super().__init__(instrument, converter=converter, fallback=fallback)
 
         def set_property_value(source: typing.Any, value: typing.Any) -> None:
             if source:
@@ -60,7 +61,7 @@ class ControlBinding(Binding.Binding):
                  converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
                  validator: typing.Optional[Validator.ValidatorLike[typing.Any]] = None,
                  fallback: typing.Any = None) -> None:
-        super().__init__(None, converter=converter, validator=validator, fallback=fallback)
+        super().__init__(instrument, converter=converter, validator=validator, fallback=fallback)
 
         def set_property_value(source: typing.Any, value: typing.Any) -> None:
             if source:
