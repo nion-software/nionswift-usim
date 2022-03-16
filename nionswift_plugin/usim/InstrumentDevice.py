@@ -402,7 +402,7 @@ class Instrument(stem_controller.STEMController):
         self.max_defocus = 5000 / 1E9
 
         # define the samples
-        self.__samples = [SampleSimulator.RectangleFlakeSample(self.stage_size_nm), SampleSimulator.AmorphousSample()]
+        self.__samples = [SampleSimulator.RectangleFlakeSample(self.stage_size_nm), SampleSimulator.AmorphousSample(self.stage_size_nm), SampleSimulator.CombinedTestSample(self.stage_size_nm)]
         self.__sample_index = 0
 
         self.__stage_position_m = Geometry.FloatPoint()

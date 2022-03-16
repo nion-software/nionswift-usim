@@ -217,7 +217,7 @@ class AberrationsController:
 
         if self.__c is not None:
             # scale the offsets so that at max defocus, the coordinates cover the entire area of data.
-            return scipy.ndimage.map_coordinates(data, self.__c)  # type: ignore
+            return scipy.ndimage.map_coordinates(data, self.__c, order=1)  # type: ignore
 
         return numpy.zeros((height, width))
 
@@ -345,6 +345,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             height = readout_area.height
             width = readout_area.width
             offset_m = self.instrument.stage_position_m
+            # full_fov_nm = abs(self.instrument.GetVal("C10Control")) * self._tv_pixel_angle * self._sensor_dimensions.height * 1e9
             full_fov_nm = self.__stage_size_nm
             fov_size_nm = Geometry.FloatSize(full_fov_nm * height / self._sensor_dimensions.height, full_fov_nm * width / self._sensor_dimensions.width)
             center_nm = Geometry.FloatPoint(
