@@ -302,7 +302,7 @@ class CombinedTestSample(Sample):
         counter = 0
         # We map positions to a rather small grid to reduce the number of overlapping gold balls. This does not take into
         # account the gold ball sizes, but essentially gives each one a certain amount of space.
-        position_map = numpy.zeros((120, 120), dtype=numpy.uint8)
+        position_map: _NDArray = numpy.zeros((120, 120), dtype=numpy.uint8)
         while (i := len(self.__features)) < 10000:
             if counter > 50000:
                 logging.warning(f'Placing all features on the CTS sample took to long. Stopping after {i} features.')
