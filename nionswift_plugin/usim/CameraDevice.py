@@ -11,7 +11,7 @@ import pathlib
 import threading
 import time
 import typing
-from dataclasses import dataclass
+import dataclasses
 import enum
 
 # local libraries
@@ -90,7 +90,7 @@ class TriggerMode(enum.IntEnum):
     EXTERNAL = 2
 
 
-@dataclass
+@dataclasses.dataclass
 class ModeParameters:
     camera_frame_parameters: camera_base.CameraFrameParameters
     number_frames: int
@@ -132,7 +132,6 @@ class Camera(camera_base.CameraDevice3):
         self.__is_acquiring = False
         self.__cancel_sequence_event = threading.Event()
         self.__exposure = 1.0
-        self.__original_exposure = self.__exposure
         self.__binning = 1
         self.__processing: typing.Optional[str] = None
         self.__mask_array: typing.Optional[_NDArray] = None
@@ -243,17 +242,17 @@ class Camera(camera_base.CameraDevice3):
         # has_data_event is cleared in the acquisition loop after stopping
 
     def acquire_image(self) -> ImportExportManager.DataElementType:
-        return self.__acquire_image(direct=False)
+        return self.__acquire_image(direct=False, exposure_s=self.__exposure)
 
-    def __acquire_image(self, *, direct: bool) -> ImportExportManager.DataElementType:
+    def __acquire_image(self, *, direct: bool, exposure_s: float) -> ImportExportManager.DataElementType:
         """Acquire the most recent data."""
         xdata_buffer = None
         integration_count = self.__integration_count or 1
         for frame_number in range(integration_count):
             if direct:
-                self.__direct_acquire(self.__cancel_sequence_event)
+                self.__direct_acquire(self.__cancel_sequence_event, exposure_s)
             else:
-                if not self.__has_data_event.wait(self.__exposure * 200) and not self.__thread.is_alive():
+                if not self.__has_data_event.wait(exposure_s * 200) and not self.__thread.is_alive():
                     raise Exception("No simulator thread.")
             self.__has_data_event.clear()
             if xdata_buffer is None:
@@ -284,10 +283,10 @@ class Camera(camera_base.CameraDevice3):
         # if the device does not implement acquire_sequence, fall back to looping acquisition.
         self.__is_acquiring = True
         self.__has_data_event.clear()  # ensure any has_data_event is new data
-        self.__original_exposure = self.__exposure
         try:
             properties = None
             data = None
+            exposure_s = self.__exposure
             for index in range(n):
                 if self.__cancel_sequence_event.is_set():
                     return None
@@ -295,10 +294,10 @@ class Camera(camera_base.CameraDevice3):
                 # overhead. This is important when acquiring data where synchronization between scan and camera is
                 # achieved via having them run at the same speed.
                 frame_start_time = time.time()
-                frame_data_element = self.__acquire_image(direct=True)
+                frame_data_element = self.__acquire_image(direct=True, exposure_s=exposure_s)
                 frame_time = time.time() - frame_start_time
-                difference = frame_time - self.__original_exposure
-                self.__exposure -= difference
+                difference = frame_time - self.__exposure
+                exposure_s = max(exposure_s - difference, 0)
                 frame_data = frame_data_element["data"]
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
                     data_shape = (n,) + frame_data.shape[1:]
@@ -338,7 +337,6 @@ class Camera(camera_base.CameraDevice3):
                         properties["spatial_calibrations"] = spatial_properties[1:]
         finally:
             self.__is_acquiring = False
-            self.__exposure = self.__original_exposure
         data_element = dict()
         data_element["data"] = data
         data_element["properties"] = properties
@@ -362,17 +360,17 @@ class Camera(camera_base.CameraDevice3):
     def acquire_sequence_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
 
-    def __direct_acquire(self, cancel_event: threading.Event) -> bool:
+    def __direct_acquire(self, cancel_event: threading.Event, exposure_s: float) -> bool:
         start = time.time()
         readout_area = self.readout_area
         binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
         scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
         if scan_device and hasattr(scan_device, "advance_pixel"):
             scan_device.advance_pixel()
-        xdata = self.__simulator.get_frame_data(Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure, self.__instrument.scan_context, self.__instrument.probe_position)
+        xdata = self.__simulator.get_frame_data(Geometry.IntRect.from_tlbr(*readout_area), binning_shape, exposure_s, self.__instrument.scan_context, self.__instrument.probe_position)
         self.__acquired_one_event.set()
         elapsed = time.time() - start
-        wait_s = max(self.__exposure - elapsed, 0)
+        wait_s = max(exposure_s - elapsed, 0)
         if not cancel_event.wait(wait_s):
             # thread event was not triggered during wait; signal that we have data
             xdata._set_timestamp(datetime.datetime.utcnow())
@@ -389,7 +387,7 @@ class Camera(camera_base.CameraDevice3):
             if self.__cancel:
                 break
             while (self.__is_playing or self.__is_acquiring) and not self.__cancel:
-                if self.__direct_acquire(self.__thread_event):
+                if self.__direct_acquire(self.__thread_event, self.__exposure):
                     self.__has_data_event.set()
                 else:
                     # thread event was triggered during wait; continue loop
