@@ -41,6 +41,7 @@ _ = gettext.gettext
 class ModeController(typing.Protocol):
     # is_continuous
     # is_interruptable?
+    def __init__(self, mode_parameters: ModeParameters, camera_device: Camera) -> None: ...
 
     def begin_mode(self) -> camera_base.PartialData: ...
 

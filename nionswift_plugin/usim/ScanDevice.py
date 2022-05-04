@@ -77,8 +77,8 @@ class ScanBoxSimulator:
         self.__scan_shape_pixels = Geometry.IntSize()
         self.__pixel_size_nm = Geometry.FloatSize()
         self.flyback_pixels = 2
-        self.flyback_time_us = 300
-        self.pixel_time_us = 10
+        self.flyback_time_us = 300.0
+        self.pixel_time_us = 10.0
         self.__line_start_time = 0.0
         self.__n_flyback_pixels = 0
         self.__current_line = -1
