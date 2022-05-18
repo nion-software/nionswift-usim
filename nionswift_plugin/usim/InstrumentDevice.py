@@ -11,7 +11,6 @@ import math
 import time
 
 import numpy.typing
-import threading
 import typing
 import re
 
@@ -248,12 +247,19 @@ class ConvertedControl:
         self.__index = index
         self.__control_2d = control_2d
         self.__axis = axis
+        axis_id = ""
+        for axis_description in AxisManager().supported_axis_descriptions:
+            if axis_description.axis_type == axis:
+                axis_id = axis_description.axis_id
+                break
+        assert axis_id
+        self.__axis_id = axis_id
 
     @property
     def __weighted_input_value_2d(self) -> typing.Tuple[float, float]:
         value_a = self.__control_2d.controls[0].weighted_input_value
         value_b = self.__control_2d.controls[1].weighted_input_value
-        return AxisManager().convert_vector((value_a, value_b), self.__control_2d.native_axis, self.__axis)
+        return AxisManager().convert_vector(Geometry.FloatPoint(x=value_a, y=value_b), self.__control_2d.native_axis_id, self.__axis_id).as_tuple()[::-1]
 
     @property
     def weighted_input_value(self) -> float:
@@ -263,7 +269,7 @@ class ConvertedControl:
     def __output_value_2d(self) -> typing.Tuple[float, float]:
         value_a = self.__control_2d.controls[0].output_value
         value_b = self.__control_2d.controls[1].output_value
-        return AxisManager().convert_vector((value_a, value_b), self.__control_2d.native_axis, self.__axis)
+        return AxisManager().convert_vector(Geometry.FloatPoint(x=value_a, y=value_b), self.__control_2d.native_axis_id, self.__axis_id).as_tuple()[::-1]
 
     @property
     def output_value(self) -> float:
@@ -273,7 +279,7 @@ class ConvertedControl:
     def __local_value_2d(self) -> typing.Tuple[float, float]:
         value_a = self.__control_2d.controls[0].local_value
         value_b = self.__control_2d.controls[1].local_value
-        return AxisManager().convert_vector((value_a, value_b), self.__control_2d.native_axis, self.__axis)
+        return AxisManager().convert_vector(Geometry.FloatPoint(x=value_a, y=value_b), self.__control_2d.native_axis_id, self.__axis_id).as_tuple()[::-1]
 
     @property
     def local_value(self) -> float:
@@ -282,10 +288,9 @@ class ConvertedControl:
     def set_local_value(self, value: float) -> None:
         value_2d = [self.__local_value_2d[0], self.__local_value_2d[1]]
         value_2d[self.__index] = value
-        value_2d_tuple = (value_2d[0], value_2d[1])
-        value_2d_native = AxisManager().convert_vector(value_2d_tuple, self.__axis, self.__control_2d.native_axis)
-        self.__control_2d.controls[0].set_local_value(value_2d_native[0])
-        self.__control_2d.controls[1].set_local_value(value_2d_native[1])
+        value_2d_native = AxisManager().convert_vector(Geometry.FloatPoint(x=value_2d[0], y=value_2d[1]), self.__axis_id, self.__control_2d.native_axis_id)
+        self.__control_2d.controls[0].set_local_value(value_2d_native.x)
+        self.__control_2d.controls[1].set_local_value(value_2d_native.y)
 
     def set_output_value(self, value: float) -> None:
         self.set_local_value(value - self.weighted_input_value)
@@ -293,10 +298,9 @@ class ConvertedControl:
     def inform_output_value(self, value: float) -> None:
         value_2d = list(self.__output_value_2d)
         value_2d[self.__index] = value
-        value_2d_tuple = (value_2d[0], value_2d[1])  # doing it this way keeps the type checker happy
-        value_2d_native = AxisManager().convert_vector(value_2d_tuple, self.__axis, self.__control_2d.native_axis)
-        self.__control_2d.controls[0].inform_output_value(value_2d_native[0])
-        self.__control_2d.controls[1].inform_output_value(value_2d_native[1])
+        value_2d_native = AxisManager().convert_vector(Geometry.FloatPoint(x=value_2d[0], y=value_2d[1]), self.__axis_id, self.__control_2d.native_axis_id)
+        self.__control_2d.controls[0].inform_output_value(value_2d_native.x)
+        self.__control_2d.controls[1].inform_output_value(value_2d_native.y)
 
 
 class AxisManager(metaclass=Utility.Singleton):
@@ -308,15 +312,25 @@ class AxisManager(metaclass=Utility.Singleton):
     """
 
     def __init__(self) -> None:
-        self.__supported_axis_names: typing.List[stem_controller.AxisType] = [('a', 'b'), ('x', 'y'), ('u', 'v'),
-                                                                              ('mx', 'my'), ('px', 'py'), ('sx', 'sy'),
-                                                                              ('sa', 'sb')]
+        self.__supported_axis_descriptions: typing.List[stem_controller.AxisDescription] = [
+            stem_controller.AxisDescription("correctoraxis", "a", "b", "CorrectorAxis (a, b)", "CorrectorAxis"),
+            stem_controller.AxisDescription("tv", "x", "y", "TV (x, y)", "TV"),
+            stem_controller.AxisDescription("scan", "u", "v", "Scan (u, v)", "Scan"),
+            stem_controller.AxisDescription("mc", "mx", "my", "MC (mx, my)", "MC"),
+            stem_controller.AxisDescription("postsample", "px", "py", "PostSample (px, py)", "PostSample"),
+            stem_controller.AxisDescription("stageaxis", "sx", "sy", "StageAxis (sx, sy)", "StageAxis"),
+            stem_controller.AxisDescription("stagetiltaxis", "sa", "sb", "StageTiltAxis (sa, sb)", "StageTiltAxis"),
+        ]
 
     @property
     def supported_axis_names(self) -> typing.Sequence[stem_controller.AxisType]:
-        return self.__supported_axis_names.copy()
+        return [axis_description.axis_type for axis_description in self.__supported_axis_descriptions]
 
-    def convert_vector(self, vector: typing.Tuple[float, float], from_axis: stem_controller.AxisType, to_axis: stem_controller.AxisType) -> typing.Tuple[float, float]:
+    @property
+    def supported_axis_descriptions(self) -> typing.Sequence[stem_controller.AxisDescription]:
+        return self.__supported_axis_descriptions.copy()
+
+    def convert_vector(self, vector: Geometry.FloatPoint, from_axis: str, to_axis: str) -> Geometry.FloatPoint:
         return vector
 
 
@@ -336,6 +350,13 @@ class Control2D:
                  weighted_inputs: typing.Optional[typing.Tuple[typing.List[WeightedInput], typing.List[WeightedInput]]] = None):
         self.name = name
         self.native_axis = native_axis
+        axis_id = ""
+        for axis_description in AxisManager().supported_axis_descriptions:
+            if axis_description.axis_type == native_axis:
+                axis_id = axis_description.axis_id
+                break
+        assert axis_id
+        self.native_axis_id = axis_id
         # give both 'sub-controls' the same name so that the 'property_changed_event' will be fired with the name of
         # the 'parent' 2d-control
         control_b = Control(name, local_value=local_values[1], weighted_inputs=weighted_inputs[1] if weighted_inputs else None)
@@ -365,7 +386,7 @@ class Control2D:
             if attr in axis:
                 converted = ConvertedControl(self, axis.index(attr), axis)
                 return converted
-        raise AttributeError(f"'{self.__class__.__name__}' has not attribute '{attr}'")
+        raise AttributeError(f"'{self.__class__.__name__}' has no attribute '{attr}'")
 
 
 class DriftController:
@@ -874,7 +895,7 @@ class Instrument(stem_controller.STEMController):
     @property
     def axis_descriptions(self) -> typing.Sequence[stem_controller.AxisDescription]:
         return list(stem_controller.AxisDescription("_".join(axis_type).lower(), axis_type[0], axis_type[1],
-                                                    ", ".join(axis_type)) for axis_type in
+                                                    ", ".join(axis_type), "_".join(axis_type)) for axis_type in
                     AxisManager().supported_axis_names)
 
     def get_reference_setting_index(self, settings_control: str) -> int:
@@ -884,6 +905,9 @@ class Instrument(stem_controller.STEMController):
         if not success:
             raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
         return 0
+
+    def convert_axis(self, value: Geometry.FloatPoint, from_axis: str, to_axis: str) -> Geometry.FloatPoint:
+        return AxisManager().convert_vector(value, from_axis, to_axis)
 
     def change_stage_position(self, *, dy: typing.Optional[float] = None, dx: typing.Optional[float] = None) -> None:
         """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
