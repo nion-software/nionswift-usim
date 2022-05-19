@@ -302,15 +302,27 @@ class ConvertedControl:
         self.__control_2d.controls[1].inform_output_value(value_2d_native.y)
 
 
-class AxisDescription:
+class AxisDescription(stem_controller.AxisDescription):
     def __init__(self, axis_id: str, axis1: str, axis2: str, display_name: str, searchable_name: str):
-        self.axis_id = axis_id
-        self.axis_type = (axis1, axis2)
-        self.display_name = display_name
+        self.__axis_id = axis_id
+        self.__axis_type = (axis1, axis2)
+        self.__display_name = display_name
         self.searchable_name = searchable_name
 
     def __str__(self) -> str:
         return self.display_name
+
+    @property
+    def axis_id(self) -> str:
+        return self.__axis_id
+
+    @property
+    def axis_type(self) -> typing.Tuple[str, str]:
+        return self.__axis_type
+
+    @property
+    def display_name(self) -> str:
+        return self.__display_name
 
 
 class AxisManager(metaclass=Utility.Singleton):
@@ -340,7 +352,7 @@ class AxisManager(metaclass=Utility.Singleton):
     def supported_axis_descriptions(self) -> typing.Sequence[AxisDescription]:
         return self.__supported_axis_descriptions.copy()
 
-    def axis_transform_point(self, point: Geometry.FloatPoint, from_axis: AxisDescription, to_axis: AxisDescription) -> Geometry.FloatPoint:
+    def axis_transform_point(self, point: Geometry.FloatPoint, from_axis: stem_controller.AxisDescription, to_axis: stem_controller.AxisDescription) -> Geometry.FloatPoint:
         return point
 
 
@@ -915,7 +927,7 @@ class Instrument(stem_controller.STEMController):
             raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
         return 0
 
-    def axis_transform_point(self, point: Geometry.FloatPoint, from_axis: AxisDescription, to_axis: AxisDescription) -> Geometry.FloatPoint:
+    def axis_transform_point(self, point: Geometry.FloatPoint, from_axis: stem_controller.AxisDescription, to_axis: stem_controller.AxisDescription) -> Geometry.FloatPoint:
         return AxisManager().axis_transform_point(point, from_axis, to_axis)
 
     def change_stage_position(self, *, dy: typing.Optional[float] = None, dx: typing.Optional[float] = None) -> None:
