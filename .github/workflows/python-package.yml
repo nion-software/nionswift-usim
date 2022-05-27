@@ -35,14 +35,14 @@ jobs:
     - name: Install Test Dependencies
       run: |
         pip install -r test-requirements.txt
-        python -m pip install mypy==0.931
+        python -m pip install mypy==0.960
         python -m pip install flake8
         mypy --version
     - name: Test
       run: |
         python -m unittest discover -s nionswift_plugin/usim/test/ -p "*_test.py"
         # use mypy -p to work around mypy issue 8944
-        mypy --namespace-packages --ignore-missing-imports --follow-imports=silent --strict --no-warn-unused-ignores -p nionswift_plugin.usim
+        mypy --namespace-packages --ignore-missing-imports --follow-imports=silent --strict --no-warn-redundant-casts --no-warn-unused-ignores -p nionswift_plugin.usim
     - name: Upload Artifacts
       uses: actions/upload-artifact@v2
       if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.8'
