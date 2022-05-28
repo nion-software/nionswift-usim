@@ -1,6 +1,12 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.4.3 (2022-05-28)
+------------------
+- Add simulated CTS sample.
+- Fix issues in instrument panel.
+- Implement new axis manager.
+
 0.4.2 (2022-02-18)
 ------------------
 - Improve simulated synchronization behavior for future work.
