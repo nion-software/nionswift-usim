@@ -11,6 +11,8 @@ import pathlib
 import threading
 import time
 import typing
+import dataclasses
+import enum
 
 # local libraries
 from nion.data import Calibration
@@ -36,8 +38,72 @@ _NDArray = numpy.typing.NDArray[typing.Any]
 _ = gettext.gettext
 
 
+class ModeController(typing.Protocol):
+    # is_continuous
+    # is_interruptable?
+    def __init__(self, mode_parameters: ModeParameters, camera_device: Camera) -> None: ...
+
+    def begin_mode(self) -> camera_base.PartialData: ...
+
+    def continue_mode(self) -> camera_base.PartialData: ...
+
+    def end_mode(self) -> None: ...
+
+    def cancel_mode(self) -> None: ...
+
+
+class BurstModeController:
+
+    def __init__(self, mode_parameters: ModeParameters, camera_device: Camera):
+        self.__parameters = mode_parameters
+        self.__camera = camera_device
+        self.__trigger_count = 0
+
+    def __update_partial_data(self, partial_data: camera_base.PartialData) -> camera_base.PartialData:
+        if partial_data.is_complete:
+            self.__trigger_count += 1
+            self.__camera.acquire_sequence_end()
+            self.__camera.acquire_sequence_begin(self.__parameters.camera_frame_parameters, self.__parameters.number_frames)
+        is_complete = partial_data.is_complete and self.__trigger_count >= self.__parameters.number_triggers
+        return camera_base.PartialData(partial_data.xdata, is_complete, partial_data.is_canceled, partial_data.valid_rows, partial_data.valid_count)
+
+    def begin_mode(self) -> camera_base.PartialData:
+        self.__trigger_count = 0
+        self.__camera._external_trigger = self.__parameters.trigger_mode == TriggerMode.EXTERNAL
+        partial_data = self.__camera.acquire_sequence_begin(self.__parameters.camera_frame_parameters, self.__parameters.number_frames)
+        return self.__update_partial_data(partial_data)
+
+    def continue_mode(self) -> camera_base.PartialData:
+        partial_data = self.__camera.acquire_sequence_continue()
+        return self.__update_partial_data(partial_data)
+
+    def end_mode(self) -> None:
+        # Reset external trigger flag to default
+        self.__camera._external_trigger = False
+        return self.__camera.acquire_sequence_end()
+
+    def cancel_mode(self) -> None:
+        return self.__camera.acquire_sequence_cancel()
+
+
+class TriggerMode(enum.IntEnum):
+    INTERNAL = 1
+    EXTERNAL = 2
+
+
+@dataclasses.dataclass
+class ModeParameters:
+    camera_frame_parameters: camera_base.CameraFrameParameters
+    number_frames: int
+    number_triggers: int
+    trigger_mode: TriggerMode
+    external_trigger_wait_time: float = 5.0
+
+
 class Camera(camera_base.CameraDevice3):
     """Implement a camera device."""
+
+    _modes_lookup: typing.Mapping[str, typing.Type[ModeController]] = {'burst_mode': BurstModeController}
 
     def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
         self.camera_id = camera_id
@@ -177,17 +243,17 @@ class Camera(camera_base.CameraDevice3):
         # has_data_event is cleared in the acquisition loop after stopping
 
     def acquire_image(self) -> ImportExportManager.DataElementType:
-        return self.__acquire_image(direct=False)
+        return self.__acquire_image(direct=False, exposure_s=self.__exposure)
 
-    def __acquire_image(self, *, direct: bool) -> ImportExportManager.DataElementType:
+    def __acquire_image(self, *, direct: bool, exposure_s: float) -> ImportExportManager.DataElementType:
         """Acquire the most recent data."""
         xdata_buffer = None
         integration_count = self.__integration_count or 1
         for frame_number in range(integration_count):
             if direct:
-                self.__direct_acquire(self.__cancel_sequence_event)
+                self.__direct_acquire(self.__cancel_sequence_event, exposure_s)
             else:
-                if not self.__has_data_event.wait(self.__exposure * 200) and not self.__thread.is_alive():
+                if not self.__has_data_event.wait(exposure_s * 200) and not self.__thread.is_alive():
                     raise Exception("No simulator thread.")
             self.__has_data_event.clear()
             if xdata_buffer is None:
@@ -221,15 +287,18 @@ class Camera(camera_base.CameraDevice3):
         try:
             properties = None
             data = None
-            if self._external_trigger:
-                scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
-                if scan_device and hasattr(scan_device, "blanker_signal_condition"):
-                    with scan_device.blanker_signal_condition:
-                        scan_device.blanker_signal_condition.wait(timeout=max(self.__exposure * 2, 5))
+            exposure_s = self.__exposure
             for index in range(n):
                 if self.__cancel_sequence_event.is_set():
                     return None
-                frame_data_element = self.__acquire_image(direct=True)
+                # Time the actual duration of a frame and adjust the internal exposure time accordingly to account for
+                # overhead. This is important when acquiring data where synchronization between scan and camera is
+                # achieved via having them run at the same speed.
+                frame_start_time = time.time()
+                frame_data_element = self.__acquire_image(direct=True, exposure_s=exposure_s)
+                frame_time = time.time() - frame_start_time
+                difference = frame_time - self.__exposure
+                exposure_s = max(exposure_s - difference, 0)
                 frame_data = frame_data_element["data"]
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
                     data_shape = (n,) + frame_data.shape[1:]
@@ -292,17 +361,17 @@ class Camera(camera_base.CameraDevice3):
     def acquire_sequence_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
 
-    def __direct_acquire(self, cancel_event: threading.Event) -> bool:
+    def __direct_acquire(self, cancel_event: threading.Event, exposure_s: float) -> bool:
         start = time.time()
         readout_area = self.readout_area
         binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
         scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
         if scan_device and hasattr(scan_device, "advance_pixel"):
             scan_device.advance_pixel()
-        xdata = self.__simulator.get_frame_data(Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure, self.__instrument.scan_context, self.__instrument.probe_position)
+        xdata = self.__simulator.get_frame_data(Geometry.IntRect.from_tlbr(*readout_area), binning_shape, exposure_s, self.__instrument.scan_context, self.__instrument.probe_position)
         self.__acquired_one_event.set()
         elapsed = time.time() - start
-        wait_s = max(self.__exposure - elapsed, 0)
+        wait_s = max(exposure_s - elapsed, 0)
         if not cancel_event.wait(wait_s):
             # thread event was not triggered during wait; signal that we have data
             xdata._set_timestamp(datetime.datetime.utcnow())
@@ -319,7 +388,7 @@ class Camera(camera_base.CameraDevice3):
             if self.__cancel:
                 break
             while (self.__is_playing or self.__is_acquiring) and not self.__cancel:
-                if self.__direct_acquire(self.__thread_event):
+                if self.__direct_acquire(self.__thread_event, self.__exposure):
                     self.__has_data_event.set()
                 else:
                     # thread event was triggered during wait; continue loop
@@ -347,6 +416,11 @@ class Camera(camera_base.CameraDevice3):
     @property
     def _is_acquire_synchronized_running(self) -> bool:
         return self.__camera_task is not None
+
+    def enter_mode(self, mode_name: str, mode_parameters: ModeParameters) -> ModeController:
+        if not mode_name in Camera._modes_lookup:
+            raise ValueError(f"{mode_name} is not a valid mode for this device. Supported modes are {list(Camera._modes_lookup.keys())}.")
+        return Camera._modes_lookup[mode_name](mode_parameters, self)
 
 
 class CameraTask:
@@ -389,7 +463,11 @@ class CameraTask:
         exposure = frame_parameters.exposure_ms / 1000.0
         n = min(max(int(update_period / exposure), 1), self.__count - start)
         is_complete = start + n == self.__count
-        # print(f"{start=} {n=} {self.__count=} {is_complete=}")
+        if start == 0 and self.__camera_device._external_trigger:
+            scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
+            if scan_device and hasattr(scan_device, "blanker_signal_condition"):
+                with scan_device.blanker_signal_condition:
+                    assert scan_device.blanker_signal_condition.wait(timeout=max(exposure * 2, 5))
         data_element = self.__camera_device._acquire_sequence(n)
         if data_element and not self.__aborted:
             xdata = ImportExportManager.convert_data_element_to_data_and_metadata(data_element)
