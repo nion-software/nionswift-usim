@@ -81,6 +81,12 @@ class ScanBoxSimulator:
         self.__current_line = 0
         self.external_clock = False
 
+    def reset_frame(self) -> None:
+        with self.__advance_pixel_lock:
+            self.__current_pixel_flat = 0
+            self.__current_line = 0
+            self.__n_flyback_pixels = 0
+
     @property
     def scan_shape_pixels(self) -> Geometry.IntSize:
         return self.__scan_shape_pixels
@@ -88,10 +94,6 @@ class ScanBoxSimulator:
     @scan_shape_pixels.setter
     def scan_shape_pixels(self, shape: typing.Union[Geometry.IntSize, Geometry.SizeIntTuple]) -> None:
         self.__scan_shape_pixels = Geometry.IntSize.make(shape)
-        with self.__advance_pixel_lock:
-            self.__current_pixel_flat = 0
-            self.__current_line = 0
-            self.__n_flyback_pixels = 0
 
     @property
     def pixel_size_nm(self) -> Geometry.FloatSize:
@@ -100,10 +102,6 @@ class ScanBoxSimulator:
     @pixel_size_nm.setter
     def pixel_size_nm(self, size: typing.Union[Geometry.FloatSize, Geometry.SizeFloatTuple]) -> None:
         self.__pixel_size_nm = Geometry.FloatSize.make(size)
-        with self.__advance_pixel_lock:
-            self.__current_pixel_flat = 0
-            self.__current_line = 0
-            self.__n_flyback_pixels = 0
 
     @property
     def probe_position_pixels(self) -> Geometry.IntPoint:
@@ -235,7 +233,15 @@ class Device:
     def blanker_signal_condition(self) -> threading.Condition:
         return self.__scan_box.blanker_signal_condition
 
-    def advance_pixel(self) -> None:
+    def advance_pixel(self, do_sync: bool = False) -> None:
+        # if do_sync is True, synchronize with the acquisition thread. this is done by
+        # waiting for is_scanning to be True. this should occur quickly in all sitations,
+        # so the timeout is short (5s). this will typically only be True for the first pixel.
+        if do_sync:
+            start = time.time()
+            while not self.__is_scanning:
+                time.sleep(0.03)
+                assert time.time() - start < 5.0
         self.__scan_box.advance_pixel()
 
     def set_channel_enabled(self, channel_index: int, enabled: bool) -> bool:
@@ -336,7 +342,7 @@ class Device:
         target_count = 0
         if is_synchronized_scan:
             # In synchronized mode, sleep for the update period and check where we are afterwards since the camera will
-            # tell us when to move formward.
+            # tell us when to move forward.
             time.sleep(time_slice)
             target_count = self.__scan_box.current_pixel_flat + 1
         else:
@@ -430,7 +436,6 @@ class Device:
         if not self.__is_scanning:
             self.__buffer = list()
             self.__start_next_frame()
-            self.__is_scanning = True
         return self.__frame_number
 
     def __start_next_frame(self) -> None:
@@ -441,6 +446,7 @@ class Device:
             channel.data = numpy.zeros(tuple(size), numpy.float32)
         self.__frame_number += 1
         self.__frame = Frame(self.__frame_number, channels, frame_parameters)
+        self.__scan_box.reset_frame()
         self.__scan_box.scan_shape_pixels = size
         if frame_parameters.fov_size_nm is not None:
             self.__scan_box.pixel_size_nm = Geometry.FloatSize(frame_parameters.fov_size_nm.height / size.height,
@@ -464,8 +470,6 @@ class Device:
         scan_frame_parameters.pixel_time_us = min(5120000, int(1000 * camera_exposure_ms * 0.75))
         scan_frame_parameters.external_clock_wait_time_ms = 20000 # int(camera_frame_parameters["exposure_ms"] * 1.5)
         scan_frame_parameters.external_clock_mode = 1
-        self.__scan_box.external_clock = True
-        self.__scan_box.scan_shape_pixels = scan_frame_parameters.size
 
     def get_buffer_data(self, start: int, count: int) -> typing.List[typing.List[typing.Dict[str, typing.Any]]]:
         if start < 0:

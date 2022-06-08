@@ -45,6 +45,7 @@ class Camera(camera_base.CameraDevice3):
         self.camera_name = camera_name
         self.__camera_task: typing.Optional[CameraTask] = None
         self.__instrument = instrument
+        self.__scan_device: typing.Optional[ScanDevice.Device] = None
         self.__simulator: CameraSimulator.CameraSimulator
         if camera_type == "ronchigram":
             self.__simulator = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("ronchigram")), instrument.counts_per_electron, instrument.stage_size_nm)
@@ -179,13 +180,20 @@ class Camera(camera_base.CameraDevice3):
     def acquire_image(self) -> ImportExportManager.DataElementType:
         return self.__acquire_image(direct=False)
 
-    def __acquire_image(self, *, direct: bool) -> ImportExportManager.DataElementType:
-        """Acquire the most recent data."""
+    def __acquire_image(self, *, direct: bool, index: int = 0) -> ImportExportManager.DataElementType:
+        """Acquire the most recent data.
+
+        The direct parameter is a shortcut to optimize the speed during sequence acquisition. When
+        set to True, it uses a direct form of acquisition that does not sync with the data thread.
+
+        The index parameter is used if direct is True; it allows direct to synchronize with the
+        start of the acquistion thread.
+        """
         xdata_buffer = None
         integration_count = self.__integration_count or 1
         for frame_number in range(integration_count):
             if direct:
-                self.__direct_acquire(self.__cancel_sequence_event)
+                self.__direct_acquire(self.__cancel_sequence_event, index == 0)
             else:
                 if not self.__has_data_event.wait(self.__exposure * 200) and not self.__thread.is_alive():
                     raise Exception("No simulator thread.")
@@ -229,7 +237,7 @@ class Camera(camera_base.CameraDevice3):
             for index in range(n):
                 if self.__cancel_sequence_event.is_set():
                     return None
-                frame_data_element = self.__acquire_image(direct=True)
+                frame_data_element = self.__acquire_image(direct=True, index=index)
                 frame_data = frame_data_element["data"]
                 if self.__processing == "sum_project" and len(frame_data.shape) > 1:
                     data_shape = (n,) + frame_data.shape[1:]
@@ -292,13 +300,16 @@ class Camera(camera_base.CameraDevice3):
     def acquire_sequence_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
 
-    def __direct_acquire(self, cancel_event: threading.Event) -> bool:
+    def __direct_acquire(self, cancel_event: threading.Event, do_sync: bool = False) -> bool:
+        # if do_sync is True, the scan device will sync with its acquisition thread before
+        # advancing the pixel. this avoids race conditions of when the pixel count gets reset.
+        # this will be set only for the first frame in a sequence.
         start = time.time()
         readout_area = self.readout_area
         binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
-        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
-        if scan_device and hasattr(scan_device, "advance_pixel"):
-            scan_device.advance_pixel()
+        # scan device is only set during synchronized acquisition
+        if self.__scan_device:
+            self.__scan_device.advance_pixel(do_sync=do_sync)
         xdata = self.__simulator.get_frame_data(Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure, self.__instrument.scan_context, self.__instrument.probe_position)
         self.__acquired_one_event.set()
         elapsed = time.time() - start
@@ -329,6 +340,7 @@ class Camera(camera_base.CameraDevice3):
     def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, collection_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.PartialData:
         self.__cancel_sequence_event.clear()
         self.__set_frame_parameters(camera_frame_parameters)
+        self.__scan_device = Registry.get_component("scan_device")
         self.__camera_task = CameraTask(self, camera_frame_parameters, collection_shape)
         self.__camera_task.start()
         return camera_base.PartialData(self.__camera_task._xdata_ex, False, False, None, 0)
@@ -340,6 +352,7 @@ class Camera(camera_base.CameraDevice3):
 
     def acquire_synchronized_end(self, **kwargs: typing.Any) -> None:
         self.__camera_task = None
+        self.__scan_device = None
 
     def acquire_synchronized_cancel(self) -> None:
         self.__cancel_sequence_event.set()
