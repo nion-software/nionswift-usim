@@ -24,6 +24,7 @@ _ = gettext.gettext
 
 class Control2DBinding(Binding.Binding):
     def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, attribute_name: str,
+                 queue_task: typing.Callable[[typing.Callable[[], None]], None],
                  converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
                  fallback: typing.Any = None) -> None:
         super().__init__(instrument, converter=converter, fallback=fallback)
@@ -40,13 +41,15 @@ class Control2DBinding(Binding.Binding):
 
         # thread safe
         def property_changed(property_name_: str) -> None:
-            if property_name_ == control_name:
-                # perform on the main thread
-                value = self.source_getter() if callable(self.source_getter) else 0.0
-                if value is not None:
-                    self.update_target(value)
-                else:
-                    self.update_target_direct(self.fallback)
+            def update():
+                if property_name_ == control_name:
+                    # perform on the main thread
+                    value = self.source_getter() if callable(self.source_getter) else 0.0
+                    if value is not None:
+                        self.update_target(value)
+                    else:
+                        self.update_target_direct(self.fallback)
+            queue_task(update)
 
         self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
 
@@ -57,7 +60,8 @@ class Control2DBinding(Binding.Binding):
 
 
 class ControlBinding(Binding.Binding):
-    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, *,
+    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str,
+                 queue_task: typing.Callable[[typing.Callable[[], None]], None], *,
                  converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
                  validator: typing.Optional[Validator.ValidatorLike[typing.Any]] = None,
                  fallback: typing.Any = None) -> None:
@@ -75,12 +79,14 @@ class ControlBinding(Binding.Binding):
 
         # thread safe
         def property_changed(property_name_: str) -> None:
-            if property_name_ == control_name:
-                value = self.source_getter() if callable(self.source_getter) else 0.0
-                if value is not None:
-                    self.update_target(value)
-                else:
-                    self.update_target_direct(self.fallback)
+            def update():
+                if property_name_ == control_name:
+                    value = self.source_getter() if callable(self.source_getter) else 0.0
+                    if value is not None:
+                        self.update_target(value)
+                    else:
+                        self.update_target_direct(self.fallback)
+            queue_task(update)
 
         self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
 
@@ -93,15 +99,16 @@ class ControlBinding(Binding.Binding):
 class PositionWidget(Widgets.CompositeWidgetBase):
 
     def __init__(self, ui: UserInterface.UserInterface, label: str, instrument: InstrumentDevice.Instrument,
+                 queue_task: typing.Callable[[typing.Callable[[], None]], None],
                  xy_property: str, unit: str = "nm", multiplier: float = 1E9) -> None:
         row_widget = ui.create_row_widget()
         super().__init__(row_widget)
 
         stage_x_field = ui.create_line_edit_widget()
-        stage_x_field.bind_text(Control2DBinding(instrument, xy_property, "x", Converter.PhysicalValueToStringConverter(unit, multiplier)))
+        stage_x_field.bind_text(Control2DBinding(instrument, xy_property, "x", queue_task, Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         stage_y_field = ui.create_line_edit_widget()
-        stage_y_field.bind_text(Control2DBinding(instrument, xy_property, "y", Converter.PhysicalValueToStringConverter(unit, multiplier)))
+        stage_y_field.bind_text(Control2DBinding(instrument, xy_property, "y", queue_task, Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         row_widget.add_spacing(8)
         row_widget.add(ui.create_label_widget(label))
@@ -118,7 +125,7 @@ class PositionWidget(Widgets.CompositeWidgetBase):
 
 class InstrumentWidget(Widgets.CompositeWidgetBase):
 
-    def __init__(self, ui: UserInterface.UserInterface, instrument: InstrumentDevice.Instrument) -> None:
+    def __init__(self, ui: UserInterface.UserInterface, instrument: InstrumentDevice.Instrument, queue_task: typing.Callable[[typing.Callable[[], None]], None]) -> None:
         column_widget = ui.create_column_widget(properties={"margin": 6, "spacing": 2})
         super().__init__(column_widget)
 
@@ -130,27 +137,27 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
 
         beam_current_field = ui.create_line_edit_widget()
-        beam_current_field.bind_text(ControlBinding(instrument, "BeamCurrent", converter=Converter.PhysicalValueToStringConverter(units="pA", multiplier=1E12)))
+        beam_current_field.bind_text(ControlBinding(instrument, "BeamCurrent", queue_task, converter=Converter.PhysicalValueToStringConverter(units="pA", multiplier=1E12)))
 
-        stage_position_widget = PositionWidget(ui, _("Stage"), instrument, "stage_position_m")
+        stage_position_widget = PositionWidget(ui, _("Stage"), instrument, queue_task, "stage_position_m")
 
-        beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
+        beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, queue_task, "beam_shift_m")
 
         defocus_field = ui.create_line_edit_widget()
-        defocus_field.bind_text(ControlBinding(instrument, "C10", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        defocus_field.bind_text(ControlBinding(instrument, "C10", queue_task, converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
-        c12_widget = PositionWidget(ui, _("C12"), instrument, "C12")
+        c12_widget = PositionWidget(ui, _("C12"), instrument, queue_task, "C12")
 
-        c21_widget = PositionWidget(ui, _("C21"), instrument, "C21")
+        c21_widget = PositionWidget(ui, _("C21"), instrument, queue_task, "C21")
 
-        c23_widget = PositionWidget(ui, _("C23"), instrument, "C23")
+        c23_widget = PositionWidget(ui, _("C23"), instrument, queue_task, "C23")
 
         c3_field = ui.create_line_edit_widget()
-        c3_field.bind_text(ControlBinding(instrument, "C30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        c3_field.bind_text(ControlBinding(instrument, "C30", queue_task, converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
-        c32_widget = PositionWidget(ui, _("C32"), instrument, "C32")
+        c32_widget = PositionWidget(ui, _("C32"), instrument, queue_task, "C32")
 
-        c34_widget = PositionWidget(ui, _("C34"), instrument, "C34")
+        c34_widget = PositionWidget(ui, _("C34"), instrument, queue_task, "C34")
 
         blanked_checkbox = ui.create_check_box_widget(_("Beam Blanked"))
         blanked_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_blanked"))
@@ -159,13 +166,13 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         slit_in_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_slit_in"))
 
         voa_in_checkbox = ui.create_check_box_widget(_("VOA In"))
-        voa_in_checkbox.bind_checked(ControlBinding(instrument, "S_VOA"))
+        voa_in_checkbox.bind_checked(ControlBinding(instrument, "S_VOA", queue_task))
 
         convergenve_angle_field = ui.create_line_edit_widget()
-        convergenve_angle_field.bind_text(ControlBinding(instrument, "ConvergenceAngle", converter=Converter.PhysicalValueToStringConverter(units="mrad", multiplier=1E3)))
+        convergenve_angle_field.bind_text(ControlBinding(instrument, "ConvergenceAngle", queue_task, converter=Converter.PhysicalValueToStringConverter(units="mrad", multiplier=1E3)))
 
-        c_aperture_widget = PositionWidget(ui, _("CAperture"), instrument, "CAperture", unit="mrad", multiplier=1E3)
-        aperture_round_widget = PositionWidget(ui, _("ApertureRound"), instrument, "ApertureRound", unit="", multiplier=1)
+        c_aperture_widget = PositionWidget(ui, _("CAperture"), instrument, queue_task, "CAperture", unit="mrad", multiplier=1E3)
+        aperture_round_widget = PositionWidget(ui, _("ApertureRound"), instrument, queue_task, "ApertureRound", unit="", multiplier=1)
 
         energy_offset_field = ui.create_line_edit_widget()
         energy_offset_field.bind_text(Binding.PropertyBinding(instrument, "energy_offset_eV", converter=Converter.FloatToStringConverter()))
@@ -261,7 +268,7 @@ class InstrumentControlPanel(Panel.Panel):
         ui = document_controller.ui
         self.widget = ui.create_column_widget()
         instrument = properties["instrument"]
-        instrument_widget = InstrumentWidget(ui, instrument)
+        instrument_widget = InstrumentWidget(ui, instrument, self.queue_task)
         self.widget.add(instrument_widget)
         self.widget.add_spacing(12)
         self.widget.add_stretch()
