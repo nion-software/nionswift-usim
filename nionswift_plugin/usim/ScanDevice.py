@@ -361,7 +361,7 @@ class Device:
                 channel_data_flat = channel.data.reshape((total_pixels,))
                 channel_data_flat[current_frame.data_count:target_count] = scan_data_flat[current_frame.data_count:target_count]
             current_frame.data_count = target_count
-            current_frame.complete = current_frame.data_count == total_pixels
+            current_frame.complete = current_frame.data_count >= total_pixels
         elif not self.__is_scanning:
             current_frame.data_count = total_pixels
             current_frame.complete = True
