@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.4.4 (2022-09-13)
+------------------
+- Minor bugs for testing in other packages.
+
 0.4.3 (2022-05-28)
 ------------------
 - Add simulated CTS sample.
