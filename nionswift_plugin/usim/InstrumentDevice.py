@@ -208,6 +208,9 @@ class Control(Variable):
     def __init__(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None):
         super().__init__(name, weighted_inputs)
         self.local_value = float(local_value)
+        # For some tests we need to simulate settings controls which have a reference index. Don't make a difference
+        # between normal and settings controls for now since it is not needed.
+        self.reference_index = 0.0
 
     def __str__(self) -> str:
         return "{}: {} + {} = {}".format(self.name, self.weighted_input_value, self.local_value, self.output_value)
@@ -483,7 +486,7 @@ class Instrument(stem_controller.STEMController):
         stage_position_m = Control2D("stage_position_m", ("x", "y"))
         beam_current = Control("BeamCurrent", 200e-12)
         # monochromator controls
-        mc_exists = Control("S_MC_InsideColumn", local_value=1)  # Used by tuning to check if scope has a monochromator
+        mc_exists = Control("S_MC_InsideColumn", local_value=8)  # Used by tuning to check if scope has a monochromator
         slit_tilt = Control2D("SlitTilt", ("x", "y"))
         slit_C10 = Control("Slit_C10")
         slit_C12 = Control2D("Slit_C12", ("x", "y"))
@@ -613,6 +616,11 @@ class Instrument(stem_controller.STEMController):
         else:
             control.on_changed = self.control_changed
         self.__controls[control.name] = control
+
+    def remove_control(self, control: typing.Union[Variable, Control2D]) -> None:
+        if not control.name in self.__controls:
+            raise ValueError(f"No control with name {control.name} exists.")
+        self.__controls.pop(control.name)
 
     def get_control(self, control_name: str) -> typing.Union[Variable, Control2D, None]:
         if "." in control_name:
@@ -915,17 +923,16 @@ class Instrument(stem_controller.STEMController):
 
     @property
     def axis_descriptions(self) -> typing.Sequence[stem_controller.AxisDescription]:
-        return list(AxisDescription("_".join(axis_type).lower(), axis_type[0], axis_type[1],
-                                    ", ".join(axis_type), "_".join(axis_type)) for axis_type in
-                    AxisManager().supported_axis_names)
+        return AxisManager().supported_axis_descriptions
 
     def get_reference_setting_index(self, settings_control: str) -> int:
-        # For testing purposes, always make 0 the reference setting index but still raise ValueError if the control
-        # does not exist
         success, _ = self.TryGetVal(settings_control)
         if not success:
             raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
-        return 0
+        settings_control = self.get_control(settings_control)
+        # Settings controls can only be 1D controls
+        assert isinstance(settings_control, Control)
+        return settings_control.reference_index
 
     def axis_transform_point(self, point: Geometry.FloatPoint, from_axis: stem_controller.AxisDescription, to_axis: stem_controller.AxisDescription) -> Geometry.FloatPoint:
         return AxisManager().axis_transform_point(point, from_axis, to_axis)
