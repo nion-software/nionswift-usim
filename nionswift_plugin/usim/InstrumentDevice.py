@@ -210,7 +210,7 @@ class Control(Variable):
         self.local_value = float(local_value)
         # For some tests we need to simulate settings controls which have a reference index. Don't make a difference
         # between normal and settings controls for now since it is not needed.
-        self.reference_index = 0.0
+        self.reference_index = 0
 
     def __str__(self) -> str:
         return "{}: {} + {} = {}".format(self.name, self.weighted_input_value, self.local_value, self.output_value)
@@ -929,10 +929,10 @@ class Instrument(stem_controller.STEMController):
         success, _ = self.TryGetVal(settings_control)
         if not success:
             raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
-        settings_control = self.get_control(settings_control)
+        control = self.get_control(settings_control)
         # Settings controls can only be 1D controls
-        assert isinstance(settings_control, Control)
-        return settings_control.reference_index
+        assert isinstance(control, Control)
+        return control.reference_index
 
     def axis_transform_point(self, point: Geometry.FloatPoint, from_axis: stem_controller.AxisDescription, to_axis: stem_controller.AxisDescription) -> Geometry.FloatPoint:
         return AxisManager().axis_transform_point(point, from_axis, to_axis)
