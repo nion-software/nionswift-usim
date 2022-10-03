@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+0.4.5 (2022-10-03)
+------------------
+- Add reference setting index and capability to remove controls.
+
 0.4.4 (2022-09-13)
 ------------------
 - Minor bugs for testing in other packages.
