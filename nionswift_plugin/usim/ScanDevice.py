@@ -38,7 +38,7 @@ class Channel:
 
 class Frame:
 
-    def __init__(self, frame_number: int, channels: typing.List[Channel], frame_parameters: scan_base.ScanFrameParameters):
+    def __init__(self, frame_number: int, channels: typing.List[Channel], frame_parameters: ScanFrameParameters):
         self.frame_number = frame_number
         self.channels = channels
         self.frame_parameters = frame_parameters
@@ -154,6 +154,63 @@ class ScanBoxSimulator:
             self._advance_pixel(1)
 
 
+class ScanFrameParameters(scan_base.ScanFrameParameters):
+    def __init__(self, *args: typing.Any, **kwargs: typing.Any) -> None:
+        super().__init__(*args, **kwargs)
+
+    @property
+    def external_clock_wait_time_ms(self) -> int:
+        return typing.cast(int, self.get_parameter("external_clock_wait_time_ms", 0))
+
+    @external_clock_wait_time_ms.setter
+    def external_clock_wait_time_ms(self, value: int) -> None:
+        self.set_parameter("external_clock_wait_time_ms", value)
+
+    @property
+    def external_clock_mode(self) -> int:
+        # 0=off, 1=on:rising, 2=on:falling
+        return typing.cast(int, self.get_parameter("external_clock_mode", 0))
+
+    @external_clock_mode.setter
+    def external_clock_mode(self, value: int) -> None:
+        # 0=off, 1=on:rising, 2=on:falling
+        self.set_parameter("external_clock_mode", value)
+
+    @property
+    def external_scan_mode(self) -> int:
+        # 0=off, 1=on:rising, 2=on:falling
+        return typing.cast(int, self.get_parameter("external_scan_mode", 0))
+
+    @external_scan_mode.setter
+    def external_scan_mode(self, value: int) -> None:
+        # 0=off, 1=on:rising, 2=on:falling
+        self.set_parameter("external_scan_mode", value)
+
+    @property
+    def external_scan_ratio(self) -> float:
+        return typing.cast(float, self.get_parameter("external_scan_ratio", 1.0))
+
+    @external_scan_ratio.setter
+    def external_scan_ratio(self, value: float) -> None:
+        self.set_parameter("external_scan_ratio", value)
+
+    @property
+    def ac_frame_sync(self) -> bool:
+        return typing.cast(bool, self.get_parameter("ac_frame_sync", False))
+
+    @ac_frame_sync.setter
+    def ac_frame_sync(self, value: bool) -> None:
+        self.set_parameter("ac_frame_sync", value)
+
+    @property
+    def flyback_time_us(self) -> float:
+        return typing.cast(float, self.get_parameter("flyback_time_us", 30.0))
+
+    @flyback_time_us.setter
+    def flyback_time_us(self, value: float) -> None:
+        self.set_parameter("flyback_time_us", value)
+
+
 class Device(scan_base.ScanDevice):
 
     def __init__(self, instrument: InstrumentDevice.Instrument):
@@ -178,11 +235,11 @@ class Device(scan_base.ScanDevice):
     def __get_channels(self) -> typing.List[Channel]:
         return [Channel(0, "HAADF", True), Channel(1, "MAADF", False), Channel(2, "X1", False), Channel(3, "X2", False)]
 
-    def __get_initial_profiles(self) -> typing.List[scan_base.ScanFrameParameters]:
+    def __get_initial_profiles(self) -> typing.List[ScanFrameParameters]:
         profiles = list()
-        profiles.append(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.1}))
-        profiles.append(scan_base.ScanFrameParameters({"pixel_size": (512, 512), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.4}))
-        profiles.append(scan_base.ScanFrameParameters({"pixel_size": (1024, 1024), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 1.0}))
+        profiles.append(ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.1}))
+        profiles.append(ScanFrameParameters({"pixel_size": (512, 512), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.4}))
+        profiles.append(ScanFrameParameters({"pixel_size": (1024, 1024), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 1.0}))
         return profiles
 
     @property
@@ -415,11 +472,7 @@ class Device(scan_base.ScanDevice):
 
         Device should use these parameters for new acquisition; and update to these parameters during acquisition.
         """
-        self.__frame_parameters = copy.deepcopy(frame_parameters)
-
-    def set_profile_frame_parameters(self, profile_index: int, frame_parameters: scan_base.ScanFrameParameters) -> None:
-        """Set the acquisition parameters for the give profile_index (0, 1, 2)."""
-        self.__profiles[profile_index] = copy.deepcopy(frame_parameters)
+        self.__frame_parameters = ScanFrameParameters(frame_parameters.as_dict())
 
     def set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: typing.Optional[Geometry.FloatPoint]) -> None:
         self.__instrument._set_scan_context_probe_position(scan_context, probe_position)
@@ -464,9 +517,10 @@ class Device(scan_base.ScanDevice):
         return self.__is_scanning
 
     def prepare_synchronized_scan(self, scan_frame_parameters: scan_base.ScanFrameParameters, *, camera_exposure_ms: float, **kwargs: typing.Any) -> None:
-        scan_frame_parameters.pixel_time_us = min(5120000, int(1000 * camera_exposure_ms * 0.75))
-        scan_frame_parameters.external_clock_wait_time_ms = 20000 # int(camera_frame_parameters["exposure_ms"] * 1.5)
-        scan_frame_parameters.external_clock_mode = 1
+        # this method modifies scan_frame_parameters in place, so use base functions to update the fields. bad design.
+        scan_frame_parameters.set_parameter("pixel_time_us", min(5120000, int(1000 * camera_exposure_ms * 0.75)))
+        scan_frame_parameters.set_parameter("external_clock_wait_time_ms", 20000)  # int(camera_frame_parameters["exposure_ms"] * 1.5)
+        scan_frame_parameters.set_parameter("external_clock_mode", 1)
 
     def get_buffer_data(self, start: int, count: int) -> typing.List[typing.List[typing.Dict[str, typing.Any]]]:
         if start < 0:
@@ -488,7 +542,7 @@ class ScanModule(scan_base.ScanModule):
             scan_base.ScanSettingsMode(_("Slow"), "slow", self.device.get_profile_frame_parameters(1)),
             scan_base.ScanSettingsMode(_("Record"), "record", self.device.get_profile_frame_parameters(2))
         )
-        self.settings = scan_base.ScanSettings(scan_modes, lambda d: scan_base.ScanFrameParameters(d), 0, 2)
+        self.settings = scan_base.ScanSettings(scan_modes, lambda d: ScanFrameParameters(d), 0, 2)
 
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
