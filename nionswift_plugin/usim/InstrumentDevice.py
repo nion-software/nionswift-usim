@@ -591,7 +591,7 @@ class Instrument(stem_controller.STEMController):
     def drift_offset_m(self) -> Geometry.FloatPoint:
         return self.__drift_controller.offset_m
 
-    def _set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: Geometry.FloatPoint) -> None:
+    def _set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: typing.Optional[Geometry.FloatPoint]) -> None:
         self.__scan_context = copy.deepcopy(scan_context)
         self.__probe_position = probe_position
 

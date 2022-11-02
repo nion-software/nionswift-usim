@@ -154,7 +154,7 @@ class ScanBoxSimulator:
             self._advance_pixel(1)
 
 
-class Device:
+class Device(scan_base.ScanDevice):
 
     def __init__(self, instrument: InstrumentDevice.Instrument):
         self.scan_device_id = "usim_scan_device"
@@ -180,12 +180,9 @@ class Device:
 
     def __get_initial_profiles(self) -> typing.List[scan_base.ScanFrameParameters]:
         profiles = list()
-        # profiles.append(scan_base.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 0.2}))
-        # profiles.append(scan_base.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 0.2}))
-        # profiles.append(scan_base.ScanFrameParameters({"size": (2048, 2048), "pixel_time_us": 2.5}))
-        profiles.append(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.1}))
-        profiles.append(scan_base.ScanFrameParameters({"size": (512, 512), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.4}))
-        profiles.append(scan_base.ScanFrameParameters({"size": (1024, 1024), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 1.0}))
+        profiles.append(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.1}))
+        profiles.append(scan_base.ScanFrameParameters({"pixel_size": (512, 512), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.4}))
+        profiles.append(scan_base.ScanFrameParameters({"pixel_size": (1024, 1024), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 1.0}))
         return profiles
 
     @property
@@ -260,7 +257,7 @@ class Device:
 
         """
 
-        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
+        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.pixel_size)
         offset_m = self.__instrument.actual_offset_m  # stage position - beam shift + drift
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
         # If we are doing a subscan calculate the actually used fov
@@ -301,7 +298,7 @@ class Device:
             data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]  # type: ignore
         return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us  # type: ignore
 
-    def read_partial(self, frame_number: int, pixels_to_skip: int) -> typing.Tuple[typing.Sequence[typing.Dict[str, typing.Any]], bool, bool, typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], int, int]:
+    def read_partial(self, frame_number: typing.Optional[int], pixels_to_skip: int) -> typing.Tuple[typing.Sequence[typing.Dict[str, typing.Any]], bool, bool, typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], typing.Optional[int], int]:
         """Read or continue reading a frame.
 
         The `frame_number` may be None, in which case a new frame should be read.
@@ -327,7 +324,7 @@ class Device:
         frame_number = current_frame.frame_number
 
         frame_parameters = current_frame.frame_parameters
-        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
+        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.pixel_size)
         total_pixels = size.height * size.width
         time_slice = 0.005  # 5 ms
 
@@ -424,7 +421,7 @@ class Device:
         """Set the acquisition parameters for the give profile_index (0, 1, 2)."""
         self.__profiles[profile_index] = copy.deepcopy(frame_parameters)
 
-    def set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: Geometry.FloatPoint) -> None:
+    def set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: typing.Optional[Geometry.FloatPoint]) -> None:
         self.__instrument._set_scan_context_probe_position(scan_context, probe_position)
 
     def set_idle_position_by_percentage(self, x: float, y: float) -> None:
@@ -441,7 +438,7 @@ class Device:
     def __start_next_frame(self) -> None:
         frame_parameters = copy.deepcopy(self.__frame_parameters)
         channels = [copy.deepcopy(channel) for channel in self.__channels if channel.enabled]
-        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.size)
+        size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.pixel_size)
         for channel in channels:
             channel.data = numpy.zeros(tuple(size), numpy.float32)
         self.__frame_number += 1
@@ -477,11 +474,25 @@ class Device:
         else:
             return self.__buffer[start: start+count]
 
+    def calculate_flyback_pixels(self, frame_parameters: scan_base.ScanFrameParameters) -> int:
+        return 2
+
+
+class ScanModule(scan_base.ScanModule):
+    def __init__(self, instrument: InstrumentDevice.Instrument) -> None:
+        self.stem_controller_id = instrument.instrument_id
+        self.device = Device(instrument)
+        setattr(self.device, "priority", 20)
+        scan_modes = (
+            scan_base.ScanSettingsMode(_("Fast"), "fast", self.device.get_profile_frame_parameters(0)),
+            scan_base.ScanSettingsMode(_("Slow"), "slow", self.device.get_profile_frame_parameters(1)),
+            scan_base.ScanSettingsMode(_("Record"), "record", self.device.get_profile_frame_parameters(2))
+        )
+        self.settings = scan_base.ScanSettings(scan_modes, lambda d: scan_base.ScanFrameParameters(d), 0, 2)
+
 
 def run(instrument: InstrumentDevice.Instrument) -> None:
-    scan_device = Device(instrument)
-    setattr(scan_device, "priority", 20)
-    Registry.register_component(scan_device, {"scan_device"})
+    Registry.register_component(ScanModule(instrument), {"scan_module"})
 
 def stop() -> None:
-    Registry.unregister_component(Registry.get_component("scan_device"), {"scan_device"})
+    Registry.unregister_component(Registry.get_component("scan_module"), {"scan_module"})

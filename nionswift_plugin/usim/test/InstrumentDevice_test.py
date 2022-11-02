@@ -86,7 +86,7 @@ class TestInstrumentDevice(unittest.TestCase):
     def test_eels_data_is_consistent_when_energy_offset_changes(self) -> None:
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
-        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
         camera_size = camera_simulator._camera_shape
         typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
@@ -109,7 +109,7 @@ class TestInstrumentDevice(unittest.TestCase):
     def test_eels_data_is_consistent_when_energy_offset_changes_with_negative_zlp_offset(self) -> None:
         instrument = InstrumentDevice.Instrument("usim_stem_controller")
         camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
-        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
         camera_size = camera_simulator._camera_shape
         typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
@@ -128,7 +128,7 @@ class TestInstrumentDevice(unittest.TestCase):
         instrument._update_scan_context(Geometry.IntSize(256, 256), Geometry.FloatPoint(), 10, 0.0)
         instrument._set_scan_context_probe_position(instrument.scan_context, Geometry.FloatPoint(0.5, 0.5))
         # grab scan data
-        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
         camera_size = camera_simulator._camera_shape
         typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
@@ -148,7 +148,7 @@ class TestInstrumentDevice(unittest.TestCase):
         instrument._update_scan_context(Geometry.IntSize(256, 256), Geometry.FloatPoint(), 10, 0.0)
         instrument._set_scan_context_probe_position(instrument.scan_context, Geometry.FloatPoint(0.5, 0.5))
         # grab scan data
-        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
+        scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
         instrument.validate_probe_position()
         camera_size = camera_simulator._camera_shape
         typing.cast(EELSCameraSimulator.EELSCameraSimulator, camera_simulator).noise.enabled = False
