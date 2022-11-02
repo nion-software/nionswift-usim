@@ -223,8 +223,7 @@ class Device(scan_base.ScanDevice):
         self.__frame_number = 0
         self.__is_scanning = False
         self.on_device_state_changed = None
-        self.__profiles = self.__get_initial_profiles()
-        self.__frame_parameters = copy.deepcopy(self.__profiles[0])
+        self.__frame_parameters = ScanFrameParameters()
         self.flyback_pixels = 2
         self.__buffer: typing.List[typing.List[typing.Dict[str, typing.Any]]] = list()
         self.__scan_box = ScanBoxSimulator()
@@ -234,13 +233,6 @@ class Device(scan_base.ScanDevice):
 
     def __get_channels(self) -> typing.List[Channel]:
         return [Channel(0, "HAADF", True), Channel(1, "MAADF", False), Channel(2, "X1", False), Channel(3, "X2", False)]
-
-    def __get_initial_profiles(self) -> typing.List[ScanFrameParameters]:
-        profiles = list()
-        profiles.append(ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.1}))
-        profiles.append(ScanFrameParameters({"pixel_size": (512, 512), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 0.4}))
-        profiles.append(ScanFrameParameters({"pixel_size": (1024, 1024), "pixel_time_us": 1, "fov_nm": self.__instrument.stage_size_nm * 1.0}))
-        return profiles
 
     @property
     def current_frame_parameters(self) -> scan_base.ScanFrameParameters:
@@ -456,9 +448,6 @@ class Device(scan_base.ScanDevice):
 
         return data_elements, complete, bad_frame, sub_area, frame_number, pixels_to_skip
 
-    def get_profile_frame_parameters(self, profile_index: int) -> scan_base.ScanFrameParameters:
-        return copy.deepcopy(self.__profiles[profile_index])
-
     def open_configuration_interface(self) -> None:
         """Open settings dialog, if any."""
         pass
@@ -538,9 +527,9 @@ class ScanModule(scan_base.ScanModule):
         self.device = Device(instrument)
         setattr(self.device, "priority", 20)
         scan_modes = (
-            scan_base.ScanSettingsMode(_("Fast"), "fast", self.device.get_profile_frame_parameters(0)),
-            scan_base.ScanSettingsMode(_("Slow"), "slow", self.device.get_profile_frame_parameters(1)),
-            scan_base.ScanSettingsMode(_("Record"), "record", self.device.get_profile_frame_parameters(2))
+            scan_base.ScanSettingsMode(_("Fast"), "fast", ScanFrameParameters(pixel_size=(256, 256), pixel_time_us=1, fov_nm=instrument.stage_size_nm * 0.1)),
+            scan_base.ScanSettingsMode(_("Slow"), "slow", ScanFrameParameters(pixel_size=(512, 512), pixel_time_us=1, fov_nm=instrument.stage_size_nm * 0.4)),
+            scan_base.ScanSettingsMode(_("Record"), "record", ScanFrameParameters(pixel_size=(1024, 1024), pixel_time_us=1, fov_nm=instrument.stage_size_nm * 1.0))
         )
         self.settings = scan_base.ScanSettings(scan_modes, lambda d: ScanFrameParameters(d), 0, 2)
 
