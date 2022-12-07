@@ -1,7 +1,7 @@
 Changelog (nionswift-usim)
 ==========================
 
-0.5.0 (UNRELEASED)
+0.5.0 (2022-12-07)
 ------------------
 - Updates for nionswift-instrumentation 0.21.
 - Register scan module (scan device and settings) rather than scan device directly.
