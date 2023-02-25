@@ -340,7 +340,10 @@ class Camera(camera_base.CameraDevice3):
     def acquire_synchronized_begin(self, camera_frame_parameters: camera_base.CameraFrameParameters, collection_shape: DataAndMetadata.ShapeType, **kwargs: typing.Any) -> camera_base.PartialData:
         self.__cancel_sequence_event.clear()
         self.__set_frame_parameters(camera_frame_parameters)
-        self.__scan_device = Registry.get_component("scan_device")
+        scan_controller = self.__instrument.scan_controller
+        assert scan_controller
+        scan_device = scan_controller.scan_device
+        self.__scan_device = typing.cast("ScanDevice.Device", scan_device)
         self.__camera_task = CameraTask(self, camera_frame_parameters, collection_shape)
         self.__camera_task.start()
         return camera_base.PartialData(self.__camera_task._xdata_ex, False, False, None, 0)
