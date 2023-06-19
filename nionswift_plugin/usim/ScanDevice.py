@@ -226,7 +226,7 @@ class Device(scan_base.ScanDevice):
         self.__frame_parameters = ScanFrameParameters()
         self.flyback_pixels = 2
         self.__buffer: typing.List[typing.List[typing.Dict[str, typing.Any]]] = list()
-        self.__buffer_size = 1
+        self.__buffer_size = 100
         self.__scan_box = ScanBoxSimulator()
 
     def close(self) -> None:
