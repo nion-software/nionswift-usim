@@ -370,7 +370,7 @@ class CameraTask:
         self.__camera_device = camera_device
         self.__camera_frame_parameters = camera_frame_parameters
         self.__collection_shape = collection_shape
-        self.__count = int(numpy.product(self.__collection_shape))
+        self.__count = int(numpy.prod(self.__collection_shape))
         self.__aborted = False
         self.__data: typing.Optional[_NDArray] = None
         self.__xdata: typing.Optional[DataAndMetadata.DataAndMetadata] = None
