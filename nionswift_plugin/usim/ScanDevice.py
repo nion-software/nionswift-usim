@@ -226,7 +226,8 @@ class Device(scan_base.ScanDevice):
         self.__frame_parameters = ScanFrameParameters()
         self.flyback_pixels = 2
         self.__buffer: typing.List[typing.List[typing.Dict[str, typing.Any]]] = list()
-        self.__buffer_size = 100
+        self.__view_buffer_size = 20
+        self.__sequence_buffer_size = 0
         self.__scan_box = ScanBoxSimulator()
 
     def close(self) -> None:
@@ -443,9 +444,12 @@ class Device(scan_base.ScanDevice):
             if len(self.__buffer) > 0 and len(self.__buffer[-1]) != len(data_elements):
                 self.__buffer = list()
             self.__buffer.append(data_elements)
-            while len(self.__buffer) > self.__buffer_size:
-                del self.__buffer[0]
-            # print(f"put {len(self.__buffer)=}")
+            # all new frames go to the end of the buffer list
+            # the buffer up to buffer_size is the recording buffer
+            # the buffer past the buffer_size is the view buffer
+            # the buffer elements past the buffer size can be removed during viewing
+            while len(self.__buffer) > self.__sequence_buffer_size + self.__view_buffer_size:
+                del self.__buffer[self.__sequence_buffer_size]
             self.__is_scanning = False
 
         return data_elements, complete, bad_frame, sub_area, frame_number, pixels_to_skip
@@ -513,21 +517,16 @@ class Device(scan_base.ScanDevice):
         scan_frame_parameters.set_parameter("external_clock_wait_time_ms", 20000)  # int(camera_frame_parameters["exposure_ms"] * 1.5)
         scan_frame_parameters.set_parameter("external_clock_mode", 1)
 
-    def set_buffer_size(self, buffer_size: int) -> None:
-        self.__buffer_size = buffer_size
-
-    def get_buffer_size(self) -> int:
-        return self.__buffer_size
-
-    def get_buffer_count(self) -> int:
-        return len(self.__buffer)
-
-    def clear_buffer(self) -> None:
+    def set_sequence_buffer_size(self, buffer_size: int) -> None:
+        self.__sequence_buffer_size = buffer_size
         self.__buffer = list()
 
-    def pop_buffer(self, count: int) -> None:
-        if self.__buffer:
-            del self.__buffer[0]
+    def get_sequence_buffer_count(self) -> int:
+        return len(self.__buffer)
+
+    def pop_sequence_buffer_data(self) -> typing.List[typing.Dict[str, typing.Any]]:
+        self.__sequence_buffer_size -= 1
+        return self.__buffer.pop(0)
 
     def get_buffer_data(self, start: int, count: int) -> typing.List[typing.List[typing.Dict[str, typing.Any]]]:
         # print(f"get {start=} {count=} {len(self.__buffer)=}")
