@@ -1,6 +1,12 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.1.0 (2023-09-14)
+------------------
+- Updates for nionswift-instrumentation 22.0 (sequence buffer).
+- Fix issue with data not being updated during synchronized scan.
+- Add Python 3.11 support. Drop 3.8.
+
 0.5.0 (2022-12-07)
 ------------------
 - Updates for nionswift-instrumentation 0.21.

@@ -187,7 +187,7 @@ class Camera(camera_base.CameraDevice3):
         set to True, it uses a direct form of acquisition that does not sync with the data thread.
 
         The index parameter is used if direct is True; it allows direct to synchronize with the
-        start of the acquistion thread.
+        start of the acquisition thread.
         """
         xdata_buffer = None
         integration_count = self.__integration_count or 1
