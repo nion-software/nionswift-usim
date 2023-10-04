@@ -825,7 +825,7 @@ class Instrument(stem_controller.STEMController):
         elif s == "C_Blank":
             return True, 1.0 if self.is_blanked else 0.0
         # This handles the target values for all aberration coefficients up to 5th order (needed for tuning)
-        elif re.match("(\\^C[1-5][0-6])(\\.[auxbvy]|$)$", s):
+        elif re.match(r"(\^C[1-5][0-6])(\.[auxbvy]|$)$", s):
             return True, 0.0
         elif s.startswith("ronchigram_"):
             return parse_camera_values("ronchigram", s[len("ronchigram_"):])
