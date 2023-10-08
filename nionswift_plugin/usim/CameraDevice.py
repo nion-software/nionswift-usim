@@ -3,7 +3,6 @@ from __future__ import annotations
 # standard libraries
 import asyncio
 import copy
-import datetime
 import gettext
 import numpy
 import numpy.typing
@@ -17,6 +16,7 @@ from nion.data import Calibration
 from nion.data import Core
 from nion.data import DataAndMetadata
 from nion.swift.model import ImportExportManager
+from nion.utils import DateTime
 from nion.utils import Event
 from nion.utils import Geometry
 from nion.utils import Registry
@@ -316,7 +316,7 @@ class Camera(camera_base.CameraDevice3):
         wait_s = max(self.__exposure - elapsed, 0)
         if not cancel_event.wait(wait_s):
             # thread event was not triggered during wait; signal that we have data
-            xdata._set_timestamp(datetime.datetime.utcnow())
+            xdata._set_timestamp(DateTime.utcnow())
             self.__xdata_buffer = xdata
             return True
         return False
