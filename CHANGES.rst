@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.1.1 (2023-10-23)
+------------------
+- Minor updates for Python 3.12 and typing compatibility.
+
 5.1.0 (2023-09-14)
 ------------------
 - Updates for nionswift-instrumentation 22.0 (sequence buffer).
