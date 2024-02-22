@@ -94,7 +94,8 @@ class CameraSimulator:
         return data
 
     def _get_frame_settings(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint] = None) -> FrameSettings:
-        scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
+        scan_hardware_source = self.instrument.scan_controller
+        scan_device = scan_hardware_source.scan_device if scan_hardware_source else None
         probe_position: typing.Optional[Geometry.FloatPoint] = Geometry.FloatPoint(0.5, 0.5)
         if scan_device:
             if self.instrument.probe_state == "scanning" and hasattr(scan_device, "current_probe_position"):

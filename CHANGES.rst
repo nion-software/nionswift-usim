@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+UNRELEASED
+----------
+- Fix regression where EELS data was disconnected from probe position.
+
 5.1.1 (2023-10-23)
 ------------------
 - Minor updates for Python 3.12 and typing compatibility.

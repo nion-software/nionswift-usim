@@ -230,7 +230,8 @@ class Camera(camera_base.CameraDevice3):
             properties = None
             data = None
             if self._external_trigger:
-                scan_device: typing.Optional[ScanDevice.Device] = Registry.get_component("scan_device")
+                scan_hardware_source = self.__instrument.scan_controller
+                scan_device = scan_hardware_source.scan_device if scan_hardware_source else None
                 if scan_device and hasattr(scan_device, "blanker_signal_condition"):
                     with scan_device.blanker_signal_condition:
                         scan_device.blanker_signal_condition.wait(timeout=max(self.__exposure * 2, 5))

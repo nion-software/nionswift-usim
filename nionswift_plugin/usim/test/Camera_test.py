@@ -1,7 +1,9 @@
-import unittest
+import numpy
 import threading
 import time
+import unittest
 
+from nion.utils import Geometry
 
 from nion.instrumentation.test import CameraControl_test
 
@@ -35,6 +37,21 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
             self._acquire_one(document_controller, hardware_source)
             self._acquire_one(document_controller, hardware_source)
             self.assertEqual(len(document_model.data_items[0].xdata.data_shape), 1)
+
+    def test_camera_eels_connects_to_probe_position(self) -> None:
+        # ensure that the probe position is connected to the EELS camera data
+        with self._test_context(is_eels=True) as test_context:
+            document_controller = test_context.document_controller
+            scan_hardware_source = test_context.scan_hardware_source
+            self._acquire_one(document_controller, scan_hardware_source)
+            stem_controller = test_context.instrument
+            stem_controller.probe_position = Geometry.FloatPoint(x=0.5, y=0.5)
+            eels_camera_hardware_source = test_context.camera_hardware_source
+            self._acquire_one(document_controller, eels_camera_hardware_source)
+            self.assertLess(10e6, numpy.average(document_controller.document_model.data_items[-1].xdata.data[30:45]))
+            stem_controller.probe_position = Geometry.FloatPoint(x=0.25, y=0.25)
+            self._acquire_one(document_controller, eels_camera_hardware_source)
+            self.assertGreater(1e3, numpy.average(document_controller.document_model.data_items[-1].xdata.data[30:45]))
 
     def test_camera_waits_for_external_trigger(self) -> None:
         for external_trigger in [False, True]:
