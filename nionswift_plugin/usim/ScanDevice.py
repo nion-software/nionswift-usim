@@ -222,6 +222,7 @@ class Device(scan_base.ScanDevice):
         self.__frame: typing.Optional[Frame] = None
         self.__frame_number = 0
         self.__is_scanning = False
+        self.__flyback_pixels = 2
         self.on_device_state_changed = None
         self.__frame_parameters = ScanFrameParameters()
         self.flyback_pixels = 2
@@ -424,6 +425,7 @@ class Device(scan_base.ScanDevice):
             properties["center_y_nm"] = current_frame.frame_parameters.center_nm[0]
             properties["rotation_deg"] = math.degrees(current_frame.frame_parameters.rotation_rad)
             properties["channel_id"] = channel.channel_id
+            properties["flyback_pixels"] = self.__flyback_pixels
             data_element["properties"] = properties
             data_elements.append(data_element)
 
@@ -498,6 +500,7 @@ class Device(scan_base.ScanDevice):
                                                                frame_parameters.fov_size_nm.width / size.width)
         self.__scan_box.external_clock = self.__frame_parameters.external_clock_mode != 0
         self.__is_scanning = True
+        self.__flyback_pixels = self.calculate_flyback_pixels(frame_parameters)
 
     def cancel(self) -> None:
         """Cancel acquisition (immediate)."""

@@ -101,5 +101,5 @@ class CameraSimulator:
             if self.instrument.probe_state == "scanning" and hasattr(scan_device, "current_probe_position"):
                 probe_position = scan_device.current_probe_position
             elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
-                    probe_position = parked_probe_position
+                probe_position = parked_probe_position
         return FrameSettings(readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position, self.instrument.sample.title)
