@@ -686,7 +686,7 @@ class Instrument(stem_controller.STEMController):
 
     def get_electrons_per_pixel(self, pixel_count: int, exposure_s: float) -> float:
         beam_current_pa = self.GetVal("BeamCurrent") * 1E12
-        e_per_pa = 6.242E18 / 1E12
+        e_per_pa = 6.241509074E18 / 1E12
         beam_e = beam_current_pa * e_per_pa
         e_per_pixel_per_second = beam_e / pixel_count
         return e_per_pixel_per_second * exposure_s

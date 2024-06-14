@@ -159,7 +159,7 @@ class TestInstrumentDevice(unittest.TestCase):
         exposure_s = 0.01
         d = xd.sum(camera_simulator.get_frame_data(readout_area, binning_shape, 0.01, instrument.scan_context, instrument.probe_position), axis=0)._data_ex
         # confirm it is a reasonable value
-        camera_current_pA = numpy.sum(d) / exposure_s / instrument.counts_per_electron / 6.242e18 * 1e12
+        camera_current_pA = numpy.sum(d) / exposure_s / instrument.counts_per_electron / 6.241509074e18 * 1e12
         # print(f"current {camera_current_pA :#.2f}pA")
         self.assertTrue(190 < camera_current_pA < 210)
 

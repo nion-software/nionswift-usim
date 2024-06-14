@@ -181,7 +181,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 # spectrum_pixel_count = float(numpy.sum(spectrum)) * data.shape[0]
                 # print(f"z0 {zlp_ref_pixel_count * data.shape[0]} / {used_calibration.offset}")
                 # print(f"beam current {self.instrument.beam_current * 1e12}pA")
-                # print(f"current {spectrum_pixel_count / exposure_s / self.instrument.counts_per_electron / 6.242e18 * 1e12:#.2f}pA")
+                # print(f"current {spectrum_pixel_count / exposure_s / self.instrument.counts_per_electron / 6.241509074e18 * 1e12:#.2f}pA")
                 # print(f"target {target_pixel_count}  actual {spectrum_pixel_count}")
                 # print(f"s {spectrum_pixel_count} z {zlp_ref_pixel_count * zlp_scale * data.shape[0]}")
                 # print(f"{math.log(spectrum_pixel_count / (zlp_ref_pixel_count * zlp_scale * data.shape[0]))} {thickness_factor}")
