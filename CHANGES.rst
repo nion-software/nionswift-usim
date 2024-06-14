@@ -1,9 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
-UNRELEASED
-----------
+5.1.2 (2024-06-14)
+------------------
 - Fix regression where EELS data was disconnected from probe position.
+- Record flyback pixels in metadata.
 
 5.1.1 (2023-10-23)
 ------------------
