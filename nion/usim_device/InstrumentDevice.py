@@ -467,12 +467,15 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
         # AxisConverter is commonly used to convert between axis without affecting any hardware
         axis_converter = Control2D("AxisConverter", ("x", "y"))
+        # This is needed in the dectris plugins
+        ht_kv = Variable("SuperFEG_HTkV")
+        ht_kv.set_expression("EHT * 0.001", variables={"EHT": voltage})
         return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control,
                 c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift, beam_current,
                 beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
                 c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
                 slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
-                rsq_seconds, rsq_thirds, voltage, order_1_patch, order_2_patch, order_3_patch]
+                rsq_seconds, rsq_thirds, voltage, order_1_patch, order_2_patch, order_3_patch, ht_kv]
 
     def __set_expressions(self) -> None:
         typing.cast(Variable, self.get_control("RSquareC2s")).set_expression(
