@@ -1,6 +1,11 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.2.0 (2024-10-27)
+------------------
+- Use Gaussian noise in place of Poisson noise beyond threshold to improve performance.
+- Require Numpy 2. Add Python 3.13 support. Drop Python 3.9, 3.10 support.
+
 5.1.2 (2024-06-14)
 ------------------
 - Fix regression where EELS data was disconnected from probe position.
