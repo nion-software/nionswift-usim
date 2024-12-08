@@ -13,8 +13,9 @@ from nion.utils import Binding
 from nion.utils import Converter
 from nion.utils.ReferenceCounting import weak_partial
 
+from . import InstrumentDevice
+
 if typing.TYPE_CHECKING:
-    from . import InstrumentDevice
     from nion.swift import DocumentController
     from nion.ui import UserInterface
     from nion.utils import Validator
@@ -122,9 +123,11 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         column_widget = ui.create_column_widget(properties={"margin": 6, "spacing": 2})
         super().__init__(column_widget)
 
-        sample_combo_box = ui.create_combo_box_widget(instrument.sample_titles)
-        sample_combo_box.current_index = instrument.sample_index
-        sample_combo_box.bind_current_index(Binding.PropertyBinding(instrument, "sample_index"))
+        scan_data_generator = typing.cast(InstrumentDevice.ScanDataGenerator, instrument.scan_data_generator)
+
+        sample_combo_box = ui.create_combo_box_widget(scan_data_generator.sample_titles)
+        sample_combo_box.current_index = scan_data_generator.sample_index
+        sample_combo_box.bind_current_index(Binding.PropertyBinding(scan_data_generator, "sample_index"))
 
         voltage_field = ui.create_line_edit_widget()
         voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))

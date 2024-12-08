@@ -23,12 +23,10 @@ from nion.utils import Registry
 
 # other plug-ins
 from nion.instrumentation import camera_base
-from . import RonchigramCameraSimulator
-from . import EELSCameraSimulator
+from nion.instrumentation import stem_controller
 
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
-    from . import CameraSimulator
     from . import ScanDevice
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -36,23 +34,23 @@ _NDArray = numpy.typing.NDArray[typing.Any]
 _ = gettext.gettext
 
 
+class CameraSimulatorLike(typing.Protocol):
+    def close(self) -> None: ...
+    def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]: ...
+    def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata: ...
+
+
 class Camera(camera_base.CameraDevice3):
     """Implement a camera device."""
 
-    def __init__(self, camera_id: str, camera_type: str, camera_name: str, instrument: InstrumentDevice.Instrument):
+    def __init__(self, camera_id: str, camera_type: str, camera_name: str, simulator: CameraSimulatorLike, instrument: InstrumentDevice.Instrument):
         self.camera_id = camera_id
         self.camera_type = camera_type
         self.camera_name = camera_name
         self.__camera_task: typing.Optional[CameraTask] = None
         self.__instrument = instrument
         self.__scan_device: typing.Optional[ScanDevice.Device] = None
-        self.__simulator: CameraSimulator.CameraSimulator
-        if camera_type == "ronchigram":
-            self.__simulator = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("ronchigram")), instrument.counts_per_electron, instrument.stage_size_nm)
-        elif camera_type == "eels":
-            self.__simulator = EELSCameraSimulator.EELSCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
-        else:
-            raise ValueError(f"Unsupported camera type '{camera_type}'.")
+        self.__simulator = simulator
         self.__sensor_dimensions = instrument.camera_sensor_dimensions(camera_type)
         self.__readout_area = instrument.camera_readout_area(camera_type)
         self.__symmetric_binning = True
@@ -74,9 +72,10 @@ class Camera(camera_base.CameraDevice3):
         self.__thread.start()
 
         # Also register the camera device and use a unique name for it so that we can directly access it
-        if Registry.get_component(f"usim_{camera_type}_camera_device"):
-            raise RuntimeError(f"Component 'usim_{camera_type}_camera_device' is already registered.")
-        Registry.register_component(self, {f"usim_{camera_type}_camera_device"})
+        camera_device_id = f"{camera_id}_device"
+        if Registry.get_component(camera_device_id):
+            raise RuntimeError(f"Component '{camera_device_id}' is already registered.")
+        Registry.register_component(self, {camera_device_id})
 
         # TODO Define external trigger interface and the mechanism for aqcuiring multiple sequences
         self._external_trigger = False # Just here for testing, we need to decide on how to specify external trigger mode in the base class
@@ -124,7 +123,7 @@ class Camera(camera_base.CameraDevice3):
         return self.__mask_array
 
     @property
-    def simulator(self) -> CameraSimulator.CameraSimulator:
+    def simulator(self) -> CameraSimulatorLike:
         return self.__simulator
 
     def get_expected_dimensions(self, binning: int) -> typing.Tuple[int, int]:
@@ -583,14 +582,19 @@ class CameraModule:
         self.priority = 20
 
 
+from . import RonchigramCameraSimulator
+from . import EELSCameraSimulator
+
 def run(instrument: InstrumentDevice.Instrument) -> None:
     component_types = {"camera_module"}  # the set of component types that this component represents
-    camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), instrument)
+    ronchigram_simulator = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("ronchigram")), instrument.counts_per_electron, instrument.stage_size_nm)
+    camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), ronchigram_simulator, instrument)
     setattr(camera_device, "camera_panel_type", "ronchigram")
     camera_settings = CameraSettings("usim_ronchigram_camera")
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
 
-    camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), instrument)
+    eels_camera_simulator = EELSCameraSimulator.EELSCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
+    camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), eels_camera_simulator, instrument)
     setattr(camera_device, "camera_panel_type", "eels")
     camera_settings = CameraSettings("usim_eels_camera")
     Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)

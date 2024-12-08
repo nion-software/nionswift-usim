@@ -12,7 +12,6 @@ from nion.utils import Registry
 
 if typing.TYPE_CHECKING:
     from . import InstrumentDevice
-    from . import ScanDevice
     from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -102,4 +101,5 @@ class CameraSimulator:
                 probe_position = scan_device.current_probe_position
             elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
                 probe_position = parked_probe_position
-        return FrameSettings(readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position, self.instrument.sample.title)
+        scan_data_generator = typing.cast("InstrumentDevice.ScanDataGenerator", self.instrument.scan_data_generator)
+        return FrameSettings(readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position, scan_data_generator.sample.title)
