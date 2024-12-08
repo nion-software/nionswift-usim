@@ -150,7 +150,8 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), float)
                 offset_m = self.instrument.actual_offset_m  # stage position - beam shift + drift
                 feature_layer_count = 0
-                for index, feature in enumerate(self.instrument.sample.features):
+                scan_data_generator = typing.cast("InstrumentDevice.ScanDataGenerator", self.instrument.scan_data_generator)
+                for index, feature in enumerate(scan_data_generator.sample.features):
                     scan_context_fov_size_nm = scan_context.fov_size_nm or Geometry.FloatSize()
                     scan_context_center_nm = scan_context.center_nm or Geometry.FloatPoint()
                     if feature.intersects(offset_m, scan_context_fov_size_nm, scan_context_center_nm, frame_settings.current_probe_position):

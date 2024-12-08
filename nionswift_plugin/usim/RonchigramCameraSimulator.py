@@ -357,7 +357,8 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
             if not self.instrument.is_blanked:
-                self.instrument.sample.plot_features(data, offset_m, fov_size_nm, Geometry.FloatPoint(), center_nm, size)
+                scan_data_generator = typing.cast("InstrumentDevice.ScanDataGenerator", self.instrument.scan_data_generator)
+                scan_data_generator.sample.plot_features(data, offset_m, fov_size_nm, Geometry.FloatPoint(), center_nm, size)
                 data = thickness_param - data
             data = self._get_binned_data(data, binning_shape)
 

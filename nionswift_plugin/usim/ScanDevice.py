@@ -213,10 +213,9 @@ class ScanFrameParameters(scan_base.ScanFrameParameters):
 
 class Device(scan_base.ScanDevice):
 
-    def __init__(self, instrument: InstrumentDevice.Instrument):
-        self.scan_device_id = "usim_scan_device"
-        self.scan_device_name = _("uSim Scan")
-        self.stem_controller_id = "usim_stem_controller"
+    def __init__(self, device_id: str, device_name: str, instrument: InstrumentDevice.Instrument) -> None:
+        self.scan_device_id = device_id
+        self.scan_device_name = device_name
         self.__instrument = instrument
         self.__channels = self.__get_channels()
         self.__frame: typing.Optional[Frame] = None
@@ -305,18 +304,13 @@ class Device(scan_base.ScanDevice):
 
     # note: channel typing is just for ease of tests. it can be more strict in the future.
     def get_scan_data(self, frame_parameters: scan_base.ScanFrameParameters, channel: typing.Union[int, Channel]) -> _NDArray:
-        """Get the simulated data from the sample simulator
-
-        """
-
+        """Get the simulated data from the sample simulator"""
         size = Geometry.IntSize.make(frame_parameters.subscan_pixel_size if frame_parameters.subscan_pixel_size else frame_parameters.pixel_size)
-        offset_m = self.__instrument.actual_offset_m  # stage position - beam shift + drift
         fov_size_nm = Geometry.FloatSize.make(frame_parameters.fov_size_nm) if frame_parameters.fov_size_nm else Geometry.FloatSize(frame_parameters.fov_nm, frame_parameters.fov_nm)
         # If we are doing a subscan calculate the actually used fov
         if frame_parameters.subscan_fractional_size:
             subscan_fractional_size = Geometry.FloatSize.make(frame_parameters.subscan_fractional_size)
-            used_fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height,
-                                                  width=fov_size_nm.width * subscan_fractional_size.width)
+            used_fov_size_nm = Geometry.FloatSize(height=fov_size_nm.height * subscan_fractional_size.height, width=fov_size_nm.width * subscan_fractional_size.width)
         else:
             used_fov_size_nm = fov_size_nm
         # Get the scan offset, if we are using a subscan we add the subscan offset to the context offset
@@ -325,30 +319,12 @@ class Device(scan_base.ScanDevice):
             subscan_fractional_center = Geometry.FloatPoint.make(frame_parameters.subscan_fractional_center) - Geometry.FloatPoint(y=0.5, x=0.5)
             fc = subscan_fractional_center.rotate(frame_parameters.rotation_rad)
             center_nm += Geometry.FloatPoint(y=fc.y * fov_size_nm.height, x=fc.x * fov_size_nm.width)
-        # Add some margin in case we need to rotate the data later
-        extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
-        extra_nm = Geometry.FloatPoint(y=(extra / size.height) * used_fov_size_nm[0], x=(extra / size.width) * used_fov_size_nm[1])
-        used_size = size + Geometry.IntSize(height=extra, width=extra)
-        data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
-        # Now get the data from the sample simulator
-        self.__instrument.sample.plot_features(data, offset_m, used_fov_size_nm, extra_nm, center_nm, used_size)
-        noise_factor = 0.3
         total_rotation = frame_parameters.rotation_rad
         # Apply any rotation (context + subscan)
         if frame_parameters.subscan_rotation:
             total_rotation -= frame_parameters.subscan_rotation
-        if total_rotation != 0:
-            inner_height = size.height / used_size.height
-            inner_width = size.width / used_size.width
-            inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
-            rotated_xdata = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -total_rotation)
-            assert rotated_xdata
-            rotated_data = rotated_xdata.data
-            assert rotated_data is not None
-            data = rotated_data
-        else:
-            data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]  # type: ignore
-        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * frame_parameters.pixel_time_us  # type: ignore
+        scan_frame_parameters = ScanFrameParameters(size=size, pixel_time_us=frame_parameters.pixel_time_us, fov_nm=used_fov_size_nm[0], center_nm=center_nm, rotation_rad=total_rotation)
+        return self.__instrument.generate_scan_data(scan_frame_parameters)
 
     def read_partial(self, frame_number: typing.Optional[int], pixels_to_skip: int) -> typing.Tuple[typing.Sequence[typing.Dict[str, typing.Any]], bool, bool, typing.Tuple[typing.Tuple[int, int], typing.Tuple[int, int]], typing.Optional[int], int]:
         """Read or continue reading a frame.
@@ -366,7 +342,7 @@ class Device(scan_base.ScanDevice):
 
         The 'data' keys in the list of dict's should contain a ndarray with the size of the full acquisition and each
         ndarray should be the same size. The 'properties' keys are dicts which must contain the frame parameters and
-        a 'channel_id' indicating the index of the channel (may be an int or float).
+        a 'channel_id' indicating the index of the channel.
         """
 
         if self.__frame is None:
@@ -546,7 +522,7 @@ class Device(scan_base.ScanDevice):
 class ScanModule(scan_base.ScanModule):
     def __init__(self, instrument: InstrumentDevice.Instrument) -> None:
         self.stem_controller_id = instrument.instrument_id
-        self.device = Device(instrument)
+        self.device = Device("usim_scan_device", _("uSim Scan"), instrument)
         setattr(self.device, "priority", 20)
         scan_modes = (
             scan_base.ScanSettingsMode(_("Fast"), "fast", ScanFrameParameters(pixel_size=(256, 256), pixel_time_us=1, fov_nm=instrument.stage_size_nm * 0.1)),

@@ -1,90 +1,31 @@
-"""
-Useful references:
-    http://www.rodenburg.org/guide/index.html
-    http://www.ammrf.org.au/myscope/
-"""
 from __future__ import annotations
 
 # standard libraries
 import copy
 import math
+import re
 import time
+import typing
 
 import numpy.typing
-import typing
-import re
 
 from nion.instrumentation import HardwareSource
 from nion.instrumentation import stem_controller
 from nion.swift.model import Utility
 from nion.utils import Event
 from nion.utils import Geometry
-from nion.utils import Registry
-
-from . import SampleSimulator
 
 if typing.TYPE_CHECKING:
     from . import CameraDevice
+    from . import ScanDevice
 
 _NDArray = numpy.typing.NDArray[typing.Any]
-
-
-"""
-from nionswift_plugin.usim import InstrumentDevice
-from nion.data import Calibration
-import scipy.stats
-data = numpy.zeros((1000, ))
-InstrumentDevice.plot_powerlaw(data, 1, Calibration.Calibration(), 100, 30)
-show(data)
-data = numpy.zeros((1000, ))
-InstrumentDevice.plot_powerlaw(data, 1, Calibration.Calibration(offset=10), 100, 30)
-show(data)
-
-from nionswift_plugin.usim import InstrumentDevice
-from nion.data import Calibration
-import scipy.stats
-data = numpy.zeros((1000, ))
-InstrumentDevice.plot_norm(data, 1, Calibration.Calibration(), 100, 30)
-show(data)
-data = numpy.zeros((1000, ))
-InstrumentDevice.plot_norm(data, 1, Calibration.Calibration(offset=10), 100, 30)
-show(data)
-
-from nionswift_plugin.usim import InstrumentDevice
-from nion.data import Calibration
-import scipy.stats
-data = numpy.zeros((1000, ))
-powerlaw = scipy.stats.powerlaw(4, loc=0, scale=4000)
-show(powerlaw.pdf(numpy.linspace(1000, 0, data.shape[0])))
-show(powerlaw.pdf(numpy.linspace(900, -100, data.shape[0])))
-
-from nionswift_plugin.usim import InstrumentDevice
-from nion.data import Calibration
-import scipy.stats
-data = numpy.zeros((1000, ))
-show(scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(0, 1000, data.shape[0])))
-show(scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(100, 1100, data.shape[0])))
-
-
-from nionswift_plugin.usim import InstrumentDevice
-from nion.data import Calibration
-import scipy.stats
-data = numpy.zeros((1000, ))
-powerlaw = scipy.stats.powerlaw(8, loc=0, scale=4000)
-show(powerlaw.pdf(numpy.linspace(4000 - 0, 4000 - 1000, data.shape[0])) * scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(0, 1000, data.shape[0])))
-show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])) * scipy.stats.norm(loc=100, scale=30).cdf(numpy.linspace(100, 1100, data.shape[0])))
-# show(powerlaw.pdf(numpy.linspace(4000 - 0, 4000 - 1000, data.shape[0])))
-# show(powerlaw.pdf(numpy.linspace(4000 - 100, 4000 - 1100, data.shape[0])))
-"""
 
 WeightedInput = typing.Tuple["Variable", typing.Union[float, "Variable"]]
 
 
 class Variable:
-    """
-    Variables evalute an expression plus a sum of input values.
-
-    """
+    """Evaluate an expression plus a sum of input values."""
 
     def __init__(self, name: str, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None):
         self.name = name
@@ -431,24 +372,27 @@ class DriftController:
                                    x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
 
 
+class ScanDataGeneratorLike(typing.Protocol):
+    def generate_scan_data(self, instrument: Instrument, scan_frame_parameters: ScanDevice.ScanFrameParameters) -> numpy.typing.NDArray[numpy.float32]:
+        ...
+
+
 class Instrument(stem_controller.STEMController):
     """
     TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
     """
 
-    def __init__(self, instrument_id: str) -> None:
+    def __init__(self, instrument_id: str, scan_data_generator: ScanDataGeneratorLike) -> None:
         super().__init__()
         self.priority = 20
         self.instrument_id = instrument_id
         self.property_changed_event = Event.Event()
 
+        self.__scan_data_generator = scan_data_generator
+
         # define the STEM geometry limits
         self.stage_size_nm = 1000
         self.max_defocus = 5000 / 1E9
-
-        # define the samples
-        self.__samples = [SampleSimulator.RectangleFlakeSample(self.stage_size_nm), SampleSimulator.AmorphousSample(self.stage_size_nm), SampleSimulator.CombinedTestSample(self.stage_size_nm)]
-        self.__sample_index = 0
 
         self.__stage_position_m = Geometry.FloatPoint()
         self.__drift_controller = DriftController()
@@ -563,20 +507,11 @@ class Instrument(stem_controller.STEMController):
         typing.cast(Variable, self.get_control("Order3MaxAngle")).set_expression("-1")
 
     @property
-    def sample(self) -> SampleSimulator.Sample:
-        return self.__samples[self.__sample_index]
+    def scan_data_generator(self) -> ScanDataGeneratorLike:
+        return self.__scan_data_generator
 
-    @property
-    def sample_titles(self) -> typing.List[str]:
-        return [sample.title for sample in self.__samples]
-
-    @property
-    def sample_index(self) -> int:
-        return self.__sample_index
-
-    @sample_index.setter
-    def sample_index(self, value: int) -> None:
-        self.__sample_index = value
+    def generate_scan_data(self, scan_frame_parameters: ScanDevice.ScanFrameParameters) -> numpy.typing.NDArray[numpy.float32]:
+        return self.__scan_data_generator.generate_scan_data(self, scan_frame_parameters)
 
     @property
     def live_probe_position(self) -> typing.Optional[Geometry.FloatPoint]:
@@ -807,17 +742,15 @@ class Instrument(stem_controller.STEMController):
 
     def TryGetVal(self, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
 
-        def parse_camera_values(p: str, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
-            camera_device: typing.Optional[CameraDevice.Camera] = Registry.get_component(f"usim_{p}_camera_device")
-            if camera_device:
-                if s == "y_offset":
-                    return True, camera_device.get_dimensional_calibrations(None, None)[0].offset
-                elif s == "x_offset":
-                    return True, camera_device.get_dimensional_calibrations(None, None)[1].offset
-                elif s == "y_scale":
-                    return True, camera_device.get_dimensional_calibrations(None, None)[0].scale
-                elif s == "x_scale":
-                    return True, camera_device.get_dimensional_calibrations(None, None)[1].scale
+        def parse_camera_values(camera_device: CameraDevice.Camera, p: str, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
+            if s == "y_offset":
+                return True, camera_device.get_dimensional_calibrations(None, None)[0].offset
+            elif s == "x_offset":
+                return True, camera_device.get_dimensional_calibrations(None, None)[1].offset
+            elif s == "y_scale":
+                return True, camera_device.get_dimensional_calibrations(None, None)[0].scale
+            elif s == "x_scale":
+                return True, camera_device.get_dimensional_calibrations(None, None)[1].scale
             return False, None
 
         if s == "EELS_MagneticShift_Offset":
@@ -828,9 +761,15 @@ class Instrument(stem_controller.STEMController):
         elif re.match(r"(\^C[1-5][0-6])(\.[auxbvy]|$)$", s):
             return True, 0.0
         elif s.startswith("ronchigram_"):
-            return parse_camera_values("ronchigram", s[len("ronchigram_"):])
+            ronchigram_camera = self.ronchigram_camera
+            if ronchigram_camera:
+                return parse_camera_values(typing.cast("CameraDevice.Camera", ronchigram_camera.camera), "ronchigram", s[len("ronchigram_"):])
+            return False, None
         elif s.startswith("eels_"):
-            return parse_camera_values("eels", s[len("eels_"):])
+            eels_camera = self.eels_camera
+            if eels_camera:
+                return parse_camera_values(typing.cast("CameraDevice.Camera", eels_camera.camera), "eels", s[len("eels_"):])
+            return False, None
         else:
             return self.__resolve_control_name(s)
 
@@ -946,3 +885,73 @@ class Instrument(stem_controller.STEMController):
     def change_pmt_gain(self, pmt_type: stem_controller.PMTType, *, factor: float) -> None:
         """Change specified PMT by factor. Do not wait for confirmation."""
         pass
+
+"""
+Useful references:
+    http://www.rodenburg.org/guide/index.html
+    http://www.ammrf.org.au/myscope/
+"""
+
+import scipy
+
+from nion.data import DataAndMetadata
+from nion.data import Core
+from nion.utils import Observable
+
+from . import SampleSimulator
+
+class ScanDataGenerator(Observable.Observable, ScanDataGeneratorLike):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stage_size_nm = 1000
+        # define the samples
+        self.__samples = [SampleSimulator.RectangleFlakeSample(self.stage_size_nm), SampleSimulator.AmorphousSample(self.stage_size_nm), SampleSimulator.CombinedTestSample(self.stage_size_nm)]
+        self.__sample_index = 0
+
+    @property
+    def sample(self) -> SampleSimulator.Sample:
+        return self.__samples[self.__sample_index]
+
+    @property
+    def sample_titles(self) -> typing.List[str]:
+        return [sample.title for sample in self.__samples]
+
+    @property
+    def sample_index(self) -> int:
+        return self.__sample_index
+
+    @sample_index.setter
+    def sample_index(self, value: int) -> None:
+        self.__sample_index = value
+
+    def generate_scan_data(self, instrument: Instrument, scan_frame_parameters: ScanDevice.ScanFrameParameters) -> numpy.typing.NDArray[numpy.float32]:
+        size = scan_frame_parameters.size
+        fov_size_nm = scan_frame_parameters.fov_size_nm
+        rotation = scan_frame_parameters.rotation_rad
+        center_nm = scan_frame_parameters.center_nm
+        pixel_time_us = scan_frame_parameters.pixel_time_us
+        assert fov_size_nm
+        # Add some margin in case we need to rotate the data later
+        extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
+        extra_nm = Geometry.FloatPoint(y=(extra / size.height) * fov_size_nm.height, x=(extra / size.width) * fov_size_nm.width)
+        used_size = size + Geometry.IntSize(height=extra, width=extra)
+        data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
+        # Now get the data from the sample simulator
+        offset_m = instrument.actual_offset_m  # stage position - beam shift + drift
+        self.sample.plot_features(data, offset_m, fov_size_nm, extra_nm, center_nm, used_size)
+        noise_factor = 0.3
+        if rotation != 0:
+            inner_height = size.height / used_size.height
+            inner_width = size.width / used_size.width
+            inner_bounds = ((1.0 - inner_height) * 0.5, (1.0 - inner_width) * 0.5), (inner_height, inner_width)
+            rotated_xdata = Core.function_crop_rotated(DataAndMetadata.new_data_and_metadata(data), inner_bounds, -rotation)
+            assert rotated_xdata
+            rotated_data = rotated_xdata.data
+            assert rotated_data is not None
+            data = rotated_data
+        else:
+            data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
+        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * pixel_time_us
+
+def make_instrument() -> Instrument:
+    return Instrument("usim_stem_controller", ScanDataGenerator())
