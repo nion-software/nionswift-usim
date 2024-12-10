@@ -901,12 +901,12 @@ from nion.utils import Observable
 from . import SampleSimulator
 
 class ScanDataGenerator(Observable.Observable, ScanDataGeneratorLike):
-    def __init__(self) -> None:
+    def __init__(self, *, sample_index: int = 0) -> None:
         super().__init__()
         self.stage_size_nm = 1000
         # define the samples
         self.__samples = [SampleSimulator.RectangleFlakeSample(self.stage_size_nm), SampleSimulator.AmorphousSample(self.stage_size_nm), SampleSimulator.CombinedTestSample(self.stage_size_nm)]
-        self.__sample_index = 0
+        self.__sample_index = sample_index
 
     @property
     def sample(self) -> SampleSimulator.Sample:

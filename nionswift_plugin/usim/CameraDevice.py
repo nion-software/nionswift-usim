@@ -580,21 +580,3 @@ class CameraModule:
         self.camera_device = camera_device
         self.camera_settings = camera_settings
         self.priority = 20
-
-
-from . import RonchigramCameraSimulator
-from . import EELSCameraSimulator
-
-def run(instrument: InstrumentDevice.Instrument) -> None:
-    component_types = {"camera_module"}  # the set of component types that this component represents
-    ronchigram_simulator = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("ronchigram")), instrument.counts_per_electron, instrument.stage_size_nm)
-    camera_device = Camera("usim_ronchigram_camera", "ronchigram", _("uSim Ronchigram Camera"), ronchigram_simulator, instrument)
-    setattr(camera_device, "camera_panel_type", "ronchigram")
-    camera_settings = CameraSettings("usim_ronchigram_camera")
-    Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
-
-    eels_camera_simulator = EELSCameraSimulator.EELSCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
-    camera_device = Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), eels_camera_simulator, instrument)
-    setattr(camera_device, "camera_panel_type", "eels")
-    camera_settings = CameraSettings("usim_eels_camera")
-    Registry.register_component(CameraModule("usim_stem_controller", camera_device, camera_settings), component_types)
