@@ -530,10 +530,3 @@ class ScanModule(scan_base.ScanModule):
             scan_base.ScanSettingsMode(_("Record"), "record", ScanFrameParameters(pixel_size=(1024, 1024), pixel_time_us=1, fov_nm=instrument.stage_size_nm * 1.0))
         )
         self.settings = scan_base.ScanSettings(scan_modes, lambda d: ScanFrameParameters(d), 0, 2)
-
-
-def run(instrument: InstrumentDevice.Instrument) -> None:
-    Registry.register_component(ScanModule(instrument), {"scan_module"})
-
-def stop() -> None:
-    Registry.unregister_component(Registry.get_component("scan_module"), {"scan_module"})
