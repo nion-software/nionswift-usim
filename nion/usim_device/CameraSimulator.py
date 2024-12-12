@@ -7,12 +7,11 @@ from dataclasses import dataclass
 
 from nion.data import Calibration
 from nion.data import DataAndMetadata
+from nion.device_kit import InstrumentDevice
+from nion.instrumentation import stem_controller
 from nion.utils import Geometry
-from nion.utils import Registry
+from nion.usim_device import InstrumentDevice as InstrumentDevice_
 
-if typing.TYPE_CHECKING:
-    from . import InstrumentDevice
-    from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
@@ -25,6 +24,10 @@ class FrameSettings:
     scan_context: stem_controller.ScanContext
     current_probe_position: typing.Optional[Geometry.FloatPoint]
     sample_name: str
+
+
+def get_value_manager(instrument: InstrumentDevice.Instrument) -> InstrumentDevice_.ValueManager:
+    return typing.cast(InstrumentDevice_.ValueManager, instrument.value_manager)
 
 
 class CameraSimulator:
@@ -43,7 +46,7 @@ class CameraSimulator:
             if name in self.depends_on:
                 self._needs_recalculation = True
 
-        self.__property_changed_event_listener = instrument.property_changed_event.listen(property_changed)
+        self.__property_changed_event_listener = get_value_manager(instrument).property_changed_event.listen(property_changed)
 
         # we also need to inform the cameras about changes to the (parked) probe position
         def probe_state_changed(probe_state: str, probe_position: typing.Optional[Geometry.FloatPoint]) -> None:
@@ -101,5 +104,5 @@ class CameraSimulator:
                 probe_position = scan_device.current_probe_position
             elif self.instrument.probe_state == "parked" and parked_probe_position is not None:
                 probe_position = parked_probe_position
-        scan_data_generator = typing.cast("InstrumentDevice.ScanDataGenerator", self.instrument.scan_data_generator)
+        scan_data_generator = typing.cast(InstrumentDevice_.ScanDataGenerator, self.instrument.scan_data_generator)
         return FrameSettings(readout_area, binning_shape, exposure_s, copy.deepcopy(scan_context), probe_position, scan_data_generator.sample.title)

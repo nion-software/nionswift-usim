@@ -24,6 +24,7 @@ requirements:
 
 test:
   imports:
+    - nion.usim_device
     - nionswift_plugin.usim
     - nionswift_plugin.usim.test
 

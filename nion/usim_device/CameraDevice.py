@@ -24,10 +24,9 @@ from nion.utils import Registry
 # other plug-ins
 from nion.instrumentation import camera_base
 from nion.instrumentation import stem_controller
+from nion.device_kit import InstrumentDevice
+from nion.device_kit import ScanDevice
 
-if typing.TYPE_CHECKING:
-    from . import InstrumentDevice
-    from . import ScanDevice
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
@@ -343,7 +342,7 @@ class Camera(camera_base.CameraDevice3):
         scan_controller = self.__instrument.scan_controller
         assert scan_controller
         scan_device = scan_controller.scan_device
-        self.__scan_device = typing.cast("ScanDevice.Device", scan_device)
+        self.__scan_device = typing.cast(ScanDevice.Device, scan_device)
         self.__camera_task = CameraTask(self, camera_frame_parameters, collection_shape)
         self.__camera_task.start()
         return camera_base.PartialData(self.__camera_task._xdata_ex, False, False, None, 0)
@@ -431,7 +430,7 @@ class CameraTask:
         return True, True, 0
 
 
-class CameraSettings:
+class CameraSettings(camera_base.CameraSettings):
 
     def __init__(self, camera_id: str):
         # these events must be defined
