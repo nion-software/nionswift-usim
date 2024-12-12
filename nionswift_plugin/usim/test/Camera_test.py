@@ -3,12 +3,16 @@ import threading
 import time
 import unittest
 
-from nion.utils import Geometry
-
 from nion.instrumentation.test import CameraControl_test
+from nion.instrumentation.test import AcquisitionTestContext
+from nion.usim_device import DeviceConfiguration
+from nion.utils import Geometry
 
 
 class TestCamera(CameraControl_test.TestCameraControlClass):
+
+    def _test_context(self, *, is_eels: bool = False) -> AcquisitionTestContext.AcquisitionTestContext:
+        return AcquisitionTestContext.AcquisitionTestContext(DeviceConfiguration.AcquisitionContextConfiguration(), is_eels=is_eels)
 
     def test_camera_integrate_frames_updates_frame_count_by_integration_count(self) -> None:
         with self._test_context() as test_context:

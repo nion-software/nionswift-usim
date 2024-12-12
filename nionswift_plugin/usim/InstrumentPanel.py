@@ -1,43 +1,41 @@
 from __future__ import annotations
 
 # standard libraries
-import functools
 import gettext
 import typing
 
 # local libraries
+from nion.device_kit import InstrumentDevice
+from nion.swift import DocumentController
 from nion.swift import Panel
 from nion.swift import Workspace
+from nion.ui import UserInterface
 from nion.ui import Widgets
+from nion.usim_device import InstrumentDevice as InstrumentDevice_
 from nion.utils import Binding
 from nion.utils import Converter
-from nion.utils.ReferenceCounting import weak_partial
+from nion.utils import ReferenceCounting
+from nion.utils import Validator
 
-from . import InstrumentDevice
-
-if typing.TYPE_CHECKING:
-    from nion.swift import DocumentController
-    from nion.ui import UserInterface
-    from nion.utils import Validator
 
 _ = gettext.gettext
 
 
 class Control2DBinding(Binding.Binding):
-    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, attribute_name: str,
+    def __init__(self, value_manager: InstrumentDevice_.ValueManager, control_name: str, attribute_name: str,
                  converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
                  fallback: typing.Any = None) -> None:
-        super().__init__(instrument, converter=converter, fallback=fallback)
+        super().__init__(value_manager, converter=converter, fallback=fallback)
 
         def set_property_value(source: typing.Any, value: typing.Any) -> None:
             if source:
-                getattr(instrument.get_control(control_name), attribute_name).set_output_value(value)
+                getattr(value_manager.get_control(control_name), attribute_name).set_output_value(value)
 
         def get_property_value(source: typing.Any) -> typing.Any:
-            return getattr(instrument.get_control(control_name), attribute_name).output_value if source else None
+            return getattr(value_manager.get_control(control_name), attribute_name).output_value if source else None
 
-        self.source_setter = weak_partial(set_property_value, self.source)
-        self.source_getter = weak_partial(get_property_value, self.source)
+        self.source_setter = ReferenceCounting.weak_partial(set_property_value, self.source)
+        self.source_getter = ReferenceCounting.weak_partial(get_property_value, self.source)
 
         # thread safe
         def property_changed(property_name_: str) -> None:
@@ -49,7 +47,7 @@ class Control2DBinding(Binding.Binding):
                 else:
                     self.update_target_direct(self.fallback)
 
-        self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
+        self.__property_changed_listener = value_manager.property_changed_event.listen(property_changed)
 
     def close(self) -> None:
         self.__property_changed_listener.close()
@@ -58,21 +56,21 @@ class Control2DBinding(Binding.Binding):
 
 
 class ControlBinding(Binding.Binding):
-    def __init__(self, instrument: InstrumentDevice.Instrument, control_name: str, *,
+    def __init__(self, value_manager: InstrumentDevice_.ValueManager, control_name: str, *,
                  converter: typing.Optional[Converter.ConverterLike[typing.Any, typing.Any]] = None,
                  validator: typing.Optional[Validator.ValidatorLike[typing.Any]] = None,
                  fallback: typing.Any = None) -> None:
-        super().__init__(instrument, converter=converter, validator=validator, fallback=fallback)
+        super().__init__(value_manager, converter=converter, validator=validator, fallback=fallback)
 
         def set_property_value(source: typing.Any, value: typing.Any) -> None:
             if source:
-                instrument.SetVal(control_name, value)
+                value_manager.set_value(control_name, value)
 
         def get_property_value(source: typing.Any) -> typing.Any:
-            return instrument.GetVal(control_name) if source else None
+            return value_manager.get_value(control_name) if source else None
 
-        self.source_setter = weak_partial(set_property_value, self.source)
-        self.source_getter = weak_partial(get_property_value, self.source)
+        self.source_setter = ReferenceCounting.weak_partial(set_property_value, self.source)
+        self.source_getter = ReferenceCounting.weak_partial(get_property_value, self.source)
 
         # thread safe
         def property_changed(property_name_: str) -> None:
@@ -83,7 +81,7 @@ class ControlBinding(Binding.Binding):
                 else:
                     self.update_target_direct(self.fallback)
 
-        self.__property_changed_listener = instrument.property_changed_event.listen(property_changed)
+        self.__property_changed_listener = value_manager.property_changed_event.listen(property_changed)
 
     def close(self) -> None:
         self.__property_changed_listener.close()
@@ -93,16 +91,16 @@ class ControlBinding(Binding.Binding):
 
 class PositionWidget(Widgets.CompositeWidgetBase):
 
-    def __init__(self, ui: UserInterface.UserInterface, label: str, instrument: InstrumentDevice.Instrument,
+    def __init__(self, ui: UserInterface.UserInterface, label: str, value_manager: InstrumentDevice_.ValueManager,
                  xy_property: str, unit: str = "nm", multiplier: float = 1E9) -> None:
         row_widget = ui.create_row_widget()
         super().__init__(row_widget)
 
         stage_x_field = ui.create_line_edit_widget()
-        stage_x_field.bind_text(Control2DBinding(instrument, xy_property, "x", Converter.PhysicalValueToStringConverter(unit, multiplier)))
+        stage_x_field.bind_text(Control2DBinding(value_manager, xy_property, "x", Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         stage_y_field = ui.create_line_edit_widget()
-        stage_y_field.bind_text(Control2DBinding(instrument, xy_property, "y", Converter.PhysicalValueToStringConverter(unit, multiplier)))
+        stage_y_field.bind_text(Control2DBinding(value_manager, xy_property, "y", Converter.PhysicalValueToStringConverter(unit, multiplier)))
 
         row_widget.add_spacing(8)
         row_widget.add(ui.create_label_widget(label))
@@ -123,7 +121,9 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         column_widget = ui.create_column_widget(properties={"margin": 6, "spacing": 2})
         super().__init__(column_widget)
 
-        scan_data_generator = typing.cast(InstrumentDevice.ScanDataGenerator, instrument.scan_data_generator)
+        value_manager = typing.cast(InstrumentDevice_.ValueManager, instrument.value_manager)
+
+        scan_data_generator = typing.cast(InstrumentDevice_.ScanDataGenerator, instrument.scan_data_generator)
 
         sample_combo_box = ui.create_combo_box_widget(scan_data_generator.sample_titles)
         sample_combo_box.current_index = scan_data_generator.sample_index
@@ -133,48 +133,48 @@ class InstrumentWidget(Widgets.CompositeWidgetBase):
         voltage_field.bind_text(Binding.PropertyBinding(instrument, "voltage", converter=Converter.PhysicalValueToStringConverter(units="keV", multiplier=1E-3)))
 
         beam_current_field = ui.create_line_edit_widget()
-        beam_current_field.bind_text(ControlBinding(instrument, "BeamCurrent", converter=Converter.PhysicalValueToStringConverter(units="pA", multiplier=1E12)))
+        beam_current_field.bind_text(ControlBinding(value_manager, "BeamCurrent", converter=Converter.PhysicalValueToStringConverter(units="pA", multiplier=1E12)))
 
-        stage_position_widget = PositionWidget(ui, _("Stage"), instrument, "stage_position_m")
+        stage_position_widget = PositionWidget(ui, _("Stage"), value_manager, "stage_position_m")
 
-        beam_shift_widget = PositionWidget(ui, _("Beam"), instrument, "beam_shift_m")
+        beam_shift_widget = PositionWidget(ui, _("Beam"), value_manager, "beam_shift_m")
 
         defocus_field = ui.create_line_edit_widget()
-        defocus_field.bind_text(ControlBinding(instrument, "C10", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        defocus_field.bind_text(ControlBinding(value_manager, "C10", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
-        c12_widget = PositionWidget(ui, _("C12"), instrument, "C12")
+        c12_widget = PositionWidget(ui, _("C12"), value_manager, "C12")
 
-        c21_widget = PositionWidget(ui, _("C21"), instrument, "C21")
+        c21_widget = PositionWidget(ui, _("C21"), value_manager, "C21")
 
-        c23_widget = PositionWidget(ui, _("C23"), instrument, "C23")
+        c23_widget = PositionWidget(ui, _("C23"), value_manager, "C23")
 
         c3_field = ui.create_line_edit_widget()
-        c3_field.bind_text(ControlBinding(instrument, "C30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
+        c3_field.bind_text(ControlBinding(value_manager, "C30", converter=Converter.PhysicalValueToStringConverter(units="nm", multiplier=1E9)))
 
-        c32_widget = PositionWidget(ui, _("C32"), instrument, "C32")
+        c32_widget = PositionWidget(ui, _("C32"), value_manager, "C32")
 
-        c34_widget = PositionWidget(ui, _("C34"), instrument, "C34")
+        c34_widget = PositionWidget(ui, _("C34"), value_manager, "C34")
 
         blanked_checkbox = ui.create_check_box_widget(_("Beam Blanked"))
-        blanked_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_blanked"))
+        blanked_checkbox.bind_checked(Binding.PropertyBinding(value_manager, "is_blanked"))
 
         slit_in_checkbox = ui.create_check_box_widget(_("Slit In"))
-        slit_in_checkbox.bind_checked(Binding.PropertyBinding(instrument, "is_slit_in"))
+        slit_in_checkbox.bind_checked(Binding.PropertyBinding(value_manager, "is_slit_in"))
 
         voa_in_checkbox = ui.create_check_box_widget(_("VOA In"))
-        voa_in_checkbox.bind_checked(ControlBinding(instrument, "S_VOA"))
+        voa_in_checkbox.bind_checked(ControlBinding(value_manager, "S_VOA"))
 
         convergenve_angle_field = ui.create_line_edit_widget()
-        convergenve_angle_field.bind_text(ControlBinding(instrument, "ConvergenceAngle", converter=Converter.PhysicalValueToStringConverter(units="mrad", multiplier=1E3)))
+        convergenve_angle_field.bind_text(ControlBinding(value_manager, "ConvergenceAngle", converter=Converter.PhysicalValueToStringConverter(units="mrad", multiplier=1E3)))
 
-        c_aperture_widget = PositionWidget(ui, _("CAperture"), instrument, "CAperture", unit="mrad", multiplier=1E3)
-        aperture_round_widget = PositionWidget(ui, _("ApertureRound"), instrument, "ApertureRound", unit="", multiplier=1)
+        c_aperture_widget = PositionWidget(ui, _("CAperture"), value_manager, "CAperture", unit="mrad", multiplier=1E3)
+        aperture_round_widget = PositionWidget(ui, _("ApertureRound"), value_manager, "ApertureRound", unit="", multiplier=1)
 
         energy_offset_field = ui.create_line_edit_widget()
-        energy_offset_field.bind_text(Binding.PropertyBinding(instrument, "energy_offset_eV", converter=Converter.FloatToStringConverter()))
+        energy_offset_field.bind_text(Binding.PropertyBinding(value_manager, "energy_offset_eV", converter=Converter.FloatToStringConverter()))
 
         energy_dispersion_field = ui.create_line_edit_widget()
-        energy_dispersion_field.bind_text(Binding.PropertyBinding(instrument, "energy_per_channel_eV", converter=Converter.FloatToStringConverter()))
+        energy_dispersion_field.bind_text(Binding.PropertyBinding(value_manager, "energy_per_channel_eV", converter=Converter.FloatToStringConverter()))
 
         beam_row = ui.create_row_widget()
         beam_row.add_spacing(8)

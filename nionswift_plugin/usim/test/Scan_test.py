@@ -2,9 +2,14 @@ import contextlib
 import unittest
 from nion.swift import Facade
 from nion.instrumentation.test import ScanControl_test
+from nion.instrumentation.test import AcquisitionTestContext
+from nion.usim_device import DeviceConfiguration
 
 
 class TestSimulatorScan(ScanControl_test.TestScanControlClass):
+
+    def _test_context(self, *, is_eels: bool = False) -> AcquisitionTestContext.AcquisitionTestContext:
+        return AcquisitionTestContext.AcquisitionTestContext(DeviceConfiguration.AcquisitionContextConfiguration(), is_eels=is_eels)
 
     def test_facade_record_data_with_immediate_close(self) -> None:
         with self._test_context() as test_context:

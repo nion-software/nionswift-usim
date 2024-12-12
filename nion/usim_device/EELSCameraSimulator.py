@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # standard libraries
-import copy
 import math
 import typing
 
@@ -12,19 +11,16 @@ import scipy.stats
 
 from nion.data import Calibration
 from nion.data import DataAndMetadata
-
+from nion.device_kit import InstrumentDevice
+from nion.instrumentation import stem_controller
+from nion.usim_device import CameraSimulator
+from nion.usim_device import InstrumentDevice as InstrumentDevice_
+from nion.usim_device import SampleSimulator
+from nion.usim_device import Noise
 from nion.utils import Geometry
 
-from . import CameraSimulator
-from . import Noise
-
-if typing.TYPE_CHECKING:
-    from . import InstrumentDevice
-    from . import SampleSimulator
-    from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
-
 
 
 def plot_powerlaw(data: _NDArray, multiplier: float, energy_calibration: Calibration.Calibration, offset_ev: float, onset_ev: float) -> None:
@@ -116,7 +112,8 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
         if self._needs_recalculation or self.__cached_frame is None:
             data: numpy.typing.NDArray[numpy.float64] = numpy.zeros(tuple(self._sensor_dimensions), float)
-            slit_attenuation = 10 if self.instrument.is_slit_in else 1
+            value_manager = typing.cast("InstrumentDevice_.ValueManager", self.instrument.value_manager)
+            slit_attenuation = 10 if value_manager.is_slit_in else 1
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
 
@@ -130,7 +127,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
             # grab the specific calibration for the energy direction and offset by ZLPoffset
             used_calibration = dimensional_calibrations[1]
-            used_calibration.offset = typing.cast("InstrumentDevice.Control", self.instrument.get_control("ZLPoffset")).local_value
+            used_calibration.offset = typing.cast(InstrumentDevice_.Control, value_manager.get_control("ZLPoffset")).local_value
 
             if scan_context.is_valid and frame_settings.current_probe_position is not None:
 
@@ -148,9 +145,9 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
                 # build the spectrum and reference spectrum by adding the features. the data is unscaled.
                 spectrum_ref = numpy.zeros((int(zlp0_calibration.convert_from_calibrated_value(-20 + 1000) - zlp0_calibration.convert_from_calibrated_value(-20)), ), float)
-                offset_m = self.instrument.actual_offset_m  # stage position - beam shift + drift
+                offset_m = value_manager.actual_offset_m  # stage position - beam shift + drift
                 feature_layer_count = 0
-                scan_data_generator = typing.cast("InstrumentDevice.ScanDataGenerator", self.instrument.scan_data_generator)
+                scan_data_generator = typing.cast(InstrumentDevice_.ScanDataGenerator, self.instrument.scan_data_generator)
                 for index, feature in enumerate(scan_data_generator.sample.features):
                     scan_context_fov_size_nm = scan_context.fov_size_nm or Geometry.FloatSize()
                     scan_context_center_nm = scan_context.center_nm or Geometry.FloatPoint()
@@ -196,10 +193,11 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         return self.noise.apply(self.__cached_frame)
 
     def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
-        energy_offset_ev = self.instrument.energy_offset_eV
+        value_manager = typing.cast("InstrumentDevice_.ValueManager", self.instrument.value_manager)
+        energy_offset_ev = value_manager.energy_offset_eV
         # energy_offset_ev += random.uniform(-1, 1) * self.__energy_per_channel_eV * 5
         dimensional_calibrations = [
             Calibration.Calibration(),
-            Calibration.Calibration(offset=energy_offset_ev, scale=self.instrument.energy_per_channel_eV, units="eV")
+            Calibration.Calibration(offset=energy_offset_ev, scale=value_manager.energy_per_channel_eV, units="eV")
         ]
         return dimensional_calibrations

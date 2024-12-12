@@ -1,7 +1,12 @@
+"""
+Useful references:
+    http://www.rodenburg.org/guide/index.html
+    http://www.ammrf.org.au/myscope/
+"""
+
 from __future__ import annotations
 
 # standard libraries
-import copy
 import math
 import re
 import time
@@ -9,15 +14,17 @@ import typing
 
 import numpy.typing
 
-from nion.instrumentation import HardwareSource
+from nion.data import DataAndMetadata
+from nion.data import Core
+from nion.device_kit import CameraDevice
+from nion.device_kit import InstrumentDevice
+from nion.device_kit import ScanDevice
 from nion.instrumentation import stem_controller
 from nion.swift.model import Utility
-from nion.utils import Event
+from nion.usim_device import SampleSimulator
 from nion.utils import Geometry
+from nion.utils import Observable
 
-if typing.TYPE_CHECKING:
-    from . import CameraDevice
-    from . import ScanDevice
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
@@ -66,14 +73,14 @@ class Variable:
         return self.__expression
 
     def set_expression(self, expression: str, variables: typing.Optional[typing.Mapping[str, typing.Any]] = None,
-                       instrument: typing.Optional["Instrument"] = None) -> None:
+                       value_manager: typing.Optional[ValueManager] = None) -> None:
         if variables is not None:
             resolved_variables = dict()
             for key, value in variables.items():
                 if isinstance(value, str):
-                    if instrument is None:
-                        raise TypeError("An instrument controller instance is required when using string names as control identifiers.")
-                    value = instrument.get_control(value)
+                    if value_manager is None:
+                        raise TypeError("An value_manager instance is required when using string names as control identifiers.")
+                    value = value_manager.get_control(value)
                     if value is None:
                         raise ValueError(f"Cannot get value for name {key}.")
                 if isinstance(value, Control2D):
@@ -372,28 +379,9 @@ class DriftController:
                                    x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
 
 
-class ScanDataGeneratorLike(typing.Protocol):
-    def generate_scan_data(self, instrument: Instrument, scan_frame_parameters: ScanDevice.ScanFrameParameters) -> numpy.typing.NDArray[numpy.float32]:
-        ...
-
-
-class Instrument(stem_controller.STEMController):
-    """
-    TODO: add temporal supersampling for cameras (to produce blurred data when things are changing).
-    """
-
-    def __init__(self, instrument_id: str, scan_data_generator: ScanDataGeneratorLike) -> None:
+class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
+    def __init__(self) -> None:
         super().__init__()
-        self.priority = 20
-        self.instrument_id = instrument_id
-        self.property_changed_event = Event.Event()
-
-        self.__scan_data_generator = scan_data_generator
-
-        # define the STEM geometry limits
-        self.stage_size_nm = 1000
-        self.max_defocus = 5000 / 1E9
-
         self.__stage_position_m = Geometry.FloatPoint()
         self.__drift_controller = DriftController()
         self.__slit_in = False
@@ -414,15 +402,9 @@ class Instrument(stem_controller.STEMController):
         # We need to set the expressions after adding the controls to InstrumentDevice
         self.__set_expressions()
 
-    def _get_config_property(self, name: str) -> typing.Any:
-        if name in ("stage_size_nm", "max_defocus"):
-            return getattr(self, name)
-        raise AttributeError()
-
-    def _set_config_property(self, name: str, value: typing.Any) -> None:
-        if name in ("stage_size_nm", "max_defocus"):
-            return setattr(self, name, value)
-        raise AttributeError()
+        # these need to be set if they are used
+        self.ronchigram_camera: typing.Optional[CameraDevice.Camera] = None
+        self.eels_camera: typing.Optional[CameraDevice.Camera] = None
 
     def __create_built_in_controls(self) -> typing.List[typing.Union[Variable, Control2D]]:
         zlp_tare_control = Control("ZLPtare")
@@ -494,41 +476,33 @@ class Instrument(stem_controller.STEMController):
             variables={"C21_a": "C21.x", "C21_b": "C21.y",
                        "C23_a": "C23.x", "C23_b": "C23.y",
                        "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
-            instrument=self)
+            value_manager=self)
         typing.cast(Variable, self.get_control("RSquareC3s")).set_expression(
             "((C30**2/5760+(C32_a**2+C32_b**2)/5120+(C34_a**2+C34_b**2)/320)/lamb**2)*6.283**2*MaxApertureAngle**8",
             variables={"C30": "C30",
                        "C32_a": "C32.x", "C32_b": "C32.y",
                        "C34_a": "C34.x", "C34_b": "C34.y",
                        "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
-            instrument=self)
+            value_manager=self)
         typing.cast(Variable, self.get_control("Order1MaxAngle")).set_expression("-1")
         typing.cast(Variable, self.get_control("Order2MaxAngle")).set_expression("-1")
         typing.cast(Variable, self.get_control("Order3MaxAngle")).set_expression("-1")
 
     @property
-    def scan_data_generator(self) -> ScanDataGeneratorLike:
-        return self.__scan_data_generator
-
-    def generate_scan_data(self, scan_frame_parameters: ScanDevice.ScanFrameParameters) -> numpy.typing.NDArray[numpy.float32]:
-        return self.__scan_data_generator.generate_scan_data(self, scan_frame_parameters)
-
-    @property
-    def live_probe_position(self) -> typing.Optional[Geometry.FloatPoint]:
-        return self.__live_probe_position
-
-    @live_probe_position.setter
-    def live_probe_position(self, position: typing.Optional[Geometry.FloatPoint]) -> None:
-        self.__live_probe_position = position
-        self.property_changed_event.fire("live_probe_position")
-
-    @property
     def drift_offset_m(self) -> Geometry.FloatPoint:
         return self.__drift_controller.offset_m
 
-    def _set_scan_context_probe_position(self, scan_context: stem_controller.ScanContext, probe_position: typing.Optional[Geometry.FloatPoint]) -> None:
-        self.__scan_context = copy.deepcopy(scan_context)
-        self.__probe_position = probe_position
+    @property
+    def actual_offset_m(self) -> Geometry.FloatPoint:
+        return self.stage_position_m - self.get_value_2d("beam_shift_m") + self.__drift_controller.offset_m
+
+    @property
+    def stage_position_m(self) -> Geometry.FloatPoint:
+        return self.get_value_2d("stage_position_m")
+
+    @stage_position_m.setter
+    def stage_position_m(self, value: Geometry.FloatPoint) -> None:
+        self.set_value_2d("stage_position_m", value)
 
     def control_changed(self, control: Variable) -> None:
         self.property_changed_event.fire(control.name)
@@ -596,83 +570,6 @@ class Instrument(stem_controller.STEMController):
             return weight.output_value
         return weight
 
-    def _enter_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: typing.Optional[HardwareSource.HardwareSource] = None) -> None:
-        self._is_synchronized = True
-
-    def _exit_synchronized_state(self, scan_controller: HardwareSource.HardwareSource, *, camera: typing.Optional[HardwareSource.HardwareSource] = None) -> None:
-        self._is_synchronized = False
-
-    def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
-        if camera_type == "ronchigram":
-            return self.__ronchigram_shape[0], self.__ronchigram_shape[1]
-        else:
-            return self.__eels_shape[0], self.__eels_shape[1]
-
-    def camera_readout_area(self, camera_type: str) -> typing.Tuple[int, int, int, int]:
-        # returns readout area TLBR
-        if camera_type == "ronchigram":
-            return 0, 0, self.__ronchigram_shape[0], self.__ronchigram_shape[1]
-        else:
-            return 0, 0, self.__eels_shape[0], self.__eels_shape[1]
-
-    @property
-    def counts_per_electron(self) -> int:
-        return 40
-
-    def get_electrons_per_pixel(self, pixel_count: int, exposure_s: float) -> float:
-        beam_current_pa = self.GetVal("BeamCurrent") * 1E12
-        e_per_pa = 6.241509074E18 / 1E12
-        beam_e = beam_current_pa * e_per_pa
-        e_per_pixel_per_second = beam_e / pixel_count
-        return e_per_pixel_per_second * exposure_s
-
-    @property
-    def actual_offset_m(self) -> Geometry.FloatPoint:
-        return self.stage_position_m - self.GetVal2D("beam_shift_m") + self.__drift_controller.offset_m
-
-    @property
-    def stage_position_m(self) -> Geometry.FloatPoint:
-        return self.GetVal2D("stage_position_m")
-
-    @stage_position_m.setter
-    def stage_position_m(self, value: Geometry.FloatPoint) -> None:
-        self.SetVal2D("stage_position_m", value)
-
-    @property
-    def defocus_m(self) -> float:
-        return self.GetVal("C10")
-
-    @defocus_m.setter
-    def defocus_m(self, value: float) -> None:
-        self.SetVal("C10", value)
-
-    @property
-    def voltage(self) -> float:
-        return self.GetVal("EHT")
-
-    @voltage.setter
-    def voltage(self, value: float) -> None:
-        self.SetVal("EHT", value)
-        self.property_changed_event.fire("voltage")
-
-    @property
-    def is_blanked(self) -> bool:
-        return self.__blanked
-
-    @is_blanked.setter
-    def is_blanked(self, value: bool) -> None:
-        self.__blanked = value
-        self.property_changed_event.fire("is_blanked")
-
-    @property
-    def is_slit_in(self) -> bool:
-        return self.__slit_in
-
-    @is_slit_in.setter
-    def is_slit_in(self, value: bool) -> None:
-        self.__slit_in = value
-        self.property_changed_event.fire("is_slit_in")
-
     @property
     def energy_offset_eV(self) -> float:
         return self.__controls["ZLPoffset"].output_value
@@ -694,24 +591,23 @@ class Instrument(stem_controller.STEMController):
         self.__energy_per_channel_eV = value
         self.property_changed_event.fire("energy_per_channel_eV")
 
-    def get_autostem_properties(self) -> typing.Mapping[str, typing.Any]:
-        """Return a new autostem properties (dict) to be recorded with an acquisition.
+    @property
+    def is_blanked(self) -> bool:
+        return self.__blanked
 
-           * use property names that are lower case and separated by underscores
-           * use property names that include the unit attached to the end
-           * avoid using abbreviations
-           * avoid adding None entries
-           * dict must be serializable using json.dumps(dict)
+    @is_blanked.setter
+    def is_blanked(self, value: bool) -> None:
+        self.__blanked = value
+        self.property_changed_event.fire("is_blanked")
 
-           Be aware that these properties may be used far into the future so take care when designing additions and
-           discuss/review with team members.
-        """
-        return {
-            "high_tension": self.voltage,
-            "defocus": self.defocus_m,
-        }
+    @property
+    def is_slit_in(self) -> bool:
+        return self.__slit_in
 
-    # these are required functions to implement the standard stem controller interface.
+    @is_slit_in.setter
+    def is_slit_in(self, value: bool) -> None:
+        self.__slit_in = value
+        self.property_changed_event.fire("is_slit_in")
 
     def __resolve_control_name(self, s: str, set_val: typing.Optional[float] = None) -> typing.Tuple[bool, typing.Optional[float]]:
         if "->" in s:
@@ -740,98 +636,79 @@ class Instrument(stem_controller.STEMController):
                     return True, control.output_value
             return False, None
 
-    def TryGetVal(self, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
+    def get_value(self, name: str) -> typing.Optional[float]:
 
-        def parse_camera_values(camera_device: CameraDevice.Camera, p: str, s: str) -> typing.Tuple[bool, typing.Optional[float]]:
+        def parse_camera_values(camera_device: CameraDevice.Camera, p: str, s: str) -> typing.Optional[float]:
             if s == "y_offset":
-                return True, camera_device.get_dimensional_calibrations(None, None)[0].offset
+                return camera_device.get_dimensional_calibrations(None, None)[0].offset
             elif s == "x_offset":
-                return True, camera_device.get_dimensional_calibrations(None, None)[1].offset
+                return camera_device.get_dimensional_calibrations(None, None)[1].offset
             elif s == "y_scale":
-                return True, camera_device.get_dimensional_calibrations(None, None)[0].scale
+                return camera_device.get_dimensional_calibrations(None, None)[0].scale
             elif s == "x_scale":
-                return True, camera_device.get_dimensional_calibrations(None, None)[1].scale
-            return False, None
+                return camera_device.get_dimensional_calibrations(None, None)[1].scale
+            return None
 
-        if s == "EELS_MagneticShift_Offset":
-            return True, self.energy_offset_eV
-        elif s == "C_Blank":
-            return True, 1.0 if self.is_blanked else 0.0
+        if name == "EELS_MagneticShift_Offset":
+            return self.energy_offset_eV
+        elif name == "C_Blank":
+            return 1.0 if self.is_blanked else 0.0
         # This handles the target values for all aberration coefficients up to 5th order (needed for tuning)
-        elif re.match(r"(\^C[1-5][0-6])(\.[auxbvy]|$)$", s):
-            return True, 0.0
-        elif s.startswith("ronchigram_"):
+        elif re.match(r"(\^C[1-5][0-6])(\.[auxbvy]|$)$", name):
+            return 0.0
+        elif name.startswith("ronchigram_"):
             ronchigram_camera = self.ronchigram_camera
             if ronchigram_camera:
-                return parse_camera_values(typing.cast("CameraDevice.Camera", ronchigram_camera.camera), "ronchigram", s[len("ronchigram_"):])
-            return False, None
-        elif s.startswith("eels_"):
+                return parse_camera_values(ronchigram_camera, "ronchigram", name[len("ronchigram_"):])
+            return None
+        elif name.startswith("eels_"):
             eels_camera = self.eels_camera
             if eels_camera:
-                return parse_camera_values(typing.cast("CameraDevice.Camera", eels_camera.camera), "eels", s[len("eels_"):])
-            return False, None
+                return parse_camera_values(eels_camera, "eels", name[len("eels_"):])
+            return None
         else:
-            return self.__resolve_control_name(s)
+            success, value = self.__resolve_control_name(name)
+            return value if success else None
 
-    def GetVal(self, s: str, default_value: typing.Optional[float] = None) -> float:
-        good, d = self.TryGetVal(s)
-        if not good or d is None:
-            if default_value is None:
-                raise Exception(f"No element named '{s}' exists! Cannot get value.")
-            else:
-                return default_value
-        return d
-
-    def SetVal(self, s: str, val: float) -> bool:
-        if s == "EELS_MagneticShift_Offset":
-            self.energy_offset_eV = val
+    def set_value(self, name: str, value: float) -> bool:
+        if name == "EELS_MagneticShift_Offset":
+            self.energy_offset_eV = value
             return True
-        elif s == "C_Blank":
-            self.is_blanked = val != 0.0
+        elif name == "C_Blank":
+            self.is_blanked = value != 0.0
             return True
         else:
-            return self.__resolve_control_name(s, set_val=val)[0]
+            return self.__resolve_control_name(name, set_val=value)[0]
 
-    def SetValWait(self, s: str, val: float, timeout_ms: int) -> bool:
-        return self.SetVal(s, val)
-
-    def SetValAndConfirm(self, s: str, val: float, tolfactor: float, timeout_ms: int) -> bool:
-        return self.SetVal(s, val)
-
-    def SetValDelta(self, s: str, delta: float) -> bool:
-        return self.SetVal(s, self.GetVal(s) + delta)
-
-    def SetValDeltaAndConfirm(self, s: str, delta: float, tolfactor: float, timeout_ms: int) -> bool:
-        return self.SetValAndConfirm(s, self.GetVal(s) + delta, tolfactor, timeout_ms)
-
-    def InformControl(self, s: str, val: float) -> bool:
-        if "." in s:
-            split_s = s.split('.')
+    def inform_value(self, name: str, value: float) -> bool:
+        if "." in name:
+            split_s = name.split('.')
             control = self.get_control(split_s[0])  # get the 2d control
             if control is not None:
                 axis = getattr(control, split_s[1], None)  # get the control that holds the value for the right axis
                 if axis is not None:
-                    axis.inform_output_value(val)  # inform the actual value
+                    axis.inform_output_value(value)  # inform the actual value
                     return True
         else:
-            control = self.get_control(s)
+            control = self.get_control(name)
             if control is not None:
-                control.inform_output_value(val)
+                control.inform_output_value(value)
                 return True
-        return self.SetVal(s, val)
+        return self.set_value(name, value)
 
-    def GetVal2D(self, s: str, default_value: typing.Optional[Geometry.FloatPoint] = None, *, axis: typing.Optional[stem_controller.AxisType] = None) -> Geometry.FloatPoint:
-        control = self.__controls.get(s)
+    def get_value_2d(self, name: str, default_value: typing.Optional[Geometry.FloatPoint] = None, *, axis: typing.Optional[stem_controller.AxisType] = None) -> Geometry.FloatPoint:
+        control = self.__controls.get(name)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis
             return Geometry.FloatPoint(getattr(control, axis[1]).output_value, getattr(control, axis[0]).output_value)
         if default_value is None:
-            raise Exception(f"No 2D element named '{s}' exists! Cannot get value.")
+            raise Exception(f"No 2D element named '{name}' exists! Cannot get value.")
         else:
             return default_value
 
-    def SetVal2D(self, s: str, value: Geometry.FloatPoint, *, axis: typing.Optional[stem_controller.AxisType] = None) -> bool:
-        control = self.__controls.get(s)
+
+    def set_value_2d(self, name: str, value: Geometry.FloatPoint, *, axis: typing.Optional[stem_controller.AxisType] = None) -> bool:
+        control = self.__controls.get(name)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis
             getattr(control, axis[0]).set_output_value(value.x)
@@ -839,17 +716,8 @@ class Instrument(stem_controller.STEMController):
             return True
         return False
 
-    def SetVal2DAndConfirm(self, s: str, value: Geometry.FloatPoint, tolfactor: float, timeout_ms: int, *, axis: stem_controller.AxisType) -> bool:
-        return self.SetVal2D(s, value, axis=axis)
-
-    def SetVal2DDelta(self, s: str, delta: Geometry.FloatPoint, *, axis: stem_controller.AxisType) -> bool:
-        return self.SetVal2D(s, self.GetVal2D(s, axis=axis) + delta, axis=axis)
-
-    def SetVal2DDeltaAndConfirm(self, s: str, delta: Geometry.FloatPoint, tolfactor: float, timeout_ms: int, *, axis: stem_controller.AxisType) -> bool:
-        return self.SetVal2DAndConfirm(s, self.GetVal2D(s, axis=axis) + delta, tolfactor, timeout_ms, axis=axis)
-
-    def InformControl2D(self, s: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType) -> bool:
-        control = self.__controls.get(s)
+    def inform_control_2d(self, name: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType) -> bool:
+        control = self.__controls.get(name)
         if isinstance(control, Control2D):
             axis = axis if axis is not None else control.native_axis
             getattr(control, axis[0]).inform_output_value(value.x)
@@ -857,50 +725,16 @@ class Instrument(stem_controller.STEMController):
             return True
         return False
 
-    def HasValError(self, s: str) -> bool:
-        return False
-
-    @property
-    def axis_descriptions(self) -> typing.Sequence[stem_controller.AxisDescription]:
-        return AxisManager().supported_axis_descriptions
-
     def get_reference_setting_index(self, settings_control: str) -> int:
-        success, _ = self.TryGetVal(settings_control)
-        if not success:
+        if self.get_value(settings_control) is None:
             raise ValueError(f"Cannot obtain information about control {settings_control}. Does the control exist?")
         control = self.get_control(settings_control)
         # Settings controls can only be 1D controls
         assert isinstance(control, Control)
         return control.reference_index
 
-    def axis_transform_point(self, point: Geometry.FloatPoint, from_axis: stem_controller.AxisDescription, to_axis: stem_controller.AxisDescription) -> Geometry.FloatPoint:
-        return AxisManager().axis_transform_point(point, from_axis, to_axis)
 
-    def change_stage_position(self, *, dy: typing.Optional[float] = None, dx: typing.Optional[float] = None) -> None:
-        """Shift the stage by dx, dy (meters). Do not wait for confirmation."""
-        dx = dx or 0
-        dy = dy or 0
-        self.stage_position_m += Geometry.FloatPoint(y=-dy, x=-dx)
-
-    def change_pmt_gain(self, pmt_type: stem_controller.PMTType, *, factor: float) -> None:
-        """Change specified PMT by factor. Do not wait for confirmation."""
-        pass
-
-"""
-Useful references:
-    http://www.rodenburg.org/guide/index.html
-    http://www.ammrf.org.au/myscope/
-"""
-
-import scipy
-
-from nion.data import DataAndMetadata
-from nion.data import Core
-from nion.utils import Observable
-
-from . import SampleSimulator
-
-class ScanDataGenerator(Observable.Observable, ScanDataGeneratorLike):
+class ScanDataGenerator(Observable.Observable, InstrumentDevice.ScanDataGeneratorLike):
     def __init__(self, *, sample_index: int = 0) -> None:
         super().__init__()
         self.stage_size_nm = 1000
@@ -924,7 +758,7 @@ class ScanDataGenerator(Observable.Observable, ScanDataGeneratorLike):
     def sample_index(self, value: int) -> None:
         self.__sample_index = value
 
-    def generate_scan_data(self, instrument: Instrument, scan_frame_parameters: ScanDevice.ScanFrameParameters) -> numpy.typing.NDArray[numpy.float32]:
+    def generate_scan_data(self, instrument: InstrumentDevice.Instrument, scan_frame_parameters: ScanDevice.ScanFrameParameters) -> numpy.typing.NDArray[numpy.float32]:
         size = scan_frame_parameters.size
         fov_size_nm = scan_frame_parameters.fov_size_nm
         rotation = scan_frame_parameters.rotation_rad
@@ -937,7 +771,8 @@ class ScanDataGenerator(Observable.Observable, ScanDataGeneratorLike):
         used_size = size + Geometry.IntSize(height=extra, width=extra)
         data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
         # Now get the data from the sample simulator
-        offset_m = instrument.actual_offset_m  # stage position - beam shift + drift
+        value_manager = typing.cast(ValueManager, instrument.value_manager)
+        offset_m = value_manager.actual_offset_m  # stage position - beam shift + drift
         self.sample.plot_features(data, offset_m, fov_size_nm, extra_nm, center_nm, used_size)
         noise_factor = 0.3
         if rotation != 0:
@@ -952,6 +787,3 @@ class ScanDataGenerator(Observable.Observable, ScanDataGeneratorLike):
         else:
             data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
         return (data + numpy.random.randn(size.height, size.width) * noise_factor) * pixel_time_us
-
-def make_instrument() -> Instrument:
-    return Instrument("usim_stem_controller", ScanDataGenerator())

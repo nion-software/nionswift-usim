@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # standard libraries
-import copy
 import typing
 import math
 import numpy
@@ -11,15 +10,13 @@ import scipy.stats
 
 from nion.data import Calibration
 from nion.data import DataAndMetadata
-
+from nion.device_kit import InstrumentDevice
+from nion.instrumentation import stem_controller
+from nion.usim_device import CameraSimulator
+from nion.usim_device import Noise
+from nion.usim_device import InstrumentDevice as InstrumentDevice_
 from nion.utils import Geometry
 
-from . import CameraSimulator
-from . import Noise
-
-if typing.TYPE_CHECKING:
-    from . import InstrumentDevice
-    from nion.instrumentation import stem_controller
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
@@ -356,13 +353,14 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             # features will be positive values; thickness can be simulated by subtracting the features from the
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
-            if not self.instrument.is_blanked:
-                scan_data_generator = typing.cast("InstrumentDevice.ScanDataGenerator", self.instrument.scan_data_generator)
+            value_manager = typing.cast(InstrumentDevice_.ValueManager, self.instrument.value_manager)
+            if not value_manager.is_blanked:
+                scan_data_generator = typing.cast(InstrumentDevice_.ScanDataGenerator, self.instrument.scan_data_generator)
                 scan_data_generator.sample.plot_features(data, offset_m, fov_size_nm, Geometry.FloatPoint(), center_nm, size)
                 data = thickness_param - data
             data = self._get_binned_data(data, binning_shape)
 
-            if not self.instrument.is_blanked:
+            if not value_manager.is_blanked:
                 scan_offset = Geometry.FloatPoint()
                 scan_context_fov_nm = scan_context.fov_size_nm
                 if scan_context.is_valid and frame_settings.current_probe_position is not None and scan_context_fov_nm is not None:
