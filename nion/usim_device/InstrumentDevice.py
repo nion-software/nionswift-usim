@@ -740,10 +740,15 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
 
 
 class Instrument(InstrumentDevice.Instrument):
-    def __init__(self, instrument_id: str, value_manager: ValueManager, axis_manager: InstrumentDevice.AxisManagerLike, scan_data_generator: InstrumentDevice.ScanDataGeneratorLike) -> None:
-        super().__init__(instrument_id, value_manager, axis_manager, scan_data_generator)
+    def __init__(self, instrument_id: str, value_manager: ValueManager, axis_manager: InstrumentDevice.AxisManagerLike, scan_data_generator: ScanDevice.ScanDataGeneratorLike) -> None:
+        super().__init__(instrument_id, value_manager, axis_manager)
         self.__usim_value_manager = value_manager  # for some reason this fails typing if it overrides the super __value_manager (mypy 114)
         self.__property_changed_listener = value_manager.property_changed_event.listen(ReferenceCounting.weak_partial(Instrument.__on_property_changed, self))
+        self.__scan_data_generator = scan_data_generator
+
+    @property
+    def scan_data_generator(self) -> ScanDevice.ScanDataGeneratorLike:
+        return self.__scan_data_generator
 
     def __on_property_changed(self, name: str) -> None:
         self.property_changed_event.fire(name)
@@ -790,7 +795,7 @@ class Instrument(InstrumentDevice.Instrument):
         return self.__usim_value_manager.create_2d_control(name, native_axis, local_values, weighted_inputs)
 
 
-class ScanDataGenerator(Observable.Observable, InstrumentDevice.ScanDataGeneratorLike):
+class ScanDataGenerator(Observable.Observable, ScanDevice.ScanDataGeneratorLike):
     def __init__(self, *, sample_index: int = 0) -> None:
         super().__init__()
         self.stage_size_nm = 1000

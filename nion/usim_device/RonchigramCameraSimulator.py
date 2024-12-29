@@ -287,7 +287,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                   "C34Control", "stage_position_m", "probe_state", "probe_position", "features",
                   "beam_shift_m", "is_blanked", "BeamCurrent", "CAperture", "ApertureRound", "S_VOA", "ConvergenceAngle"]
 
-    def __init__(self, instrument: InstrumentDevice.Instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float) -> None:
+    def __init__(self, instrument: InstrumentDevice_.Instrument, ronchigram_shape: Geometry.IntSize, counts_per_electron: int, stage_size_nm: float) -> None:
         super().__init__(instrument, "ronchigram", ronchigram_shape, counts_per_electron)
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         max_defocus = instrument.max_defocus

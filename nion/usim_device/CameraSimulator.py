@@ -34,7 +34,7 @@ class CameraSimulator:
 
     depends_on: typing.List[str] = list() # subclasses should define the controls and attributes they depend on here
 
-    def __init__(self, instrument: InstrumentDevice.Instrument, camera_type: str, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
+    def __init__(self, instrument: InstrumentDevice_.Instrument, camera_type: str, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
         self.__instrument = instrument
         self._camera_type = camera_type
         self._sensor_dimensions = sensor_dimensions
@@ -66,7 +66,7 @@ class CameraSimulator:
         return self._sensor_dimensions
 
     @property
-    def instrument(self) -> InstrumentDevice.Instrument:
+    def instrument(self) -> InstrumentDevice_.Instrument:
         return self.__instrument
 
     def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:

@@ -117,7 +117,7 @@ class PositionWidget(Widgets.CompositeWidgetBase):
 
 class InstrumentWidget(Widgets.CompositeWidgetBase):
 
-    def __init__(self, ui: UserInterface.UserInterface, instrument: InstrumentDevice.Instrument) -> None:
+    def __init__(self, ui: UserInterface.UserInterface, instrument: InstrumentDevice_.Instrument) -> None:
         column_widget = ui.create_column_widget(properties={"margin": 6, "spacing": 2})
         super().__init__(column_widget)
 
