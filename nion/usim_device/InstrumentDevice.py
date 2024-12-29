@@ -24,11 +24,17 @@ from nion.swift.model import Utility
 from nion.usim_device import SampleSimulator
 from nion.utils import Geometry
 from nion.utils import Observable
+from nion.utils import ReferenceCounting
 
 
 _NDArray = numpy.typing.NDArray[typing.Any]
 
 WeightedInput = typing.Tuple["Variable", typing.Union[float, "Variable"]]
+
+
+class ControlProvider(typing.Protocol):
+    def get_control(self, control_name: str) -> typing.Union[Variable, Control2D, None]:
+        ...
 
 
 class Variable:
@@ -72,15 +78,14 @@ class Variable:
     def get_expression(self) -> typing.Optional[str]:
         return self.__expression
 
-    def set_expression(self, expression: str, variables: typing.Optional[typing.Mapping[str, typing.Any]] = None,
-                       value_manager: typing.Optional[ValueManager] = None) -> None:
+    def set_expression(self, expression: str, variables: typing.Optional[typing.Mapping[str, typing.Any]] = None, instrument: typing.Optional[ControlProvider] = None) -> None:
         if variables is not None:
             resolved_variables = dict()
             for key, value in variables.items():
                 if isinstance(value, str):
-                    if value_manager is None:
+                    if instrument is None:
                         raise TypeError("An value_manager instance is required when using string names as control identifiers.")
-                    value = value_manager.get_control(value)
+                    value = instrument.get_control(value)
                     if value is None:
                         raise ValueError(f"Cannot get value for name {key}.")
                 if isinstance(value, Control2D):
@@ -476,14 +481,14 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
             variables={"C21_a": "C21.x", "C21_b": "C21.y",
                        "C23_a": "C23.x", "C23_b": "C23.y",
                        "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
-            value_manager=self)
+            instrument=self)
         typing.cast(Variable, self.get_control("RSquareC3s")).set_expression(
             "((C30**2/5760+(C32_a**2+C32_b**2)/5120+(C34_a**2+C34_b**2)/320)/lamb**2)*6.283**2*MaxApertureAngle**8",
             variables={"C30": "C30",
                        "C32_a": "C32.x", "C32_b": "C32.y",
                        "C34_a": "C34.x", "C34_b": "C34.y",
                        "lamb": 3.7e-12, "MaxApertureAngle": 0.03},
-            value_manager=self)
+            instrument=self)
         typing.cast(Variable, self.get_control("Order1MaxAngle")).set_expression("-1")
         typing.cast(Variable, self.get_control("Order2MaxAngle")).set_expression("-1")
         typing.cast(Variable, self.get_control("Order3MaxAngle")).set_expression("-1")
@@ -732,6 +737,57 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         # Settings controls can only be 1D controls
         assert isinstance(control, Control)
         return control.reference_index
+
+
+class Instrument(InstrumentDevice.Instrument):
+    def __init__(self, instrument_id: str, value_manager: ValueManager, axis_manager: InstrumentDevice.AxisManagerLike, scan_data_generator: InstrumentDevice.ScanDataGeneratorLike) -> None:
+        super().__init__(instrument_id, value_manager, axis_manager, scan_data_generator)
+        self.__usim_value_manager = value_manager  # for some reason this fails typing if it overrides the super __value_manager (mypy 114)
+        self.__property_changed_listener = value_manager.property_changed_event.listen(ReferenceCounting.weak_partial(Instrument.__on_property_changed, self))
+
+    def __on_property_changed(self, name: str) -> None:
+        self.property_changed_event.fire(name)
+
+    def get_value(self, name: str) -> typing.Optional[float]:
+        return self.value_manager.get_value(name)
+
+    def set_value(self, name: str, value: float) -> bool:
+        return self.value_manager.set_value(name, value)
+
+    def inform_value(self, name: str, value: float) -> bool:
+        return self.value_manager.inform_value(name, value)
+
+    def get_value_2d(self, s: str, default_value: typing.Optional[Geometry.FloatPoint] = None, *, axis: typing.Optional[stem_controller.AxisType] = None) -> Geometry.FloatPoint:
+        return self.value_manager.get_value_2d(s, default_value=default_value, axis=axis)
+
+    def set_value_2d(self, s: str, value: Geometry.FloatPoint, *, axis: typing.Optional[stem_controller.AxisType] = None) -> bool:
+        return self.value_manager.set_value_2d(s, value, axis=axis)
+
+    def inform_control_2d(self, s: str, value: Geometry.FloatPoint, *, axis: stem_controller.AxisType) -> bool:
+        return self.value_manager.inform_control_2d(s, value, axis=axis)
+
+    def get_reference_setting_index(self, settings_control: str) -> int:
+        return self.value_manager.get_reference_setting_index(settings_control)
+
+    # needed for analytical tests (e.g. alignment)
+
+    def get_control(self, control_name: str) -> typing.Union[Variable, Control2D, None]:
+        return self.__usim_value_manager.get_control(control_name)
+
+    def add_control(self, control: typing.Union[Variable, Control2D]) -> None:
+        self.__usim_value_manager.add_control(control)
+
+    def add_control_inputs(self, control_name: str, weighted_inputs: typing.List[WeightedInput]) -> None:
+        self.__usim_value_manager.add_control_inputs(control_name, weighted_inputs)
+
+    def create_control(self, name: str, local_value: float = 0.0, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None) -> Control:
+        return self.__usim_value_manager.create_control(name, local_value, weighted_inputs)
+
+    def remove_control(self, control: typing.Union[Variable, Control2D]) -> None:
+        self.__usim_value_manager.remove_control(control)
+
+    def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[WeightedInput], typing.List[WeightedInput]]] = None) -> Control2D:
+        return self.__usim_value_manager.create_2d_control(name, native_axis, local_values, weighted_inputs)
 
 
 class ScanDataGenerator(Observable.Observable, InstrumentDevice.ScanDataGeneratorLike):

@@ -1,12 +1,11 @@
 import gettext
 
 from nion.device_kit import CameraDevice
-from nion.device_kit import InstrumentDevice
 from nion.instrumentation import camera_base
 from nion.instrumentation import scan_base
 from nion.instrumentation import stem_controller
 from nion.usim_device import EELSCameraSimulator
-from nion.usim_device import InstrumentDevice as InstrumentDevice_
+from nion.usim_device import InstrumentDevice
 from nion.usim_device import RonchigramCameraSimulator
 from nion.usim_device import ScanDevice
 from nion.utils import Geometry
@@ -18,9 +17,9 @@ _ = gettext.gettext
 class AcquisitionContextConfiguration:
     def __init__(self, *, sample_index: int = 0) -> None:
         self.instrument_id = "usim_stem_controller"
-        value_manager = InstrumentDevice_.ValueManager()
-        axis_manager = InstrumentDevice_.AxisManager()
-        scan_data_generator = InstrumentDevice_.ScanDataGenerator(sample_index=sample_index)
+        value_manager = InstrumentDevice.ValueManager()
+        axis_manager = InstrumentDevice.AxisManager()
+        scan_data_generator = InstrumentDevice.ScanDataGenerator(sample_index=sample_index)
         instrument = InstrumentDevice.Instrument(self.instrument_id, value_manager, axis_manager, scan_data_generator)
         self._instrument = instrument
         self.instrument: stem_controller.STEMController = instrument
