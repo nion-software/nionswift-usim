@@ -13,11 +13,12 @@ from nion.instrumentation import scan_base
 from nion.instrumentation.test import AcquisitionTestContext
 from nion.swift import Application
 from nion.ui import TestUI
+from nion.usim_device import CameraSimulator
 from nion.usim_device import DeviceConfiguration
 from nion.usim_device import EELSCameraSimulator
 from nion.usim_device import InstrumentDevice as InstrumentDevice_
 from nion.usim_device import RonchigramCameraSimulator
-from nion.usim_device import CameraSimulator
+from nion.usim_device import ScanDevice as ScanDevice_
 from nion.utils import Geometry
 
 
@@ -38,14 +39,14 @@ def measure_thickness(d: _NDArray) -> float:
     s = sum(d[left_pos:right_pos])
     return math.log(sum(d) / s)
 
-def create_camera_and_scan_simulator(instrument: InstrumentDevice.Instrument, camera_type: str) -> typing.Tuple[CameraSimulator.CameraSimulator, ScanDevice.Device]:
+def create_camera_and_scan_simulator(instrument: InstrumentDevice_.Instrument, camera_type: str) -> typing.Tuple[CameraSimulator.CameraSimulator, ScanDevice.Device]:
     camera_simulator: CameraSimulator.CameraSimulator
     if camera_type == "eels":
         camera_simulator = EELSCameraSimulator.EELSCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
     else:
         camera_simulator = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("ronchigram")), instrument.counts_per_electron, instrument.stage_size_nm)
 
-    scan_device = ScanDevice.Device("usim_scan_device", "uSim Scan", instrument)
+    scan_device = ScanDevice.Device("usim_scan_device", "uSim Scan", instrument, ScanDevice_.ScanBoxSimulator(instrument.scan_data_generator))
 
     return camera_simulator, scan_device
 
@@ -64,7 +65,7 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_ronchigram_handles_dependencies_properly(self) -> None:
         with self._test_context() as test_context:
-            instrument = typing.cast(InstrumentDevice.Instrument, test_context.instrument)
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
             camera = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize(128, 128), 10, 0.030)
             camera._needs_recalculation = False
             instrument.defocus_m += 10 / 1E9
@@ -105,7 +106,7 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_eels_data_is_consistent_when_energy_offset_changes(self) -> None:
         with self._test_context() as test_context:
-            instrument = typing.cast(InstrumentDevice.Instrument, test_context.instrument)
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
             camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
             scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
             instrument.validate_probe_position()
@@ -129,7 +130,7 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_eels_data_is_consistent_when_energy_offset_changes_with_negative_zlp_offset(self) -> None:
         with self._test_context() as test_context:
-            instrument = typing.cast(InstrumentDevice.Instrument, test_context.instrument)
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
             camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
             scan_simulator.get_scan_data(scan_base.ScanFrameParameters({"pixel_size": (256, 256), "pixel_time_us": 1, "fov_nm": 10}), 0)
             instrument.validate_probe_position()
@@ -143,7 +144,7 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_eels_data_thickness_is_consistent(self) -> None:
         with self._test_context() as test_context:
-            instrument = typing.cast(InstrumentDevice.Instrument, test_context.instrument)
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
             camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
             # use the flake sample
             scan_data_generator = typing.cast(InstrumentDevice_.ScanDataGenerator, instrument.scan_data_generator)
@@ -167,7 +168,7 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def test_eels_data_camera_current_is_consistent(self) -> None:
         with self._test_context() as test_context:
-            instrument = typing.cast(InstrumentDevice.Instrument, test_context.instrument)
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
             camera_simulator, scan_simulator = create_camera_and_scan_simulator(instrument, "eels")
             # set up the scan context; these are here temporarily until the scan context architecture is fully implemented
             instrument._update_scan_context(Geometry.IntSize(256, 256), Geometry.FloatPoint(), 10, 0.0)

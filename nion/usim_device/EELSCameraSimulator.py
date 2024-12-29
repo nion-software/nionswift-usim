@@ -61,7 +61,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                   "stage_position_m", "beam_shift_m", "features", "energy_offset_eV", "energy_per_channel_eV",
                   "BeamCurrent"]
 
-    def __init__(self, instrument: InstrumentDevice.Instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
+    def __init__(self, instrument: InstrumentDevice_.Instrument, sensor_dimensions: Geometry.IntSize, counts_per_electron: int) -> None:
         super().__init__(instrument, "eels", sensor_dimensions, counts_per_electron)
         self.__cached_frame: typing.Optional[DataAndMetadata.DataAndMetadata] = None
         self.__data_scale = 1.0
