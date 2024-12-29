@@ -548,7 +548,7 @@ class TestInstrumentDevice(unittest.TestCase):
                                         variables={"input_control": "input_control",
                                                    "weight_control": weight_control,
                                                    "x": "other_control"},
-                                        value_manager=value_manager)
+                                        instrument=value_manager)
             self.assertAlmostEqual(instrument.GetVal("test_control"), 0)
             self.assertTrue(instrument.SetVal("input_control", 1.0))
             self.assertAlmostEqual(instrument.GetVal("test_control"), 0)
