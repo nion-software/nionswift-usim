@@ -369,7 +369,7 @@ class Control2D:
 class DriftController:
 
     def __init__(self) -> None:
-        self.__start_time = time.time()
+        self.__start_time = time.perf_counter()
 
     @property
     def offset_m(self) -> Geometry.FloatPoint:
@@ -380,8 +380,8 @@ class DriftController:
         period_x_s = 90 * 4
         phase_y_rad = 7
         phase_x_rad = 10
-        return Geometry.FloatPoint(y=max_drift_y_m * math.cos((time.time() - self.__start_time - phase_y_rad) * 2 * math.pi / period_y_s),
-                                   x=max_drift_x_m * math.sin((time.time() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
+        return Geometry.FloatPoint(y=max_drift_y_m * math.cos((time.perf_counter() - self.__start_time - phase_y_rad) * 2 * math.pi / period_y_s),
+                                   x=max_drift_x_m * math.sin((time.perf_counter() - self.__start_time + phase_x_rad) * 2 * math.pi / period_x_s))
 
 
 class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):

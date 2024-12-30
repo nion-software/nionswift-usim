@@ -303,7 +303,7 @@ class Camera(camera_base.CameraDevice3):
         # if do_sync is True, the scan device will sync with its acquisition thread before
         # advancing the pixel. this avoids race conditions of when the pixel count gets reset.
         # this will be set only for the first frame in a sequence.
-        start = time.time()
+        start = time.perf_counter()
         readout_area = self.readout_area
         binning_shape = Geometry.IntSize(self.__binning, self.__binning if self.__symmetric_binning else 1)
         # scan device is only set during synchronized acquisition
@@ -311,9 +311,12 @@ class Camera(camera_base.CameraDevice3):
             self.__scan_device.advance_pixel(do_sync=do_sync)
         xdata = self.__simulator.get_frame_data(Geometry.IntRect.from_tlbr(*readout_area), binning_shape, self.__exposure, self.__instrument.scan_context, self.__instrument.probe_position)
         self.__acquired_one_event.set()
-        elapsed = time.time() - start
+        elapsed = time.perf_counter() - start
         wait_s = max(self.__exposure - elapsed, 0)
         if not cancel_event.wait(wait_s):
+            actual_elapsed_s = time.perf_counter() - start
+            if actual_elapsed_s < self.__exposure:
+                time.sleep(self.__exposure - actual_elapsed_s)  # adjust in case the wait returns early (observed on python 3.13/windows)
             # thread event was not triggered during wait; signal that we have data
             xdata._set_timestamp(DateTime.utcnow())
             self.__xdata_buffer = xdata
