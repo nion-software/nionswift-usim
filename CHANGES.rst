@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.3.0 (2025-01-06)
+------------------
+- Package restructuring to make it easier to use the simulator in other packages.
+
 5.2.0 (2024-10-27)
 ------------------
 - Use Gaussian noise in place of Poisson noise beyond threshold to improve performance.
