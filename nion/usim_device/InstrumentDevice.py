@@ -847,4 +847,4 @@ class ScanDataGenerator(Observable.Observable, ScanDevice.ScanDataGeneratorLike)
             data = rotated_data
         else:
             data = data[extra // 2:extra // 2 + size.height, extra // 2:extra // 2 + size.width]
-        return (data + numpy.random.randn(size.height, size.width) * noise_factor) * pixel_time_us
+        return typing.cast(_NDArray, (data + numpy.random.randn(size.height, size.width) * noise_factor) * pixel_time_us)

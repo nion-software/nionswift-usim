@@ -198,7 +198,7 @@ class Camera(camera_base.CameraDevice3):
             self.__has_data_event.clear()
             if xdata_buffer is None:
                 xdata_buffer = copy.deepcopy(self.__xdata_buffer)
-            else:
+            elif self.__xdata_buffer:
                 xdata_buffer += self.__xdata_buffer
         self.__frame_number += 1
         # note: the data element will include spatial calibrations; but the camera adapter won't use them
