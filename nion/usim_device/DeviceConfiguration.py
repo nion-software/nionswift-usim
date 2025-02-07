@@ -1,4 +1,7 @@
 import gettext
+import logging
+import pathlib
+import shutil
 
 from nion.device_kit import CameraDevice
 from nion.instrumentation import camera_base
@@ -9,6 +12,7 @@ from nion.usim_device import InstrumentDevice
 from nion.usim_device import RonchigramCameraSimulator
 from nion.usim_device import ScanDevice
 from nion.utils import Geometry
+from nion.utils import Registry
 
 
 _ = gettext.gettext
@@ -16,6 +20,12 @@ _ = gettext.gettext
 
 class AcquisitionContextConfiguration:
     def __init__(self, *, sample_index: int = 0) -> None:
+        configuration_location = pathlib.Path.cwd() / "test_data"
+        if configuration_location.exists():
+            shutil.rmtree(configuration_location)
+        pathlib.Path.mkdir(configuration_location, exist_ok=True)
+        self.configuration_location = configuration_location
+
         self.instrument_id = "usim_stem_controller"
         value_manager = InstrumentDevice.ValueManager()
         axis_manager = InstrumentDevice.AxisManager()
@@ -43,3 +53,22 @@ class AcquisitionContextConfiguration:
 
         value_manager.ronchigram_camera = self._ronchigram_camera_device
         value_manager.eels_camera = self._eels_camera_device
+
+    def run(self) -> None:
+        logging.disable(logging.CRITICAL)
+        try:
+            Registry.register_component(self.instrument, {"instrument_controller", "stem_controller"})
+            component_types = {"camera_module"}  # the set of component types that this component represents
+            setattr(self.ronchigram_camera_device, "camera_panel_type", "ronchigram")
+            Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self.ronchigram_camera_device, self.ronchigram_camera_settings), component_types)
+            setattr(self.eels_camera_device, "camera_panel_type", "eels")
+            Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self.eels_camera_device, self.eels_camera_settings), component_types)
+            Registry.register_component(self.scan_module, {"scan_module"})
+        finally:
+            logging.disable(logging.NOTSET)
+
+    def stop(self) -> None:
+        for component in Registry.get_components_by_type("camera_module"):
+            Registry.unregister_component(component, {"camera_module"})
+        Registry.unregister_component(Registry.get_component("scan_module"), {"scan_module"})
+        Registry.unregister_component(Registry.get_component("stem_controller"), {"instrument_controller", "stem_controller"})
