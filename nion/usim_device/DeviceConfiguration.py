@@ -24,7 +24,7 @@ class AcquisitionContextConfiguration:
         if configuration_location.exists():
             shutil.rmtree(configuration_location)
         pathlib.Path.mkdir(configuration_location, exist_ok=True)
-        self.configuration_location = configuration_location
+        self.configuration_location = str(configuration_location)
 
         self.instrument_id = "usim_stem_controller"
         value_manager = InstrumentDevice.ValueManager()
@@ -60,9 +60,9 @@ class AcquisitionContextConfiguration:
             Registry.register_component(self.instrument, {"instrument_controller", "stem_controller"})
             component_types = {"camera_module"}  # the set of component types that this component represents
             setattr(self.ronchigram_camera_device, "camera_panel_type", "ronchigram")
-            Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self.ronchigram_camera_device, self.ronchigram_camera_settings), component_types)
+            Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self._ronchigram_camera_device, self._ronchigram_camera_settings), component_types)
             setattr(self.eels_camera_device, "camera_panel_type", "eels")
-            Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self.eels_camera_device, self.eels_camera_settings), component_types)
+            Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self._eels_camera_device, self._eels_camera_settings), component_types)
             Registry.register_component(self.scan_module, {"scan_module"})
         finally:
             logging.disable(logging.NOTSET)
