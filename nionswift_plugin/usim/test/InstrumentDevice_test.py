@@ -55,9 +55,10 @@ class TestInstrumentDevice(unittest.TestCase):
 
     def setUp(self) -> None:
         AcquisitionTestContext.begin_leaks()
-        self.app = Application.Application(TestUI.UserInterface(), set_global=False)
+        self._test_setup = TestContext.TestSetup()
 
     def tearDown(self) -> None:
+        self._test_setup = typing.cast(typing.Any, None)
         AcquisitionTestContext.end_leaks(self)
 
     def _test_context(self, *, is_eels: bool = False) -> AcquisitionTestContext.AcquisitionTestContext:
