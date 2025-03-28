@@ -12,6 +12,7 @@ from nion.device_kit import ScanDevice
 from nion.instrumentation import scan_base
 from nion.instrumentation.test import AcquisitionTestContext
 from nion.swift import Application
+from nion.swift.test import TestContext
 from nion.ui import TestUI
 from nion.usim_device import CameraSimulator
 from nion.usim_device import DeviceConfiguration
