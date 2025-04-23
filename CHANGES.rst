@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.4.0 (2025-04-23)
+------------------
+- Maintenance release.
+
 5.3.0 (2025-01-06)
 ------------------
 - Package restructuring to make it easier to use the simulator in other packages.
