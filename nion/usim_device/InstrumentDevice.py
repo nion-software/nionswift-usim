@@ -395,7 +395,6 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         self.__blanked = False
         self.__ronchigram_shape = Geometry.IntSize(2048, 2048)
         self.__eels_shape = Geometry.IntSize(256, 1024)
-        self.__scan_context = stem_controller.ScanContext()
         self.__probe_position: typing.Optional[Geometry.FloatPoint] = None
         self.__live_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self._is_synchronized = False

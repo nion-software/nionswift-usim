@@ -363,7 +363,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             if not value_manager.is_blanked:
                 scan_offset = Geometry.FloatPoint()
                 scan_context_fov_nm = scan_context.fov_size_nm
-                if scan_context.is_valid and frame_settings.current_probe_position is not None and scan_context_fov_nm is not None:
+                if frame_settings.current_probe_position is not None and scan_context_fov_nm is not None:
                     scan_offset = Geometry.FloatPoint(
                         y=frame_settings.current_probe_position[0] * scan_context_fov_nm[0] - scan_context_fov_nm[0] / 2,
                         x=frame_settings.current_probe_position[1] * scan_context_fov_nm[1] - scan_context_fov_nm[1] / 2)

@@ -129,7 +129,7 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             used_calibration = dimensional_calibrations[1]
             used_calibration.offset = typing.cast(InstrumentDevice_.Control, value_manager.get_control("ZLPoffset")).local_value
 
-            if scan_context.is_valid and frame_settings.current_probe_position is not None:
+            if frame_settings.current_probe_position is not None:
 
                 # make a buffer for the spectrum
                 spectrum: numpy.typing.NDArray[numpy.float64] = numpy.zeros((data.shape[1], ), float)
