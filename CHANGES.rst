@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.4.1 (2025-05-29)
+------------------
+- Maintenance release.
+
 5.4.0 (2025-04-23)
 ------------------
 - Maintenance release.

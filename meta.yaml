@@ -1,9 +1,9 @@
 package:
   name: 'nionswift-usim'
-  version: '5.4.0'
+  version: '5.4.1'
 
 source:
-  git_rev: 5.4.0
+  git_rev: 5.4.1
   git_url: https://github.com/nion-software/nionswift-usim.git
 
 build:

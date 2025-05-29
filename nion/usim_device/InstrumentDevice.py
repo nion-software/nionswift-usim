@@ -829,7 +829,7 @@ class ScanDataGenerator(Observable.Observable, ScanDevice.ScanDataGeneratorLike)
         extra = int(math.ceil(max(size.height * math.sqrt(2) - size.height, size.width * math.sqrt(2) - size.width)))
         extra_nm = Geometry.FloatPoint(y=(extra / size.height) * fov_size_nm.height, x=(extra / size.width) * fov_size_nm.width)
         used_size = size + Geometry.IntSize(height=extra, width=extra)
-        data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((used_size.height, used_size.width), numpy.float32)
+        data: numpy.typing.NDArray[numpy.float32] = numpy.zeros(tuple(used_size), numpy.float32)
         # Now get the data from the sample simulator
         value_manager = typing.cast(ValueManager, instrument.value_manager)
         offset_m = value_manager.actual_offset_m  # stage position - beam shift + drift
