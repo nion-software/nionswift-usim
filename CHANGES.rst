@@ -1,6 +1,10 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.4.2 (2025-08-11)
+------------------
+- Fix issue when running as offline installer plug-in.
+
 5.4.1 (2025-05-29)
 ------------------
 - Maintenance release.
