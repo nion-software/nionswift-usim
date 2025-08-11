@@ -19,12 +19,17 @@ _ = gettext.gettext
 
 
 class AcquisitionContextConfiguration:
-    def __init__(self, *, sample_index: int = 0) -> None:
-        configuration_location = pathlib.Path.cwd() / "test_data"
-        if configuration_location.exists():
-            shutil.rmtree(configuration_location)
-        pathlib.Path.mkdir(configuration_location, exist_ok=True)
-        self.configuration_location = str(configuration_location)
+    def __init__(self, *, sample_index: int = 0, set_configuration_location: bool = True) -> None:
+        # when starting as a plug-in package, configuration_location is unused.
+        # to avoid creating directories, we set it to an empty string.
+        if set_configuration_location:
+            configuration_location = pathlib.Path.cwd() / "test_data"
+            if configuration_location.exists():
+                shutil.rmtree(configuration_location)
+            pathlib.Path.mkdir(configuration_location, exist_ok=True)
+            self.configuration_location = str(configuration_location)
+        else:
+            self.configuration_location = str()
 
         self.instrument_id = "usim_stem_controller"
         value_manager = InstrumentDevice.ValueManager()

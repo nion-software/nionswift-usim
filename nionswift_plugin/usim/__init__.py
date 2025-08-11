@@ -5,7 +5,7 @@ from nionswift_plugin.usim import InstrumentPanel
 
 
 def run() -> None:
-    acquisition_context_configuration = DeviceConfiguration.AcquisitionContextConfiguration()
+    acquisition_context_configuration = DeviceConfiguration.AcquisitionContextConfiguration(set_configuration_location=False)
     Registry.register_component(acquisition_context_configuration.instrument, {"instrument_controller", "stem_controller"})
     component_types = {"camera_module"}  # the set of component types that this component represents
     setattr(acquisition_context_configuration.ronchigram_camera_device, "camera_panel_type", "ronchigram")
