@@ -25,6 +25,7 @@ from nion.usim_device import SampleSimulator
 from nion.utils import Geometry
 from nion.utils import Observable
 from nion.utils import ReferenceCounting
+from nion.utils import Stream
 
 
 _NDArray = numpy.typing.NDArray[typing.Any]
@@ -399,6 +400,7 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         self.__live_probe_position: typing.Optional[Geometry.FloatPoint] = None
         self._is_synchronized = False
         self.__controls: typing.Dict[str, typing.Union[Control2D, Variable]] = dict()
+        self.__streams = dict[str, Stream.ValueStream[stem_controller.TryValue[float]]]()
 
         built_in_controls = self.__create_built_in_controls()
         for control in built_in_controls:
@@ -513,6 +515,11 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
 
     def control_changed(self, control: Variable) -> None:
         self.property_changed_event.fire(control.name)
+        stream = self.__streams.get(control.name)
+        if stream:
+            value = control.output_value
+            stream.value = stem_controller.TryValue(value, Exception() if value is None else None)
+
 
     def create_variable(self, name: str, weighted_inputs: typing.Optional[typing.List[WeightedInput]] = None) -> Variable:
         return Variable(name, weighted_inputs)
@@ -731,6 +738,12 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
             getattr(control, axis[1]).inform_output_value(value.y)
             return True
         return False
+
+    def get_control_try_value_stream(self, control_name: str) -> Stream.AbstractStream[stem_controller.TryValue[float]]:
+        if control_name not in self.__streams:
+            try_value = self.get_value(control_name)
+            self.__streams[control_name] = Stream.ValueStream(stem_controller.TryValue(try_value, Exception() if try_value is None else None))
+        return self.__streams[control_name]
 
     def get_reference_setting_index(self, settings_control: str) -> int:
         if self.get_value(settings_control) is None:
