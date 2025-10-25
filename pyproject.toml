@@ -2,6 +2,35 @@
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "nionswift-usim"
+version = "5.4.2"
+# nionswift-instrumentation >=23.7,<24.0
+authors = [
+    { name = "Nion Software", email = "swift@nion.com" }
+]
+description = "A Nion Swift package to simulate a STEM microscope, scanner, and cameras."
+readme = "README.rst"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14"
+]
+urls = { "Homepage" = "https://github.com/nion-software/nionswift-usim" }
+dependencies = [
+  "nionswift-instrumentation >=23.6,<24.0"
+]
+
+[tool.setuptools.packages.find]
+include = ["nion.usim_device", "nionswift_plugin", "nionswift_plugin.usim", "nionswift_plugin.usim.test"]
+
+[tool.setuptools.package-data]
+"nionswift_plugin.usim" = ["manifest.json"]
+
 [tool.pytest.ini_options]
 testpaths = [
     "nionswift_plugin/usim/test"
