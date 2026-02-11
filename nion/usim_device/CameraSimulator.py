@@ -41,6 +41,7 @@ class CameraSimulator:
         self._counts_per_electron = counts_per_electron
         self._needs_recalculation = True
         self._last_frame_settings: typing.Optional[FrameSettings] = None
+        self._min_exposure = 1.0 / 20  # used for calculating timeouts, the simulator can't go faster than this
 
         def property_changed(name: str) -> None:
             if name in self.depends_on:
