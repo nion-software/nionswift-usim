@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nionswift-usim"
-version = "5.4.2"
+version = "5.4.3"
 # nionswift-instrumentation >=23.7,<24.0
 authors = [
     { name = "Nion Software", email = "swift@nion.com" }
@@ -22,7 +22,7 @@ classifiers = [
 ]
 urls = { "Homepage" = "https://github.com/nion-software/nionswift-usim" }
 dependencies = [
-  "nionswift-instrumentation >=23.6,<24.0"
+  "nionswift-instrumentation >=23.7,<24.0"
 ]
 
 [tool.setuptools.packages.find]

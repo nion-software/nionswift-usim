@@ -1,6 +1,12 @@
 Changelog (nionswift-usim)
 ==========================
 
+5.4.3 (2026-03-19)
+------------------
+- Provide the minimum exposure time property for the simulator.
+- Provide get_control_try_value_stream in ValueManager.
+- Python 3.14 support. Drop Python 3.11 support.
+
 5.4.2 (2025-08-11)
 ------------------
 - Fix issue when running as offline installer plug-in.
