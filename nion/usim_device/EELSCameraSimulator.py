@@ -111,6 +111,8 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
             self._last_frame_settings = frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
+            # clear the flag before reading the instrument so that a change during the recalculation causes another recalculation
+            self._needs_recalculation = False
             data: numpy.typing.NDArray[numpy.float64] = numpy.zeros(tuple(self._sensor_dimensions), float)
             value_manager = typing.cast("InstrumentDevice_.ValueManager", self.instrument.value_manager)
             slit_attenuation = 10 if value_manager.is_slit_in else 1
@@ -187,7 +189,6 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
 
             self.__cached_frame = DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
             self.__data_scale = self.get_total_counts(exposure_s) / target_pixel_count / slit_attenuation / self._sensor_dimensions[0]
-            self._needs_recalculation = False
 
         self.noise.poisson_level = self.__data_scale
         return self.noise.apply(self.__cached_frame)

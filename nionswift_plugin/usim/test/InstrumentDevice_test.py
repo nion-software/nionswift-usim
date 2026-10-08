@@ -52,6 +52,22 @@ def create_camera_and_scan_simulator(instrument: InstrumentDevice_.Instrument, c
     return camera_simulator, scan_device
 
 
+class RonchigramCameraSimulatorChangingControlDuringRecalculation(RonchigramCameraSimulator.RonchigramCameraSimulator):
+    """A Ronchigram camera simulator which changes a control it depends on while it is recalculating a frame."""
+
+    def _get_binned_data(self, data: _NDArray, binning_shape: Geometry.IntSize) -> _NDArray:
+        self.instrument.SetValDelta("BeamCurrent", 1e-12)
+        return super()._get_binned_data(data, binning_shape)
+
+
+class EELSCameraSimulatorChangingControlDuringRecalculation(EELSCameraSimulator.EELSCameraSimulator):
+    """An EELS camera simulator which changes a control it depends on while it is recalculating a frame."""
+
+    def _get_binned_data(self, data: _NDArray, binning_shape: Geometry.IntSize) -> _NDArray:
+        self.instrument.SetValDelta("BeamCurrent", 1e-12)
+        return super()._get_binned_data(data, binning_shape)
+
+
 class TestInstrumentDevice(unittest.TestCase):
 
     def setUp(self) -> None:
@@ -80,6 +96,22 @@ class TestInstrumentDevice(unittest.TestCase):
             self.assertFalse(camera._needs_recalculation)
             camera._needs_recalculation = False
             instrument.SetValDelta("BeamCurrent", 1)
+            self.assertTrue(camera._needs_recalculation)
+
+    def test_ronchigram_recalculates_next_frame_when_control_changes_during_recalculation(self) -> None:
+        with self._test_context() as test_context:
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
+            camera = RonchigramCameraSimulatorChangingControlDuringRecalculation(instrument, Geometry.IntSize(128, 128), 10, 0.030)
+            readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=Geometry.IntSize(128, 128))
+            camera.get_frame_data(readout_area, Geometry.IntSize(1, 1), 0.01, instrument.scan_context, instrument.probe_position)
+            self.assertTrue(camera._needs_recalculation)
+
+    def test_eels_recalculates_next_frame_when_control_changes_during_recalculation(self) -> None:
+        with self._test_context() as test_context:
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
+            camera = EELSCameraSimulatorChangingControlDuringRecalculation(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("eels")), instrument.counts_per_electron)
+            readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera._camera_shape)
+            camera.get_frame_data(readout_area, Geometry.IntSize(1, 1), 0.01, instrument.scan_context, instrument.probe_position)
             self.assertTrue(camera._needs_recalculation)
 
     def test_powerlaw(self) -> None:
