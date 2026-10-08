@@ -338,6 +338,8 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             self._last_frame_settings = frame_settings
 
         if self._needs_recalculation or self.__cached_frame is None:
+            # clear the flag before reading the instrument so that a change during the recalculation causes another recalculation
+            self._needs_recalculation = False
             # print("recalculating frame")
             height = readout_area.height
             width = readout_area.width
@@ -399,7 +401,6 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
 
             self.__cached_frame = DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
             self.__data_scale = self.get_total_counts(exposure_s) / (data.shape[0] * data.shape[1] * thickness_param)
-            self._needs_recalculation = False
 
         self.noise.poisson_level = self.__data_scale
         assert self.__cached_frame
