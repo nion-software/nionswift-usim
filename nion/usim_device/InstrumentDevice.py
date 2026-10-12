@@ -20,6 +20,7 @@ from nion.device_kit import CameraDevice
 from nion.device_kit import InstrumentDevice
 from nion.device_kit import ScanDevice
 from nion.instrumentation import stem_controller
+from nion.swift.model import Feature
 from nion.swift.model import Utility
 from nion.usim_device import SampleSimulator
 from nion.utils import Geometry
@@ -31,6 +32,12 @@ from nion.utils import Stream
 _NDArray = numpy.typing.NDArray[typing.Any]
 
 WeightedInput = typing.Tuple["Variable", typing.Union[float, "Variable"]]
+
+# If we reload the module or if it gets imported twice for some other reason registering the feature twice would cause an assertion error, so we catch and ignore that.
+try:
+    Feature.FeatureManager().add_feature(Feature.Feature("feature.monochromator", "Monochromator in usim", True))
+except AssertionError:
+    pass
 
 
 class ControlProvider(typing.Protocol):
@@ -472,12 +479,15 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         # This is needed in the dectris plugins
         ht_kv = Variable("SuperFEG_HTkV")
         ht_kv.set_expression("EHT * 0.001", variables={"EHT": voltage})
-        return [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control,
-                c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift, beam_current,
-                beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
-                c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, mc_exists, slit_tilt, slit_C10,
-                slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
-                rsq_seconds, rsq_thirds, voltage, order_1_patch, order_2_patch, order_3_patch, ht_kv]
+        built_in_controls =  [stage_position_m, zlp_tare_control, zlp_offset_control, c10, c12, c21, c23, c30, c32, c34, c10Control,
+                              c12Control, c21Control, c23Control, c30Control, c32Control, c34Control, csh, drift, beam_current,
+                              beam_shift_m_control, order_1_max_angle, order_2_max_angle, order_3_max_angle, c1_range, c2_range,
+                              c3_range, c_aperture, aperture_round, s_voa, s_moa, c_aperture_offset, slit_tilt, slit_C10,
+                              slit_C12, slit_C21, slit_C23, slit_C30, slit_C32, slit_C34, convergence_angle, axis_converter,
+                              rsq_seconds, rsq_thirds, voltage, order_1_patch, order_2_patch, order_3_patch, ht_kv]
+        if Feature.FeatureManager().is_feature_enabled("feature.monochromator"):
+            built_in_controls.append(mc_exists)
+        return built_in_controls
 
     def __set_expressions(self) -> None:
         typing.cast(Variable, self.get_control("RSquareC2s")).set_expression(
