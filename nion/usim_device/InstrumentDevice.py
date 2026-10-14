@@ -39,6 +39,11 @@ try:
 except AssertionError:
     pass
 
+try:
+    Feature.FeatureManager().add_feature(Feature.Feature("feature.eels", "EELS in usim", False))
+except AssertionError:
+    pass
+
 
 class ControlProvider(typing.Protocol):
     def get_control(self, control_name: str) -> typing.Union[Variable, Control2D, None]:
@@ -471,6 +476,8 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         c3_range = Variable("C3Range")
         rsq_seconds = Variable("RSquareC2s")
         rsq_thirds = Variable("RSquareC3s")
+        # EELS controls
+        eels_exists = Control("S_EELS", local_value=0)  # Used by tuning to check if scope has EELS
 
         # dependent controls
         beam_shift_m_control = Control2D("beam_shift_m", ("x", "y"), (csh.x.output_value, csh.y.output_value), ([(csh.x, 1.0)], [(csh.y, 1.0)]))
@@ -488,6 +495,8 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
             rsq_seconds, rsq_thirds, voltage, order_1_patch, order_2_patch, order_3_patch, ht_kv]
         if Feature.FeatureManager().is_feature_enabled("feature.monochromator"):
             built_in_controls.append(mc_exists)
+        if Feature.FeatureManager().is_feature_enabled("feature.eels"):
+            built_in_controls.append(eels_exists)
         return built_in_controls
 
     def __set_expressions(self) -> None:
