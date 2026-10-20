@@ -3,8 +3,17 @@ import numpy
 import numpy.typing
 import typing
 import unittest
+import uuid
 
 from nion.data import DataAndMetadata
+from nion.device_kit import CameraDevice
+from nion.instrumentation import Acquisition
+from nion.instrumentation import camera_base
+from nion.instrumentation import DataChannel
+from nion.instrumentation import HardwareSource
+from nion.instrumentation.test import AcquisitionTestContext
+from nion.swift.test import TestContext
+from nion.usim_device import DeviceConfiguration
 from nion.usim_device import EDXSDetectorSimulator
 from nion.usim_device import InstrumentDevice
 from nion.utils import Geometry
@@ -186,6 +195,84 @@ class TestEDXSDetector(unittest.TestCase):
                 peak_rate_counts = numpy.sum(acquire_spectrum(simulator, instrument))
                 instrument.SetVal("BeamCurrent", 50E-9)
                 self.assertLess(numpy.sum(acquire_spectrum(simulator, instrument)), 0.1 * peak_rate_counts)
+
+
+class TestEDXSDetectorHardwareSource(unittest.TestCase):
+
+    def setUp(self) -> None:
+        AcquisitionTestContext.begin_leaks()
+        self._test_setup = TestContext.TestSetup()
+
+    def tearDown(self) -> None:
+        self._test_setup = typing.cast(typing.Any, None)
+        AcquisitionTestContext.end_leaks(self)
+
+    def test_edxs_camera_acquires_an_energy_calibrated_spectrum_at_each_binning(self) -> None:
+        with AcquisitionTestContext.AcquisitionTestContext(DeviceConfiguration.AcquisitionContextConfiguration()) as test_context:
+            instrument = typing.cast(InstrumentDevice.Instrument, test_context.instrument)
+            place_probe_on_element(instrument, "Si")
+            hardware_source = typing.cast(camera_base.CameraHardwareSource, HardwareSource.HardwareSourceManager().get_hardware_source_for_hardware_source_id("usim_edxs_camera"))
+            for binning in (1, 2):
+                with self.subTest(binning=binning):
+                    frame_parameters = hardware_source.get_frame_parameters(0)
+                    frame_parameters.binning = binning
+                    frame_parameters.exposure_ms = 100
+                    hardware_source.set_current_frame_parameters(frame_parameters)
+                    hardware_source.start_playing()
+                    try:
+                        xdata = hardware_source.get_next_xdatas_to_finish()[0]
+                    finally:
+                        hardware_source.abort_playing(sync_timeout=3.0)
+                    assert xdata
+                    self.assertEqual((2048 // binning,), xdata.data_shape)
+                    energy_calibration = xdata.dimensional_calibrations[-1]
+                    self.assertEqual("eV", energy_calibration.units)
+                    self.assertEqual(10.0 * binning, energy_calibration.scale)
+                    self.assertAlmostEqual(1740.0, strongest_line_energy(xdata), delta=10.0)
+
+    def test_edxs_camera_calibrates_a_spectrum_of_its_readout_area(self) -> None:
+        with AcquisitionTestContext.AcquisitionTestContext(DeviceConfiguration.AcquisitionContextConfiguration()) as test_context:
+            instrument = typing.cast(InstrumentDevice.Instrument, test_context.instrument)
+            place_probe_on_element(instrument, "Si")
+            hardware_source = typing.cast(camera_base.CameraHardwareSource, HardwareSource.HardwareSourceManager().get_hardware_source_for_hardware_source_id("usim_edxs_camera"))
+            typing.cast(CameraDevice.Camera, hardware_source.camera).readout_area = (0, 100, 1, 612)
+            frame_parameters = hardware_source.get_frame_parameters(0)
+            frame_parameters.binning = 2
+            frame_parameters.exposure_ms = 100
+            hardware_source.set_current_frame_parameters(frame_parameters)
+            hardware_source.start_playing()
+            try:
+                xdata = hardware_source.get_next_xdatas_to_finish()[0]
+            finally:
+                hardware_source.abort_playing(sync_timeout=3.0)
+            assert xdata
+            self.assertEqual((256,), xdata.data_shape)
+            self.assertEqual(1000.0, xdata.dimensional_calibrations[-1].offset)
+            self.assertAlmostEqual(1740.0, strongest_line_energy(xdata), delta=10.0)
+
+    def test_edxs_camera_acquires_a_calibrated_spectrum_image(self) -> None:
+        with AcquisitionTestContext.AcquisitionTestContext(DeviceConfiguration.AcquisitionContextConfiguration()) as test_context:
+            scan_hardware_source = test_context.scan_hardware_source
+            camera_hardware_source = typing.cast(camera_base.CameraHardwareSource, HardwareSource.HardwareSourceManager().get_hardware_source_for_hardware_source_id("usim_edxs_camera"))
+            scan_frame_parameters = scan_hardware_source.get_current_frame_parameters()
+            scan_frame_parameters.scan_id = uuid.uuid4()
+            scan_frame_parameters.size = Geometry.IntSize(4, 4)
+            # the acquisition panel acquires a camera other than EELS without processing.
+            camera_frame_parameters = camera_hardware_source.get_current_frame_parameters()
+            camera_frame_parameters.binning = 1
+            camera_frame_parameters.exposure_ms = 10
+            camera_frame_parameters.processing = None
+            data_item_data_channel = DataChannel.DataItemDataChannel(test_context.document_model, "Spectrum Image", {
+                Acquisition.Channel(scan_hardware_source.hardware_source_id, "0"): "HAADF",
+                Acquisition.Channel(camera_hardware_source.hardware_source_id): "EDXS"})
+            scan_hardware_source.grab_synchronized(data_channel=data_item_data_channel, scan_frame_parameters=scan_frame_parameters, camera=camera_hardware_source, camera_frame_parameters=camera_frame_parameters)
+            data_item_data_channel = typing.cast(typing.Any, None)
+            test_context.document_controller.periodic()
+            spectrum_image_data_item = next(data_item for data_item in test_context.document_model.data_items if len(data_item.dimensional_shape) == 3)
+            self.assertEqual((4, 4, 2048), spectrum_image_data_item.data_shape)
+            self.assertEqual(DataAndMetadata.DataDescriptor(False, 2, 1), spectrum_image_data_item.data_and_metadata.data_descriptor)
+            self.assertEqual("eV", spectrum_image_data_item.dimensional_calibrations[-1].units)
+            self.assertEqual(10.0, spectrum_image_data_item.dimensional_calibrations[-1].scale)
 
 
 if __name__ == '__main__':

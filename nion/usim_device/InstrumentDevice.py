@@ -423,6 +423,7 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         # these need to be set if they are used
         self.ronchigram_camera: typing.Optional[CameraDevice.Camera] = None
         self.eels_camera: typing.Optional[CameraDevice.Camera] = None
+        self.edxs_camera: CameraDevice.Camera | None = None
 
     def __create_built_in_controls(self) -> typing.List[typing.Union[Variable, Control2D]]:
         zlp_tare_control = Control("ZLPtare")
@@ -702,6 +703,12 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
                 # the energy offset of an EELS spectrum is that of the first channel of the readout area.
                 return parse_camera_values(eels_camera, "eels", name[len("eels_"):], Geometry.IntRect.from_tlbr(*eels_camera.readout_area))
             return None
+        elif name.startswith("edxs_"):
+            edxs_camera = self.edxs_camera
+            if edxs_camera:
+                # the energy offset of an EDXS spectrum is that of the first channel of the readout area.
+                return parse_camera_values(edxs_camera, "edxs", name[len("edxs_"):], Geometry.IntRect.from_tlbr(*edxs_camera.readout_area))
+            return None
         else:
             success, value = self.__resolve_control_name(name)
             return value if success else None
@@ -786,6 +793,17 @@ class Instrument(InstrumentDevice.Instrument):
     @property
     def scan_data_generator(self) -> ScanDevice.ScanDataGeneratorLike:
         return self.__scan_data_generator
+
+    # the EDXS detector is a silicon drift detector, whose spectrum is a single row of channels.
+    def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
+        if camera_type == "edxs":
+            return 1, 2048
+        return super().camera_sensor_dimensions(camera_type)
+
+    def camera_readout_area(self, camera_type: str) -> typing.Tuple[int, int, int, int]:
+        if camera_type == "edxs":
+            return 0, 0, 1, 2048
+        return super().camera_readout_area(camera_type)
 
     def __on_property_changed(self, name: str) -> None:
         self.property_changed_event.fire(name)

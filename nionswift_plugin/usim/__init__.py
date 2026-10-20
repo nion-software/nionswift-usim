@@ -12,6 +12,7 @@ def run() -> None:
     Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", acquisition_context_configuration._ronchigram_camera_device, acquisition_context_configuration._ronchigram_camera_settings), component_types)
     setattr(acquisition_context_configuration.eels_camera_device, "camera_panel_type", "eels")
     Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", acquisition_context_configuration._eels_camera_device, acquisition_context_configuration._eels_camera_settings), component_types)
+    Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", acquisition_context_configuration._edxs_camera_device, acquisition_context_configuration._edxs_camera_settings), component_types)
     Registry.register_component(acquisition_context_configuration.scan_module, {"scan_module"})
     InstrumentPanel.run(acquisition_context_configuration._instrument)
 
