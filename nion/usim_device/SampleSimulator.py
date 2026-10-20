@@ -82,10 +82,12 @@ def draw_ellipse(image: _NDArray, ellipse: typing.Tuple[float, float, float, flo
 
 
 class Feature:
-    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int) -> None:
+    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int, *, elements: typing.Sequence[str] = ()) -> None:
         self.position_m = position_m
         self.size_m = size_m
         self.edges = edges
+        # the chemical symbols of the elements the feature is made of, e.g. ("Si",).
+        self.elements = tuple(elements)
         self.plasmon_eV = plasmon_eV
         self.plurality = plurality
 
@@ -110,8 +112,8 @@ class Feature:
 
 class FlakeFeature(Feature):
 
-    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int) -> None:
-        super().__init__(position_m, size_m, edges, plasmon_eV, plurality)
+    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int, *, elements: typing.Sequence[str] = ()) -> None:
+        super().__init__(position_m, size_m, edges, plasmon_eV, plurality, elements=elements)
 
     def plot(self, data: _NDArray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> int:
         # TODO: how does center_nm interact with stage position?
@@ -146,8 +148,8 @@ class FlakeFeature(Feature):
 
 class AmorphousBackground(Feature):
 
-    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int) -> None:
-        super().__init__(position_m, size_m, edges, plasmon_eV, plurality)
+    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int, *, elements: typing.Sequence[str] = ()) -> None:
+        super().__init__(position_m, size_m, edges, plasmon_eV, plurality, elements=elements)
         self.__amorphous = typing.cast(_NDArray, numpy.random.RandomState(1).randn(2048, 2048) * 2 + 1)
 
     def plot(self, data: _NDArray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> int:
@@ -185,8 +187,8 @@ class AmorphousBackground(Feature):
 
 class GoldBallFeature(Feature):
 
-    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int, orientation: float) -> None:
-        super().__init__(position_m, size_m, edges, plasmon_eV, plurality)
+    def __init__(self, position_m: Geometry.FloatPoint, size_m: Geometry.FloatSize, edges: typing.Sequence[typing.Tuple[int, int]], plasmon_eV: float, plurality: int, orientation: float, *, elements: typing.Sequence[str] = ()) -> None:
+        super().__init__(position_m, size_m, edges, plasmon_eV, plurality, elements=elements)
         self.orientation = orientation
 
     def plot(self, data: _NDArray, offset_m: Geometry.FloatPoint, fov_nm: Geometry.FloatSize, center_nm: Geometry.FloatPoint, shape: Geometry.IntSize) -> int:
@@ -245,12 +247,13 @@ class RectangleFlakeSample(Sample):
         feature_percentage = 0.3
         random_state = random.getstate()
         random.seed(1)
-        energies = [[(68, 30), (855, 50), (872, 50)], [(29, 15), (1217, 50), (1248, 50)], [(1839, 5), (99, 50)]]  # Ni, Ge, Si
+        energies = [[(68, 30), (855, 50), (872, 50)], [(29, 15), (1217, 50), (1248, 50)], [(1839, 5), (99, 50)]]
+        elements = [("Ni",), ("Ge",), ("Si",)]
         plasmons = [20, 16.2, 16.8]
         for i in range(100):
             position_m = Geometry.FloatPoint(y=(2 * random.random() - 1.0) * sample_size_m.height, x=(2 * random.random() - 1.0) * sample_size_m.width)
             size_m = feature_percentage * Geometry.FloatSize(height=random.random() * sample_size_m.height, width=random.random() * sample_size_m.width)
-            self.__features.append(FlakeFeature(position_m, size_m, energies[i%len(energies)], plasmons[i%len(plasmons)], 4))
+            self.__features.append(FlakeFeature(position_m, size_m, energies[i%len(energies)], plasmons[i%len(plasmons)], 4, elements=elements[i%len(elements)]))
         random.setstate(random_state)
 
     @property
@@ -272,7 +275,7 @@ class AmorphousSample(Sample):
         self.__amorphous = typing.cast(_NDArray, numpy.random.RandomState(1).randn(2048, 2048)) * 2 + 1
         sample_size_m = Geometry.FloatSize(height=stage_size_nm, width=stage_size_nm) / 1E9
         self.__features: typing.List[Feature] = list()
-        self.__features.append(AmorphousBackground(Geometry.FloatPoint(), sample_size_m, [(284, 30)], 25., 4))
+        self.__features.append(AmorphousBackground(Geometry.FloatPoint(), sample_size_m, [(284, 30)], 25., 4, elements=("C",)))
 
     @property
     def title(self) -> str:
@@ -320,10 +323,10 @@ class CombinedTestSample(Sample):
             size_m = Geometry.FloatSize(height=long_dimension_size, width=short_dimension_size)
             # Random rotation between 0 and 180 degrees
             rotation = random.random() * numpy.pi
-            new_feature = GoldBallFeature(position_m, size_m, [(54, 30), (83, 40), (2206, 300), (2291, 300)], 15., 4, rotation)
+            new_feature = GoldBallFeature(position_m, size_m, [(54, 30), (83, 40), (2206, 300), (2291, 300)], 15., 4, rotation, elements=("Au",))
             self.__features.append(new_feature)
             position_map[position_map_position] = 1
-        self.__features.append(AmorphousBackground(Geometry.FloatPoint(), sample_size_m, [(284, 30)], 25., 4))
+        self.__features.append(AmorphousBackground(Geometry.FloatPoint(), sample_size_m, [(284, 30)], 25., 4, elements=("C",)))
         random.setstate(random_state)
 
     @property
