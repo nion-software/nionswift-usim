@@ -16,6 +16,7 @@ from nion.swift.test import TestContext
 from nion.ui import TestUI
 from nion.usim_device import CameraSimulator
 from nion.usim_device import DeviceConfiguration
+from nion.usim_device import EDXSDetectorSimulator
 from nion.usim_device import EELSCameraSimulator
 from nion.usim_device import InstrumentDevice as InstrumentDevice_
 from nion.usim_device import RonchigramCameraSimulator
@@ -66,6 +67,14 @@ class EELSCameraSimulatorChangingControlDuringRecalculation(EELSCameraSimulator.
     def _get_binned_data(self, data: _NDArray, binning_shape: Geometry.IntSize) -> _NDArray:
         self.instrument.SetValDelta("BeamCurrent", 1e-12)
         return super()._get_binned_data(data, binning_shape)
+
+
+class EDXSDetectorSimulatorChangingControlDuringRecalculation(EDXSDetectorSimulator.EDXSDetectorSimulator):
+    """An EDXS detector simulator which changes a control it depends on while it is recalculating a frame."""
+
+    def _get_photon_spectrum(self, frame_settings: CameraSimulator.FrameSettings) -> _NDArray:
+        self.instrument.SetValDelta("EHT", 1.0)
+        return super()._get_photon_spectrum(frame_settings)
 
 
 class TestInstrumentDevice(unittest.TestCase):
@@ -131,6 +140,15 @@ class TestInstrumentDevice(unittest.TestCase):
             readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=camera._camera_shape)
             camera.get_frame_data(readout_area, Geometry.IntSize(1, 1), 0.01, instrument.scan_context, instrument.probe_position)
             self.assertTrue(camera._needs_recalculation)
+
+    def test_edxs_recalculates_next_frame_when_control_changes_during_recalculation(self) -> None:
+        with self._test_context() as test_context:
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
+            sensor_size = Geometry.IntSize(1, 2048)
+            with contextlib.closing(EDXSDetectorSimulatorChangingControlDuringRecalculation(instrument, sensor_size)) as camera:
+                readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=sensor_size)
+                camera.get_frame_data(readout_area, Geometry.IntSize(1, 1), 0.01, instrument.scan_context, instrument.probe_position)
+                self.assertTrue(camera._needs_recalculation)
 
     def test_powerlaw(self) -> None:
         offset_eV = 100
