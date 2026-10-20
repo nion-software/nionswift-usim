@@ -88,12 +88,13 @@ class CameraSimulator:
         return beam_current_pa * e_per_pa * exposure_s * self._counts_per_electron
 
     def _get_binned_data(self, data: _NDArray, binning_shape: Geometry.IntSize) -> _NDArray:
+        # bin each dimension by trimming it to a whole number of bins, reshaping it into bins, and summing each bin.
         if binning_shape.height > 1:
-            # do binning by taking the binnable area, reshaping last dimension into bins, and taking sum of those bins.
-            data_T = data.T
-            data = data_T[:(data_T.shape[0] // binning_shape.height) * binning_shape.height].reshape(data_T.shape[0], -1, binning_shape.height).sum(axis=-1).T
-            if binning_shape.width > 1:
-                data = data[:(data.shape[-1] // binning_shape.width) * binning_shape.width].reshape(data.shape[0], -1, binning_shape.width).sum(axis=-1)
+            bin_count = data.shape[0] // binning_shape.height
+            data = data[:bin_count * binning_shape.height].reshape(bin_count, binning_shape.height, data.shape[-1]).sum(axis=1)
+        if binning_shape.width > 1:
+            bin_count = data.shape[-1] // binning_shape.width
+            data = data[:, :bin_count * binning_shape.width].reshape(data.shape[0], bin_count, binning_shape.width).sum(axis=-1)
         return data
 
     def _get_frame_settings(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint] = None) -> FrameSettings:
