@@ -106,6 +106,24 @@ class TestInstrumentDevice(unittest.TestCase):
             camera.get_frame_data(readout_area, Geometry.IntSize(1, 1), 0.01, instrument.scan_context, instrument.probe_position)
             self.assertTrue(camera._needs_recalculation)
 
+    def test_ronchigram_bins_readout_area_whose_size_is_not_a_multiple_of_the_binning(self) -> None:
+        with self._test_context() as test_context:
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
+            camera = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize(128, 128), 10, 0.030)
+            with contextlib.closing(camera):
+                readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=Geometry.IntSize(127, 127))
+                xdata = camera.get_frame_data(readout_area, Geometry.IntSize(2, 2), 0.01, instrument.scan_context, instrument.probe_position)
+                self.assertEqual((63, 63), xdata.data_shape)
+
+    def test_ronchigram_bins_only_the_width_when_the_height_binning_is_one(self) -> None:
+        with self._test_context() as test_context:
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
+            camera = RonchigramCameraSimulator.RonchigramCameraSimulator(instrument, Geometry.IntSize(128, 128), 10, 0.030)
+            with contextlib.closing(camera):
+                readout_area = Geometry.IntRect(origin=Geometry.IntPoint(), size=Geometry.IntSize(128, 128))
+                xdata = camera.get_frame_data(readout_area, Geometry.IntSize(1, 2), 0.01, instrument.scan_context, instrument.probe_position)
+                self.assertEqual((128, 64), xdata.data_shape)
+
     def test_eels_recalculates_next_frame_when_control_changes_during_recalculation(self) -> None:
         with self._test_context() as test_context:
             instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
