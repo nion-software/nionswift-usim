@@ -46,9 +46,11 @@ The STEM microscope simulator can simulate a HAADF detector within a beam scan, 
 
 The EELS detector produces EELS spectra unique to each beam position within the simulated sample. The Ronchigram is not dependent on beam position.
 
+The EDXS detector produces X-ray spectra showing the lines of the elements under the beam on a continuum. At high count rates, the spectra show the effects of dead time and pile-up.
+
 The simulated sample can be basic elements/vacuum arranged in rectangular regions; or an amorphous sample.
 
-The scan and Ronchigram or EELS detector can be combined to do spectrum imaging.
+The scan and Ronchigram, EELS, or EDXS detector can be combined to do spectrum imaging.
 
 The simulator has been used to develop many acquisition algorithms and even some tuning and alignment algorithms for use on the Nion STEM instrument.
 

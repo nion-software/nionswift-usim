@@ -7,6 +7,7 @@ from nion.device_kit import CameraDevice
 from nion.instrumentation import camera_base
 from nion.instrumentation import scan_base
 from nion.instrumentation import stem_controller
+from nion.usim_device import EDXSDetectorSimulator
 from nion.usim_device import EELSCameraSimulator
 from nion.usim_device import InstrumentDevice
 from nion.usim_device import RonchigramCameraSimulator
@@ -40,6 +41,7 @@ class AcquisitionContextConfiguration:
         self.instrument: stem_controller.STEMController = instrument
         self.ronchigram_camera_device_id = "usim_ronchigram_camera"
         self.eels_camera_device_id = "usim_eels_camera"
+        self.edxs_camera_device_id = "usim_edxs_camera"
         self._scan_module = ScanDevice.ScanModule(instrument)
         self.scan_module: scan_base.ScanModule = self._scan_module
 
@@ -51,13 +53,20 @@ class AcquisitionContextConfiguration:
         self._eels_camera_device = CameraDevice.Camera("usim_eels_camera", "eels", _("uSim EELS Camera"), eels_camera_simulator, instrument)
         self._eels_camera_settings = CameraDevice.CameraSettings(self.eels_camera_device_id)
 
+        edxs_camera_simulator = EDXSDetectorSimulator.EDXSDetectorSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("edxs")))
+        self._edxs_camera_device = CameraDevice.Camera(self.edxs_camera_device_id, "edxs", _("uSim EDXS Detector"), edxs_camera_simulator, instrument, signal_type="edxs")
+        self._edxs_camera_settings = CameraDevice.CameraSettings(self.edxs_camera_device_id)
+
         self.ronchigram_camera_device: camera_base.CameraDevice3 = self._ronchigram_camera_device
         self.ronchigram_camera_settings: camera_base.CameraSettings = self._ronchigram_camera_settings
         self.eels_camera_device: camera_base.CameraDevice3 = self._eels_camera_device
         self.eels_camera_settings: camera_base.CameraSettings = self._eels_camera_settings
+        self.edxs_camera_device: camera_base.CameraDevice3 = self._edxs_camera_device
+        self.edxs_camera_settings: camera_base.CameraSettings = self._edxs_camera_settings
 
         value_manager.ronchigram_camera = self._ronchigram_camera_device
         value_manager.eels_camera = self._eels_camera_device
+        value_manager.edxs_camera = self._edxs_camera_device
 
     def run(self) -> None:
         logging.disable(logging.CRITICAL)
@@ -68,6 +77,7 @@ class AcquisitionContextConfiguration:
             Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self._ronchigram_camera_device, self._ronchigram_camera_settings), component_types)
             setattr(self.eels_camera_device, "camera_panel_type", "eels")
             Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self._eels_camera_device, self._eels_camera_settings), component_types)
+            Registry.register_component(CameraDevice.CameraModule("usim_stem_controller", self._edxs_camera_device, self._edxs_camera_settings), component_types)
             Registry.register_component(self.scan_module, {"scan_module"})
         finally:
             logging.disable(logging.NOTSET)
