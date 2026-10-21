@@ -672,11 +672,11 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
 
     def get_value(self, name: str) -> typing.Optional[float]:
 
-        def parse_camera_values(camera_device: CameraDevice.Camera, p: str, s: str) -> typing.Optional[float]:
+        def parse_camera_values(camera_device: CameraDevice.Camera, p: str, s: str, readout_area: Geometry.IntRect | None = None) -> typing.Optional[float]:
             if s == "y_offset":
-                return camera_device.get_dimensional_calibrations(None, None)[0].offset
+                return camera_device.get_dimensional_calibrations(readout_area, None)[0].offset
             elif s == "x_offset":
-                return camera_device.get_dimensional_calibrations(None, None)[1].offset
+                return camera_device.get_dimensional_calibrations(readout_area, None)[1].offset
             elif s == "y_scale":
                 return camera_device.get_dimensional_calibrations(None, None)[0].scale
             elif s == "x_scale":
@@ -698,7 +698,8 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         elif name.startswith("eels_"):
             eels_camera = self.eels_camera
             if eels_camera:
-                return parse_camera_values(eels_camera, "eels", name[len("eels_"):])
+                # the energy offset of an EELS spectrum is that of the first channel of the readout area.
+                return parse_camera_values(eels_camera, "eels", name[len("eels_"):], Geometry.IntRect.from_tlbr(*eels_camera.readout_area))
             return None
         else:
             success, value = self.__resolve_control_name(name)

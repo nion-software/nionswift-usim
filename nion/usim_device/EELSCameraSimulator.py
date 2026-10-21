@@ -200,6 +200,9 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         value_manager = typing.cast("InstrumentDevice_.ValueManager", self.instrument.value_manager)
         energy_offset_ev = value_manager.energy_offset_eV
         # energy_offset_ev += random.uniform(-1, 1) * self.__energy_per_channel_eV * 5
+        # the energy offset is that of the first channel of the readout area.
+        if readout_area:
+            energy_offset_ev += readout_area.left * value_manager.energy_per_channel_eV
         dimensional_calibrations = [
             Calibration.Calibration(),
             Calibration.Calibration(offset=energy_offset_ev, scale=value_manager.energy_per_channel_eV, units="eV")

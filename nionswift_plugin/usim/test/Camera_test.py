@@ -1,8 +1,10 @@
 import numpy
 import threading
 import time
+import typing
 import unittest
 
+from nion.device_kit import CameraDevice
 from nion.instrumentation.test import CameraControl_test
 from nion.instrumentation.test import AcquisitionTestContext
 from nion.usim_device import DeviceConfiguration
@@ -41,6 +43,25 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
             self._acquire_one(document_controller, hardware_source)
             self._acquire_one(document_controller, hardware_source)
             self.assertEqual(len(document_model.data_items[0].xdata.data_shape), 1)
+
+    def test_camera_eels_zero_loss_peak_keeps_its_energy_when_the_readout_area_starts_later(self) -> None:
+        with self._test_context(is_eels=True) as test_context:
+            hardware_source = test_context.camera_hardware_source
+            camera = typing.cast(CameraDevice.Camera, hardware_source.camera)
+            frame_parameters = hardware_source.get_frame_parameters(0)
+            frame_parameters.binning = 1
+            hardware_source.set_current_frame_parameters(frame_parameters)
+            zero_loss_peak_energies = list[float]()
+            for left in (0, 20):
+                camera.readout_area = (0, left, 1, 1024)
+                hardware_source.start_playing(sync_timeout=3.0)
+                try:
+                    xdata = hardware_source.get_next_xdatas_to_finish()[0]
+                finally:
+                    hardware_source.abort_playing(sync_timeout=3.0)
+                assert xdata
+                zero_loss_peak_energies.append(xdata.dimensional_calibrations[-1].convert_to_calibrated_value(int(numpy.argmax(xdata.data))))
+            self.assertAlmostEqual(zero_loss_peak_energies[0], zero_loss_peak_energies[1])
 
     def test_camera_eels_connects_to_probe_position(self) -> None:
         # ensure that the probe position is connected to the EELS camera data
