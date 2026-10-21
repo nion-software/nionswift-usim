@@ -185,6 +185,9 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
                 # print(f"target {target_pixel_count}  actual {spectrum_pixel_count}")
                 # print(f"s {spectrum_pixel_count} z {zlp_ref_pixel_count * zlp_scale * data.shape[0]}")
                 # print(f"{math.log(spectrum_pixel_count / (zlp_ref_pixel_count * zlp_scale * data.shape[0]))} {thickness_factor}")
+
+            # crop the sensor to the readout area, then bin.
+            data = data[readout_area.top:readout_area.bottom, readout_area.left:readout_area.right]
             data = self._get_binned_data(data, binning_shape)
 
             self.__cached_frame = DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
