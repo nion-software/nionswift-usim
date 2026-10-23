@@ -331,6 +331,7 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         draw_ellipse(aperture_mask, self.__aperture_ellipse)
         frame_data *= aperture_mask
 
+    # the camera calls this from one thread at a time; see CameraSimulator.get_frame_data.
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata:
         frame_settings = self._get_frame_settings(readout_area, binning_shape, exposure_s, scan_context, parked_probe_position)
         if frame_settings != self._last_frame_settings:
