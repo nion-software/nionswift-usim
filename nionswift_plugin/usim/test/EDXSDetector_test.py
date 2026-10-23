@@ -250,6 +250,17 @@ class TestEDXSDetectorHardwareSource(unittest.TestCase):
             self.assertEqual(1000.0, xdata.dimensional_calibrations[-1].offset)
             self.assertAlmostEqual(1740.0, strongest_line_energy(xdata), delta=10.0)
 
+    def test_edxs_camera_data_has_no_counts_per_electron(self) -> None:
+        with AcquisitionTestContext.AcquisitionTestContext(DeviceConfiguration.AcquisitionContextConfiguration()):
+            hardware_source = typing.cast(camera_base.CameraHardwareSource, HardwareSource.HardwareSourceManager().get_hardware_source_for_hardware_source_id("usim_edxs_camera"))
+            hardware_source.start_playing()
+            try:
+                xdata = hardware_source.get_next_xdatas_to_finish()[0]
+            finally:
+                hardware_source.abort_playing(sync_timeout=3.0)
+            assert xdata
+            self.assertNotIn("counts_per_electron", xdata.metadata["hardware_source"])
+
     def test_edxs_camera_acquires_a_calibrated_spectrum_image(self) -> None:
         with AcquisitionTestContext.AcquisitionTestContext(DeviceConfiguration.AcquisitionContextConfiguration()) as test_context:
             scan_hardware_source = test_context.scan_hardware_source
