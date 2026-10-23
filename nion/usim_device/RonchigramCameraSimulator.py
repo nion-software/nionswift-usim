@@ -341,17 +341,15 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
             # clear the flag before reading the instrument so that a change during the recalculation causes another recalculation
             self._needs_recalculation = False
             # print("recalculating frame")
-            height = readout_area.height
-            width = readout_area.width
+            # compute the binned frame of the whole sensor, then crop it to the readout area. the crop is made in binned
+            # pixels, so a readout area whose origin is not a multiple of the binning starts at the bin nearest before it.
+            size = self._sensor_dimensions
             offset_m = self.instrument.stage_position_m
             # full_fov_nm = abs(self.instrument.GetVal("C10Control")) * self._tv_pixel_angle * self._sensor_dimensions.height * 1e9
             full_fov_nm = self.__stage_size_nm
-            fov_size_nm = Geometry.FloatSize(full_fov_nm * height / self._sensor_dimensions.height, full_fov_nm * width / self._sensor_dimensions.width)
-            center_nm = Geometry.FloatPoint(
-                full_fov_nm * (readout_area.center.y / self._sensor_dimensions.height - 0.5),
-                full_fov_nm * (readout_area.center.x / self._sensor_dimensions.width - 0.5))
-            size = Geometry.IntSize(height, width)
-            data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((height, width), numpy.float32)
+            fov_size_nm = Geometry.FloatSize(full_fov_nm, full_fov_nm)
+            center_nm = Geometry.FloatPoint()
+            data: numpy.typing.NDArray[numpy.float32] = numpy.zeros((size.height, size.width), numpy.float32)
             # features will be positive values; thickness can be simulated by subtracting the features from the
             # vacuum value. the higher the vacuum value, the thinner (i.e. less contribution from features).
             thickness_param = 100
@@ -396,13 +394,20 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
                 elif self.instrument.GetVal("S_MOA") > 0:
                     self._draw_aperture(data, binning_shape, enlarge_by=0.1)
 
+            # crop to the readout area, in binned pixels.
+            top = readout_area.top // binning_shape.height
+            left = readout_area.left // binning_shape.width
+            data = data[top:top + readout_area.height // binning_shape.height, left:left + readout_area.width // binning_shape.width]
+
             intensity_calibration = Calibration.Calibration(units="counts")
             dimensional_calibrations = self.get_dimensional_calibrations(readout_area, binning_shape)
 
             self.__cached_frame = DataAndMetadata.new_data_and_metadata(data.astype(numpy.float32), intensity_calibration=intensity_calibration, dimensional_calibrations=dimensional_calibrations)
-            self.__data_scale = self.get_total_counts(exposure_s) / (data.shape[0] * data.shape[1] * thickness_param)
+            # spread the total counts over the whole sensor. a binned pixel holds the sum of the pixels in its bin.
+            self.__data_scale = self.get_total_counts(exposure_s) / (size.height * size.width * thickness_param)
 
-        self.noise.poisson_level = self.__data_scale
+        # the noise in a binned pixel is the sum of the independent noise in the pixels in its bin.
+        self.noise.poisson_level = self.__data_scale * binning_shape.height * binning_shape.width
         assert self.__cached_frame
         return self.noise.apply(self.__cached_frame * self.__data_scale)
 
