@@ -150,6 +150,10 @@ class EDXSDetectorSimulator(CameraSimulator.CameraSimulator):
         self.__high_rate_photon_rate = 0.0
         self.__high_rate_recorded_spectrum_per_s: _NDArray | None = None
 
+    def get_counts_per_electron(self) -> float | None:
+        """Return None, since an X-ray detector cannot measure the beam current."""
+        return None
+
     def get_dimensional_calibrations(self, readout_area: Geometry.IntRect | None, binning_shape: Geometry.IntSize | None) -> typing.Sequence[Calibration.Calibration]:
         """Return the calibrations of a frame with the readout area and binning, or of the whole sensor unbinned."""
         first_channel = readout_area.left if readout_area else 0

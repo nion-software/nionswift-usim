@@ -70,6 +70,10 @@ class CameraSimulator:
     def instrument(self) -> InstrumentDevice_.Instrument:
         return self.__instrument
 
+    def get_counts_per_electron(self) -> float | None:
+        """Return the counts per electron reported with the camera's data, or None to report none."""
+        return self._counts_per_electron
+
     def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
         """
         Subclasses should override this method
