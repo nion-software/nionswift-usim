@@ -412,12 +412,16 @@ class RonchigramCameraSimulator(CameraSimulator.CameraSimulator):
         return self.noise.apply(self.__cached_frame * self.__data_scale)
 
     def get_dimensional_calibrations(self, readout_area: typing.Optional[Geometry.IntRect], binning_shape: typing.Optional[Geometry.IntSize]) -> typing.Sequence[Calibration.Calibration]:
-        height = readout_area.height if readout_area else self._sensor_dimensions[0]
-        width = readout_area.width if readout_area else self._sensor_dimensions[1]
-        scale_y = self._tv_pixel_angle
-        scale_x = self._tv_pixel_angle
-        offset_y = -scale_y * height * 0.5
-        offset_x = -scale_x * width * 0.5
+        """Return the calibrations of a frame with the readout area and binning, or of the whole sensor unbinned.
+
+        The angle is zero at the center of the sensor, so the offset is the angle of the first pixel of the readout area.
+        """
+        top = readout_area.top if readout_area else 0
+        left = readout_area.left if readout_area else 0
+        offset_y = self._tv_pixel_angle * (top - self._sensor_dimensions.height * 0.5)
+        offset_x = self._tv_pixel_angle * (left - self._sensor_dimensions.width * 0.5)
+        scale_y = self._tv_pixel_angle * (binning_shape.height if binning_shape else 1)
+        scale_x = self._tv_pixel_angle * (binning_shape.width if binning_shape else 1)
         dimensional_calibrations = [
             Calibration.Calibration(offset=offset_y, scale=scale_y, units="rad"),
             Calibration.Calibration(offset=offset_x, scale=scale_x, units="rad")
