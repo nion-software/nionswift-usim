@@ -3,7 +3,6 @@ from __future__ import annotations
 # standard libraries
 import dataclasses
 import math
-import threading
 import typing
 
 import numpy
@@ -133,11 +132,7 @@ class EDXSDetectorSimulator(CameraSimulator.CameraSimulator):
         self.__dead_time_s = dead_time_s
         self.__pulse_pair_resolution_s = pulse_pair_resolution_s
 
-        # get_frame_data runs on the camera's acquisition thread in view mode and on the hardware source's acquisition
-        # thread in sequence and synchronized acquisition, and the two can overlap for as long as a sequence runs. this
-        # lock is held while a frame is recorded, and protects the random generator, the state below, and the last
-        # frame settings.
-        self.__lock = threading.Lock()
+        # the random generator of the recorded photons.
         self.__random_generator = numpy.random.default_rng()
 
         # the spectrum of photons reaching the detector, recalculated when the instrument changes. the photon yield is
@@ -166,32 +161,30 @@ class EDXSDetectorSimulator(CameraSimulator.CameraSimulator):
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: Geometry.FloatPoint | None) -> DataAndMetadata.DataAndMetadata:
         """Return a frame recorded during the exposure, as counts per channel.
 
-        This runs on the camera's acquisition thread in view mode, and on the hardware source's acquisition thread in
-        sequence and synchronized acquisition.
+        The camera calls this from one thread at a time; see CameraSimulator.get_frame_data.
         """
-        with self.__lock:
-            frame_settings = self._get_frame_settings(readout_area, binning_shape, exposure_s, scan_context, parked_probe_position)
-            if frame_settings != self._last_frame_settings:
-                self._needs_recalculation = True
-                self._last_frame_settings = frame_settings
+        frame_settings = self._get_frame_settings(readout_area, binning_shape, exposure_s, scan_context, parked_probe_position)
+        if frame_settings != self._last_frame_settings:
+            self._needs_recalculation = True
+            self._last_frame_settings = frame_settings
 
-            photon_distribution = self.__photon_distribution
-            if self._needs_recalculation or photon_distribution is None:
-                # clear the flag before reading the instrument so that a change during the recalculation causes another recalculation
-                self._needs_recalculation = False
-                previous_photon_distribution = photon_distribution
-                photon_spectrum = self._get_photon_spectrum(frame_settings)
-                self.__photon_yield = float(numpy.sum(photon_spectrum))
-                photon_distribution = photon_spectrum / self.__photon_yield if self.__photon_yield > 0.0 else numpy.zeros_like(photon_spectrum)
-                self.__photon_distribution = photon_distribution
-                # a spectrum image moves the probe at each pixel, usually within one feature, so the expected recorded
-                # spectrum is kept while the photon distribution is unchanged.
-                if previous_photon_distribution is None or not numpy.array_equal(photon_distribution, previous_photon_distribution):
-                    self.__high_rate_recorded_spectrum_per_s = None
+        photon_distribution = self.__photon_distribution
+        if self._needs_recalculation or photon_distribution is None:
+            # clear the flag before reading the instrument so that a change during the recalculation causes another recalculation
+            self._needs_recalculation = False
+            previous_photon_distribution = photon_distribution
+            photon_spectrum = self._get_photon_spectrum(frame_settings)
+            self.__photon_yield = float(numpy.sum(photon_spectrum))
+            photon_distribution = photon_spectrum / self.__photon_yield if self.__photon_yield > 0.0 else numpy.zeros_like(photon_spectrum)
+            self.__photon_distribution = photon_distribution
+            # a spectrum image moves the probe at each pixel, usually within one feature, so the expected recorded
+            # spectrum is kept while the photon distribution is unchanged.
+            if previous_photon_distribution is None or not numpy.array_equal(photon_distribution, previous_photon_distribution):
+                self.__high_rate_recorded_spectrum_per_s = None
 
-            value_manager = CameraSimulator.get_value_manager(self.instrument)
-            photon_count_mean = 0.0 if value_manager.is_blanked else self.__photon_yield * self.get_total_counts(exposure_s)
-            spectrum = self.__record_spectrum(photon_count_mean, exposure_s, photon_distribution)
+        value_manager = CameraSimulator.get_value_manager(self.instrument)
+        photon_count_mean = 0.0 if value_manager.is_blanked else self.__photon_yield * self.get_total_counts(exposure_s)
+        spectrum = self.__record_spectrum(photon_count_mean, exposure_s, photon_distribution)
 
         # crop the sensor to the readout area, then bin.
         data = spectrum[numpy.newaxis, readout_area.left:readout_area.right][readout_area.top:readout_area.bottom]

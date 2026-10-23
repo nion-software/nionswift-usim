@@ -81,8 +81,11 @@ class CameraSimulator:
         return [Calibration.Calibration(), Calibration.Calibration()]
 
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata:
-        """
-        Subclasses must override this method
+        """Return a frame of the readout area, binned, recorded during the exposure. Subclasses must override this method.
+
+        The device_kit camera calls this on its view thread, or on the thread of a sequence or synchronized acquisition.
+        It makes one call at a time, provided one sequence runs at a time, so a subclass keeps the state of its frames
+        without a lock. Consecutive calls may come from different threads.
         """
         raise NotImplementedError()
 

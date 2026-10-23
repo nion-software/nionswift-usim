@@ -68,7 +68,8 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         self.noise = Noise.PoissonNoise()
 
     def get_frame_data(self, readout_area: Geometry.IntRect, binning_shape: Geometry.IntSize, exposure_s: float, scan_context: stem_controller.ScanContext, parked_probe_position: typing.Optional[Geometry.FloatPoint]) -> DataAndMetadata.DataAndMetadata:
-        """
+        """Return a spectrum recorded during the exposure, binned.
+
         Features at the probe position will add plasmons and edges in addition to a ZLP.
 
         There are two inputs to this model: the beam current and the T/l (thickness / mean free path).
@@ -103,6 +104,8 @@ class EELSCameraSimulator(CameraSimulator.CameraSimulator):
         solving:
             A = P / exp(T/l) / z
             B = (P - Az) / f
+
+        The camera calls this from one thread at a time; see CameraSimulator.get_frame_data.
         """
 
         frame_settings = self._get_frame_settings(readout_area, binning_shape, exposure_s, scan_context, parked_probe_position)
