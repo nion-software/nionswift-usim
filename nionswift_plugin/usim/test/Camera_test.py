@@ -1,4 +1,5 @@
 import numpy
+import numpy.typing
 import threading
 import time
 import typing
@@ -8,6 +9,7 @@ from nion.device_kit import CameraDevice
 from nion.instrumentation.test import CameraControl_test
 from nion.instrumentation.test import AcquisitionTestContext
 from nion.usim_device import DeviceConfiguration
+from nion.usim_device import RonchigramCameraSimulator
 from nion.utils import Geometry
 
 
@@ -62,6 +64,27 @@ class TestCamera(CameraControl_test.TestCameraControlClass):
                 assert xdata
                 zero_loss_peak_energies.append(xdata.dimensional_calibrations[-1].convert_to_calibrated_value(int(numpy.argmax(xdata.data))))
             self.assertAlmostEqual(zero_loss_peak_energies[0], zero_loss_peak_energies[1])
+
+    def test_camera_ronchigram_readout_area_is_the_same_part_of_the_full_sensor_frame(self) -> None:
+        with self._test_context() as test_context:
+            hardware_source = test_context.camera_hardware_source
+            camera = typing.cast(CameraDevice.Camera, hardware_source.camera)
+            typing.cast(RonchigramCameraSimulator.RonchigramCameraSimulator, camera.simulator).noise.enabled = False
+            frame_parameters = hardware_source.get_frame_parameters(0)
+            frame_parameters.binning = 1
+            hardware_source.set_current_frame_parameters(frame_parameters)
+            sensor_height, sensor_width = camera.sensor_dimensions
+            frames = list[numpy.typing.NDArray[numpy.float32]]()
+            for readout_area in ((0, 0, sensor_height, sensor_width), (0, sensor_width // 2, sensor_height, sensor_width)):
+                camera.readout_area = readout_area
+                hardware_source.start_playing(sync_timeout=3.0)
+                try:
+                    xdata = hardware_source.get_next_xdatas_to_finish()[0]
+                finally:
+                    hardware_source.abort_playing(sync_timeout=3.0)
+                assert xdata
+                frames.append(xdata.data)
+            numpy.testing.assert_allclose(frames[1], frames[0][:, sensor_width // 2:], rtol=1e-5)
 
     def test_camera_eels_connects_to_probe_position(self) -> None:
         # ensure that the probe position is connected to the EELS camera data
