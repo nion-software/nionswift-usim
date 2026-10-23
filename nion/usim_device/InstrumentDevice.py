@@ -693,7 +693,8 @@ class ValueManager(Observable.Observable, InstrumentDevice.ValueManagerLike):
         elif name.startswith("ronchigram_"):
             ronchigram_camera = self.ronchigram_camera
             if ronchigram_camera:
-                return parse_camera_values(ronchigram_camera, "ronchigram", name[len("ronchigram_"):])
+                # the angle offset of a ronchigram is that of the first pixel of the readout area.
+                return parse_camera_values(ronchigram_camera, "ronchigram", name[len("ronchigram_"):], Geometry.IntRect.from_tlbr(*ronchigram_camera.readout_area))
             return None
         elif name.startswith("eels_"):
             eels_camera = self.eels_camera
