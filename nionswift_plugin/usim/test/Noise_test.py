@@ -9,11 +9,12 @@ from nion.usim_device import Noise
 
 class TestPoissonNoise(unittest.TestCase):
 
-    def __apply_noise(self, level: float) -> numpy.typing.NDArray[numpy.float32]:
+    def __apply_noise(self, level: float, scale: float = 1.0) -> numpy.typing.NDArray[numpy.float32]:
         # apply noise to a constant frame, so the noise alone is what remains after subtracting the constant.
         input_data = numpy.full((300, 700), 10.0, dtype=numpy.float32)
         noise = Noise.PoissonNoise()
         noise.poisson_level = level
+        noise.scale = scale
         output_data = noise.apply(DataAndMetadata.new_data_and_metadata(input_data)).data
         assert output_data is not None
         self.assertEqual(numpy.float32, output_data.dtype)
@@ -31,6 +32,11 @@ class TestPoissonNoise(unittest.TestCase):
         noise = self.__apply_noise(0.5)
         self.assertAlmostEqual(0.0, float(numpy.mean(noise)), delta=0.02)
         self.assertAlmostEqual(0.5, float(numpy.var(noise)), delta=0.02)
+
+    def test_noise_scale_scales_standard_deviation(self) -> None:
+        # a quarter of the standard deviation is a sixteenth of the variance, at either side of the threshold.
+        self.assertAlmostEqual(50.0 / 16, float(numpy.var(self.__apply_noise(50.0, 0.25))), delta=0.1)
+        self.assertAlmostEqual(0.5 / 16, float(numpy.var(self.__apply_noise(0.5, 0.25))), delta=0.002)
 
     def test_disabled_noise_leaves_data_unchanged(self) -> None:
         input_data = numpy.full((3, 7), 10.0, dtype=numpy.float32)
