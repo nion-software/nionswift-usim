@@ -794,17 +794,6 @@ class Instrument(InstrumentDevice.Instrument):
     def scan_data_generator(self) -> ScanDevice.ScanDataGeneratorLike:
         return self.__scan_data_generator
 
-    # the EDXS detector is a silicon drift detector, whose spectrum is a single row of channels.
-    def camera_sensor_dimensions(self, camera_type: str) -> typing.Tuple[int, int]:
-        if camera_type == "edxs":
-            return 1, 2048
-        return super().camera_sensor_dimensions(camera_type)
-
-    def camera_readout_area(self, camera_type: str) -> typing.Tuple[int, int, int, int]:
-        if camera_type == "edxs":
-            return 0, 0, 1, 2048
-        return super().camera_readout_area(camera_type)
-
     def __on_property_changed(self, name: str) -> None:
         self.property_changed_event.fire(name)
 
