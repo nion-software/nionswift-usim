@@ -54,7 +54,7 @@ class AcquisitionContextConfiguration:
         self._eels_camera_settings = CameraDevice.CameraSettings(self.eels_camera_device_id)
 
         edxs_camera_simulator = EDXSDetectorSimulator.EDXSDetectorSimulator(instrument, Geometry.IntSize.make(instrument.camera_sensor_dimensions("edxs")))
-        self._edxs_camera_device = CameraDevice.Camera(self.edxs_camera_device_id, "edxs", _("uSim EDXS Detector"), edxs_camera_simulator, instrument, signal_type="edxs")
+        self._edxs_camera_device = CameraDevice.Camera(self.edxs_camera_device_id, "edxs", _("uSim EDXS Detector"), edxs_camera_simulator, instrument)
         self._edxs_camera_settings = CameraDevice.CameraSettings(self.edxs_camera_device_id)
 
         self.ronchigram_camera_device: camera_base.CameraDevice3 = self._ronchigram_camera_device
