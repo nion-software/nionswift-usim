@@ -650,6 +650,19 @@ class TestInstrumentDevice(unittest.TestCase):
             # Add it a second time to test add existing control
             value_manager.add_control_inputs('test_control', [(other_control, weight_control)])
 
+    def test_set_control_local_value_restores_output_value_of_control_with_inputs(self) -> None:
+        with self._test_context() as test_context:
+            instrument = typing.cast(InstrumentDevice_.Instrument, test_context.instrument)
+            input_control = instrument.create_control("input_control", local_value=2.0)
+            instrument.add_control(input_control)
+            instrument.add_control(instrument.create_control("test_control", local_value=0.5, weighted_inputs=[(input_control, 3.0)]))
+            self.assertAlmostEqual(instrument.try_get_control_local_value("test_control").value or 0.0, 0.5)
+            self.assertTrue(instrument.SetValDelta("test_control", 1.0))
+            self.assertIsNone(instrument.set_control_local_value("test_control", 0.5))
+            self.assertAlmostEqual(instrument.GetVal("test_control"), 6.5)
+            self.assertFalse(instrument.try_get_control_local_value("missing_control").is_valid)
+            self.assertIsNotNone(instrument.set_control_local_value("missing_control", 0.0))
+
 
 if __name__ == '__main__':
     unittest.main()
