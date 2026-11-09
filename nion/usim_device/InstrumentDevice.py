@@ -33,6 +33,8 @@ _NDArray = numpy.typing.NDArray[typing.Any]
 
 WeightedInput = typing.Tuple["Variable", typing.Union[float, "Variable"]]
 
+JSONType = dict[str, typing.Any] | list[typing.Any] | str | int | float | bool | None
+
 # If we reload the module or if it gets imported twice for some other reason registering the feature twice would cause an assertion error, so we catch and ignore that.
 try:
     Feature.FeatureManager().add_feature(Feature.Feature("feature.monochromator", "Monochromator in usim", True))
@@ -63,6 +65,9 @@ class Variable:
             input.add_dependent(self)
         self.__last_output_value: typing.Optional[float] = None
         self.on_changed: typing.Optional[typing.Callable[[Variable], None]] = None
+
+        # Metadata of the control, which is just a free-form dictionary stored with each control.
+        self.metadata: dict[str, typing.Any] = dict()
 
     def __str__(self) -> str:
         return "{}: {}".format(self.name, self.output_value)
@@ -353,6 +358,9 @@ class Control2D:
         control_a = Control(name, local_value=local_values[0], weighted_inputs=weighted_inputs[0] if weighted_inputs else None)
 
         self.__controls = (control_a, control_b)
+
+        # Metadata of the 2D control itself. Its sub-controls in the native axis keep their own metadata.
+        self.metadata: dict[str, typing.Any] = dict()
 
     def __str__(self) -> str:
         return "{0}.{1[0]}: {2} + {3} = {4}\n{0}.{1[1]}: {5} + {6} = {7}\n".format(self.name,
@@ -837,6 +845,37 @@ class Instrument(InstrumentDevice.Instrument):
 
     def create_2d_control(self, name: str, native_axis: stem_controller.AxisType, local_values: typing.Tuple[float, float] = (0.0, 0.0), weighted_inputs: typing.Optional[typing.Tuple[typing.List[WeightedInput], typing.List[WeightedInput]]] = None) -> Control2D:
         return self.__usim_value_manager.create_2d_control(name, native_axis, local_values, weighted_inputs)
+
+    # The control metadata and local value interface available on actual hardware.
+
+    def try_get_control_metadata(self, control: str) -> stem_controller.TryValue[JSONType]:
+        # A sub-control in a non-native axis is a converted view which keeps no metadata of its own.
+        control_object = self.__usim_value_manager.get_control(control)
+        if not isinstance(control_object, (Variable, Control2D)):
+            return stem_controller.TryValue(None, ValueError(f"No control with metadata named {control} exists."))
+        return stem_controller.TryValue(dict(control_object.metadata))
+
+    def set_control_metadata(self, control: str, metadata: JSONType) -> Exception | None:
+        control_object = self.__usim_value_manager.get_control(control)
+        if not isinstance(control_object, (Variable, Control2D)):
+            return ValueError(f"No control with metadata named {control} exists.")
+        if not isinstance(metadata, dict):
+            return ValueError(f"Metadata for control {control} must be a dict.")
+        control_object.metadata.update(metadata)
+        return None
+
+    def try_get_control_local_value(self, control: str) -> stem_controller.TryValue[float]:
+        control_object = self.__usim_value_manager.get_control(control)
+        if not isinstance(control_object, (Control, ConvertedControl)):
+            return stem_controller.TryValue(None, ValueError(f"No control with a local value named {control} exists."))
+        return stem_controller.TryValue(control_object.local_value)
+
+    def set_control_local_value(self, control: str, value: float) -> Exception | None:
+        control_object = self.__usim_value_manager.get_control(control)
+        if not isinstance(control_object, (Control, ConvertedControl)):
+            return ValueError(f"No control with a local value named {control} exists.")
+        control_object.set_local_value(value)
+        return None
 
 
 class ScanDataGenerator(Observable.Observable, ScanDevice.ScanDataGeneratorLike):
